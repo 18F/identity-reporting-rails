@@ -1,20 +1,20 @@
-source "https://rubygems.org"
+source 'https://rubygems.org'
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
-gem "rails", "~> 7.1.1"
+gem 'rails', '~> 7.1.1'
 gem 'activerecord-postgis-adapter', '~> 9.0'
 gem 'bootsnap', '~> 1.0', require: false
 gem 'faker'
 gem 'identity-hostdata', github: '18F/identity-hostdata', tag: 'v3.4.2'
 gem 'identity-logging', github: '18F/identity-logging', tag: 'v0.1.0'
 gem 'identity_validations', github: '18F/identity-validations', tag: 'v0.7.2'
-gem "puma", ">= 5.6.7"
-gem "pg"
+gem 'puma', '>= 5.6.7'
+gem 'pg'
 gem 'rack', '>= 2.2.3.1'
 gem 'redacted_struct'
 gem 'redis', '>= 3.2.0'
-gem "tzinfo-data", platforms: %i[ windows jruby ]
+gem 'tzinfo-data', platforms: %i[ windows jruby ]
 
 group :development do
   gem 'better_errors', '>= 2.5.1'

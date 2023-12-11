@@ -20,7 +20,6 @@
 .DS_Store
 .rspec
 .ruby-gemset
-.ruby-version
 .vagrant
 .capistrano
 .tool-versions

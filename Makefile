@@ -77,7 +77,7 @@ lint_gemfile_lock: Gemfile Gemfile.lock ## Lints the Gemfile and its lockfile
 	@bundle check
 	@git diff-index --quiet HEAD Gemfile.lock || (echo "Error: There are uncommitted changes after running 'bundle install'"; exit 1)
 
-lint_lockfiles: lint_gemfile_lock lint_yarn_lock ## Lints to ensure lockfiles are in sync
+lint_lockfiles: lint_gemfile_lock ## Lints to ensure lockfiles are in sync
 
 lint_readme: README.md ## Lints README.md
 	(! git diff --name-only | grep "^README.md$$") || (echo "Error: Run 'make README.md' to regenerate the README.md"; exit 1)
@@ -126,7 +126,7 @@ run-https: tmp/$(HOST)-$(PORT).key tmp/$(HOST)-$(PORT).crt ## Runs the developme
 	HTTPS=on FOREMAN_HOST="ssl://$(HOST):$(PORT)?key=tmp/$(HOST)-$(PORT).key&cert=tmp/$(HOST)-$(PORT).crt" foreman start -p $(PORT)
 
 normalize_yaml: ## Normalizes YAML files (alphabetizes keys, fixes line length, smart quotes)
-	yarn normalize-yaml .rubocop.yml --disable-sort-keys --disable-smart-punctuation
+	normalize-yaml .rubocop.yml --disable-sort-keys --disable-smart-punctuation
 
 update: ## Update dependencies, useful after a git pull
 	bundle install

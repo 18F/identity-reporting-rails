@@ -1,6 +1,6 @@
-require_relative "boot"
+require_relative 'boot'
 
-require "rails/all"
+require 'rails/all'
 
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
@@ -51,4 +51,3 @@ module IdentityReportingRails
     routes.default_url_options[:host] = IdentityConfig.store.domain_name
   end
 end
-

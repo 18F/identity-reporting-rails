@@ -54,7 +54,6 @@ production:
     username: <%= IdentityConfig.store.database_username %>
     host: <%= IdentityConfig.store.database_socket.present? ?  IdentityConfig.store.database_socket : IdentityConfig.store.database_host %>
     password: <%= IdentityConfig.store.database_password %>
-    pool: <%= primary_pool %>
     advisory_locks: <%= !IdentityConfig.store.database_socket.present? %>
     prepared_statements: <%= !IdentityConfig.store.database_socket.present? %>
     sslmode: <%= IdentityConfig.store.database_sslmode %>
@@ -67,7 +66,6 @@ production:
     username: <%= IdentityConfig.store.database_readonly_username %>
     host: <%= IdentityConfig.store.database_read_replica_host %>
     password: <%= IdentityConfig.store.database_readonly_password %>
-    pool: <%= primary_pool %>
     sslmode: <%= IdentityConfig.store.database_sslmode %>
     sslrootcert: '/usr/local/share/aws/rds-combined-ca-bundle.pem'
     replica: true
