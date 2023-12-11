@@ -1,0 +1,10 @@
+Dockerfile
+.gem
+tmp
+log
+db/*.sqlite3
+*.md
+.git*
+vendor/bundle
+postgres-data
+coverage/

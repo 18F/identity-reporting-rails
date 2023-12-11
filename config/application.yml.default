@@ -1,0 +1,61 @@
+# This file is used by the IdentityConfig class
+
+# The defaults set in this file are used as the basis for configuration in all
+# production and development environments. On deployed EC2 servers, we run
+# deploy/activate to generate the final application.yml using this file for
+# defaults and deep merging any overrides set in the application.yml from the
+# app secrets S3 bucket. Deployed EC2 servers always set RAILS_ENV=production,
+# so they will use values from top-level and from the production block.
+
+# Be sure to restart your server when you modify this file.
+
+# Make sure the secrets in this file are kept private
+# if you're sharing your code publicly.
+
+# Make sure any new entries you add are enclosed in single quotes.
+database_pool_idp: 5
+database_socket: ''
+database_sslmode: 'verify-full'
+database_statement_timeout: 2_500
+database_timeout: 5_000
+rack_mini_profiler: false
+rack_timeout_service_timeout_seconds: 15
+redis_throttle_url: redis://localhost:6379/1
+redis_url: redis://localhost:6379/0
+redis_pool_size: 10
+redis_throttle_pool_size: 5
+
+development:
+  database_host: ''
+  database_name: ''
+  database_password: ''
+  database_read_replica_host: ''
+  database_readonly_password: ''
+  database_readonly_username: ''
+  database_username: ''
+  domain_name: localhost:3000
+  newrelic_license_key: ''
+
+# These values serve as defaults for all production-like environments
+production:
+  database_host: ''
+  database_name: ''
+  database_password: ''
+  database_read_replica_host: ''
+  database_readonly_password: ''
+  database_readonly_username: ''
+  database_username: ''
+  newrelic_license_key: ''
+  redis_throttle_url: redis://redis.login.gov.internal:6379/1
+  redis_url: redis://redis.login.gov.internal:6379
+
+test:
+  database_host: ''
+  database_name: ''
+  database_password: ''
+  database_read_replica_host: ''
+  database_readonly_password: ''
+  database_readonly_username: ''
+  database_username: ''
+  domain_name: www.example.com
+  newrelic_license_key: ''
