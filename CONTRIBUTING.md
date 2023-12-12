@@ -1,6 +1,6 @@
 ## Welcome!
 
-We’re so glad you’re thinking about contributing to a Technology Transformation Services (TTS) open source project! If you’re unsure about anything, just ask — or submit your issue or pull request anyway. The worst that can happen is we’ll politely ask you to change something. We appreciate all friendly contributions.
+We’re so glad you’re thinking about contributing to a Technology Transformation Services (TTS) open source project! If you’re unsure about anything, just ask — or submit your pull request anyway. The worst that can happen is we’ll politely ask you to change something. We appreciate all friendly contributions.
 
 TTS is committed to building a safe, welcoming, harassment-free culture for everyone. We expect everyone on the TTS team and everyone within TTS spaces, including contributors to our projects, to follow the [TTS Code of Conduct](https://github.com/18F/code-of-conduct/blob/master/code-of-conduct.md).
 
@@ -26,9 +26,6 @@ pull request is about.
 - If the pull request is in response to a Jira ticket, include the ticket ID in
 the commit title (e.g. "LG-1234 Add the stuff to the thing")
 
-- Include a changelog message which describes the changes in human-readable terms. Refer to the
-[_Changelog Messages_ section](#changelog-messages) below for specific changelog requirements.
-
 Example:
 
 ```
@@ -44,36 +41,7 @@ and making development less efficient.
 meant to change, and so that only one database call is made.
 - To prevent the data from being wiped out after each spec, configure
 Database Cleaner to ignore those static tables.
-
-changelog: Internal, Automated Testing, Improve performance of test suite
 ```
-
-#### Changelog Messages
-
-You must include a changelog message in one commit of your pull request. The changelog message
-describes the changes in human-readable terms. These messages are included in release notes, so they
-should be easy to understand for our partners and users.
-
-A changelog message should be written in the following format:
-
-```
-changelog: [Category], [Subcategory], [Description]
-```
-
-Replace `[Category]`, `[Subcategory]`, and `[Description]` with text relevant for your changes:
-
-- **Category** must be one of the following:
-   - **User-Facing Improvements** are improvements to the application experience benefitting the end-user, such as a new UI component or updated text.
-   - **Bug Fixes** are corrections to a broken behavior, such as preventing a raised exception.
-   - **Internal** are changes which benefit the Login.gov team, such as analytics or code quality.
-   - **Upcoming Features** are iterations contributing to a feature which has not yet been enabled for users in production.
-- **Subcategory** does not have any restrictions, but you should try to maintain consistency with changesets affecting similar parts of the application (for example, "In-person proofing").
-- **Description** is a plain language description of the specific changes.
-
-If multiple pull requests iterate on the same feature, it's a good idea to use the same commit message, since identical messages will be combined into a single entry when the release notes are compiled.
-
-In the rare case that a change should not be included in release notes, add `[skip changelog]` to
-the commit.
 
 ### Additional notes on pull requests and code reviews
 
@@ -92,8 +60,6 @@ Everyone is encouraged to participate in code review. To solicit feedback from s
 consider adding individuals or groups as requested reviewers on your pull request. Most internal
 product teams have a team handle which can be used to notify everyone on that team, or you can
 request reviews from one of the available interest group teams:
-
-- `18f/identity-frontend` for developers interested in frontend development
 
 To request to join any of these teams, you can contact any existing member and ask to be added.
 

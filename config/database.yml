@@ -3,10 +3,9 @@ postgresql: &postgresql
   encoding: utf8
   database: identity_reporting_rails_<%= Rails.env %>
   port: 5432
-  username: <%= ENV['DOCKER_DB_USER'] %>
 
 defaults: &defaults
-  host: <%= ENV['DOCKER_DB_HOST'] || 'localhost' %>
+  host: localhost
   pool: 5
   <<: *postgresql
   # timeout settings

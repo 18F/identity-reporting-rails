@@ -109,7 +109,6 @@ class IdentityConfig
     config.add(:database_statement_timeout, type: :integer)
     config.add(:database_timeout, type: :integer)
     config.add(:database_username, type: :string)
-    config.add(:newrelic_license_key, type: :string)
     config.add(:rack_mini_profiler, type: :boolean)
     config.add(:redis_pool_size, type: :integer)
     config.add(:redis_throttle_pool_size, type: :integer)

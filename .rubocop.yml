@@ -7,10 +7,6 @@ require:
   - rubocop-rails
   - rubocop-rspec
   - rubocop-performance
-  - ./lib/linters/localized_validation_message_linter.rb
-  - ./lib/linters/redirect_back_linter.rb
-  - ./lib/linters/url_options_linter.rb
-  - ./lib/linters/errors_add_linter.rb
 
 AllCops:
   Exclude:
@@ -38,22 +34,6 @@ Bundler/InsecureProtocolSource:
   Enabled: true
 
 Gemspec/DuplicatedAssignment:
-  Enabled: true
-
-IdentityIdp/LocalizedValidationMessageLinter:
-  Enabled: true
-
-IdentityIdp/UrlOptionsLinter:
-  Enabled: true
-  Exclude:
-    - 'spec/**/*.rb'
-
-IdentityIdp/ErrorsAddLinter:
-  Enabled: true
-  Exclude:
-    - 'spec/**/*.rb'
-
-IdentityIdp/RedirectBackLinter:
   Enabled: true
 
 Layout/AccessModifierIndentation:

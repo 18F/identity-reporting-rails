@@ -71,10 +71,7 @@ If not using macOS:
   $ make fast_test
   ```
 
-  Check out our Makefile commands and learn more about how you can customize this command to run specific tests using rspec: https://github.com/18F/identity-reporting-rails/blob/main/Makefile
-
-  To test a specific spec file with rspec, you may need to add the following configuration to `/config/application.yml` so the tests do not crash:
-  ```
+Check out our [Makefile commands](../Makefile) and learn more about how you can customize this command to run specific tests using rspec
 
 ## Linting
 
@@ -83,5 +80,5 @@ Run `make lint` to look for errors; `make lintfix` can repair some linting error
 
 ## Running jobs
 
-We run background jobs / workers with ActiveJob and GoodJob. You shouldn't normally have to start it manually because `make run` runs [the `Procfile`](Procfile), which handles it. The manual command is: `bundle exec good_job start`
+We run background jobs / workers with ActiveJob and GoodJob. You shouldn't normally have to start it manually because `make run` runs [the `Procfile`](../Procfile), which handles it. The manual command is: `bundle exec good_job start`
 
