@@ -3,7 +3,6 @@ git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
 gem 'rails', '~> 7.1.1'
-gem 'activerecord-postgis-adapter', '~> 9.0'
 gem 'bootsnap', '~> 1.0', require: false
 gem 'faker'
 gem 'identity-hostdata', github: '18F/identity-hostdata', tag: 'v3.4.2'
