@@ -15,7 +15,7 @@ set -x
 id
 which bundle
 
-bundle exec rake deploy:activate db:create db:migrate:monitor_concurrent --trace
+bundle exec rake db:create db:migrate:monitor_concurrent --trace
 
 set +x
 
