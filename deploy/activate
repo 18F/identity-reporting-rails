@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# This script is called by identity-devops cookbooks as part of the deployment
+# process. It fetches identity-idp-config and large data files like pwned passwords and
+# GeoIP from S3.
+
+set -euo pipefail
+
+echo "deploy/activate starting"
+echo "HOME: ${HOME-}"
+cd "$(dirname "$0")/.."
+
+set -x
+
+id
+which bundle
+
+bundle exec rake deploy:activate db:create db:migrate:monitor_concurrent --trace
+
+set +x
+
+echo "deploy/activate finished"

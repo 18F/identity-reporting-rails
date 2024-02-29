@@ -38,6 +38,7 @@ development:
   database_worker_jobs_host: ''
   database_worker_jobs_password: ''
   domain_name: localhost:3000
+  secret_key_base: dev_secret_key_base
 
 # These values serve as defaults for all production-like environments
 production:
@@ -52,6 +53,7 @@ production:
   database_worker_jobs_username: ''
   database_worker_jobs_host: ''
   database_worker_jobs_password: ''
+  secret_key_base: ''
 
 test:
   database_host: ''
@@ -66,3 +68,4 @@ test:
   database_worker_jobs_host: ''
   database_worker_jobs_password: ''
   domain_name: www.example.com
+  secret_key_base: test_secret_key_base

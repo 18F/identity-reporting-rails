@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# This script is called by identity-devops cookbooks as part of the deployment
+# process. It runs build steps needed to complete building the application,
+# such as vendoring ruby/nodejs libraries and compiling static assets.
+# Then the deploy/activate script is called to instantiate live configuration
+# and take steps at runtime.
+
+set -euo pipefail
+
+echo "deploy/build starting"
+echo "HOME: ${HOME-}"
+cd "$(dirname "$0")/.."
+
+set -x
+
+# default bundle directory to shared directory
+: ${BUNDLE_DIR=/srv/reporting/shared/bundle}
+: ${REPORTING_LOCAL_DEPENDENCIES=false}
+
+# use system libxml2, not the one vendored with nokogiri
+bundle config build.nokogiri --use-system-libraries
+bundle config set --local deployment 'true'
+bundle config set --local path $BUNDLE_DIR
+bundle config set --local without 'deploy development doc test'
+
+if [ "$REPORTING_LOCAL_DEPENDENCIES" == "true" ]
+then
+  bundle install --jobs 4 --local
+  yarn install --production --frozen-lockfile --offline --cache-folder .yarn-cache
+else
+  bundle install --jobs 4
+  yarn install --production --frozen-lockfile --cache-folder .yarn-cache
+fi
+
+bundle binstubs --all
+
+set +x
+
+echo "deploy/build finished"
