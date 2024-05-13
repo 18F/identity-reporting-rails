@@ -28,7 +28,7 @@ group :development, :test do
   gem 'bullet', '~> 7.0'
   gem 'knapsack'
   gem 'listen'
-  gem 'nokogiri', '~> 1.16.2'
+  gem 'nokogiri', '~> 1.16.5'
   gem 'pg_query', require: false
   gem 'pry-byebug'
   gem 'pry-doc', '>= 1.5.0'
