@@ -109,7 +109,7 @@ production:
     host: <%= Identity::Hostdata.config.database_read_replica_host %>
     password: <%= Identity::Hostdata.config.database_readonly_password %>
     pool: <%= primary_pool %>
-    sslmode: <%= Identity::Hostdata.config.database_sslmode.to_str %>
+    sslmode: "<%= Identity::Hostdata.config.database_sslmode.to_str %>"
     sslrootcert: '/usr/local/share/aws/rds-combined-ca-bundle.pem'
     replica: true
   worker_jobs:
