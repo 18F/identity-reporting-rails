@@ -93,7 +93,11 @@ production:
     adapter: postgresql
     database: <%= Identity::Hostdata.config.database_name %>
     username: <%= Identity::Hostdata.config.database_username %>
-    host: <%= Identity::Hostdata.config.database_socket.present? ?  Identity::Hostdata.config.database_socket : Identity::Hostdata.config.database_host %>
+    <% if Identity::Hostdata.config.database_socket.present? %>
+    host: <%= Identity::Hosdata.config.database_socket %>
+    <% else %>
+    host: <%= Identity::Hostdata.config.database_host %>
+    <% end %>
     password: <%= Identity::Hostdata.config.database_password %>
     pool: <%= primary_pool %>
     advisory_locks: <%= !Identity::Hostdata.config.database_socket.present? %>
