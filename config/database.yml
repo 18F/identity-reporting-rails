@@ -115,7 +115,7 @@ production:
     pool: <%= primary_pool %>
     sslrootcert: '/usr/local/share/aws/rds-combined-ca-bundle.pem'
     replica: true
-    sslmode: "verify-full"
+    sslmode: verify-full
   worker_jobs:
     <<: *defaults
     database: <%= Identity::Hostdata.config.database_worker_jobs_name %>
