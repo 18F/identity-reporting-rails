@@ -124,6 +124,54 @@ RSpec.describe RedshiftSchemaUpdater do
         expect(results.values).to eq([[1, 999]])
       end
     end
+
+    context 'when a string column has their limit value updated in yaml file,' do
+      let(:existing_columns) do
+        [{ 'name' => 'id', 'datatype' => 'integer' },
+         { 'name' => 'string_with_limit', 'datatype' => 'string', 'limit' => 100 }]
+      end
+
+      before do
+        DataWarehouseApplicationRecord.establish_connection(:data_warehouse)
+        redshift_schema_updater.create_table(users_table, existing_columns)
+      end
+
+      it 'updates column with new limit' do
+        columns_objs = DataWarehouseApplicationRecord.connection.columns(users_table)
+        string_col = columns_objs.find { |col| col.name == 'string_with_limit' }
+        expect(string_col.limit).to eq(100)
+
+        redshift_schema_updater.update_schema_from_yaml(file_path2)
+
+        columns_objs = DataWarehouseApplicationRecord.connection.columns(users_table)
+        string_col = columns_objs.find { |col| col.name == 'string_with_limit' }
+        expect(string_col.limit).to eq(300)
+      end
+    end
+
+    context 'when a string column has a limit value added in yaml file for the first time,' do
+      let(:existing_columns) do
+        [{ 'name' => 'id', 'datatype' => 'integer' },
+         { 'name' => 'string_with_limit', 'datatype' => 'string' }]
+      end
+
+      before do
+        DataWarehouseApplicationRecord.establish_connection(:data_warehouse)
+        redshift_schema_updater.create_table(users_table, existing_columns)
+      end
+
+      it 'updates column with new limit' do
+        columns_objs = DataWarehouseApplicationRecord.connection.columns(users_table)
+        string_col = columns_objs.find { |col| col.name == 'string_with_limit' }
+        expect(string_col.limit).to eq(nil)
+
+        redshift_schema_updater.update_schema_from_yaml(file_path2)
+
+        columns_objs = DataWarehouseApplicationRecord.connection.columns(users_table)
+        string_col = columns_objs.find { |col| col.name == 'string_with_limit' }
+        expect(string_col.limit).to eq(300)
+      end
+    end
   end
 
   describe '.load_yaml' do

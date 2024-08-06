@@ -5,6 +5,11 @@ class RedshiftSchemaUpdater
     @schema_name = schema_name
   end
 
+  def using_redshift_adapter?
+    DataWarehouseApplicationRecord.
+      connection.adapter_name.downcase.include?('redshift')
+  end
+
   def update_schema_from_yaml(file_path)
     yaml_data = load_yaml(file_path)
     return unless yaml_data
@@ -28,35 +33,51 @@ class RedshiftSchemaUpdater
   def update_existing_table(table_name, columns)
     columns_objs = DataWarehouseApplicationRecord.connection.columns(table_name)
     existing_columns = columns_objs.map(&:name)
-    data_types = columns_objs.each_with_object({}) do |column, hash|
-      hash[column.name] = column.type.to_s
-    end
-    sql_data_types = columns_objs.each_with_object({}) do |column, hash|
-      hash[column.name] = column.sql_type
-    end
 
+    # rubocop:disable Metrics/BlockLength
     columns.each do |column_info|
       config_column_name, config_column_data_type = column_info.values_at('name', 'datatype')
+      datatype_metadata = columns_objs.find { |x| x.name == config_column_name }
+      default_varchar_limit = using_redshift_adapter? ? 256 : nil
+      config_column_options = {
+        limit: column_info.fetch('limit', default_varchar_limit),
+        if_not_exists: true,
+      }
       column_exists = existing_columns.include?(config_column_name)
-      data_type_matches = [data_types.fetch(config_column_name, nil),
-                           sql_data_types.fetch(
-                             config_column_name,
-                             nil,
-                           )].include?(redshift_data_type(config_column_data_type))
 
-      unless column_exists && data_type_matches
-        if column_exists && !data_type_matches
-          # Redshift does not support altering data type in place. Therefore, dropping
-          # the column and adding it back with the new data type is required.
-          update_column_data_type(table_name, config_column_name, config_column_data_type)
-        end
+      if column_exists
+        current_dw_data_types = [
+          datatype_metadata.type.to_s,
+          datatype_metadata.sql_type,
+        ]
+        data_type_requires_update = current_dw_data_types.exclude?(
+          redshift_data_type(config_column_data_type),
+        )
+        is_string_data_type = (current_dw_data_types & ['string', 'text']).any?
+        limit_changed = datatype_metadata.limit != config_column_options[:limit]
+        varchar_requires_update = is_string_data_type && limit_changed
+      end
+
+      if !column_exists
         add_column(
           table_name,
           config_column_name,
           config_column_data_type,
+          config_column_options,
+        )
+      elsif varchar_requires_update
+        # Redshift supports altering the length of a VARCHAR column in place.
+        update_varchar_length(table_name, config_column_name, config_column_options[:limit])
+      elsif data_type_requires_update
+        # Redshift does not support altering data type in place. Therefore, dropping
+        # the column and adding it back with the new data type is required.
+        update_column_data_type(
+          table_name, config_column_name, config_column_data_type,
+          config_column_options
         )
       end
     end
+    # rubocop:enable Metrics/BlockLength
 
     existing_columns.each do |existing_column_name|
       column_names = columns.map { |item| item['name'] }
@@ -73,19 +94,23 @@ class RedshiftSchemaUpdater
     DataWarehouseApplicationRecord.connection.create_table(table_name) do |t|
       columns.each do |column_info|
         column_name, column_data_type = column_info.values_at('name', 'datatype')
+        config_column_options = {
+          limit: column_info.fetch('limit', nil),
+          if_not_exists: true,
+        }
         next if column_name == 'id'
 
-        t.column column_name, redshift_data_type(column_data_type)
+        t.column column_name, redshift_data_type(column_data_type), **config_column_options
       end
     end
   end
 
-  def add_column(table_name, column_name, data_type)
+  def add_column(table_name, column_name, data_type, column_options = {})
     DataWarehouseApplicationRecord.connection.add_column(
       table_name,
       column_name,
       redshift_data_type(data_type),
-      if_not_exists: true,
+      **column_options,
     )
   end
 
@@ -95,10 +120,24 @@ class RedshiftSchemaUpdater
     )
   end
 
-  def update_column_data_type(table_name, column_name, new_data_type)
+  def update_varchar_length(table_name, column_name, new_limit)
+    if using_redshift_adapter?
+      DataWarehouseApplicationRecord.connection.execute(
+        DataWarehouseApplicationRecord.sanitize_sql(
+          "ALTER TABLE #{table_name} ALTER COLUMN #{column_name} TYPE VARCHAR(#{new_limit})",
+        ),
+      )
+    else
+      DataWarehouseApplicationRecord.connection.change_column(
+        table_name, column_name, 'string', limit: new_limit
+      )
+    end
+  end
+
+  def update_column_data_type(table_name, column_name, new_data_type, keyword_options)
     old_column_name = "#{column_name}_copy"
     rename_column(table_name, column_name, old_column_name)
-    add_column(table_name, column_name, new_data_type)
+    add_column(table_name, column_name, new_data_type, keyword_options)
     backfill_column(table_name, old_column_name, column_name)
     remove_column(table_name, old_column_name)
   end
@@ -121,13 +160,11 @@ class RedshiftSchemaUpdater
     case datatype
     when 'json', 'jsonb'
       'super'
+    when 'text'
+      'string'
     else
       datatype
     end
-    # Some fields in the source database are stored as TEXT data type, these fields have
-    # unlimited length, however, the TEXT data type in Redshift has a default length of
-    # 256 characters. This could cause errors when trying to insert data into Redshift if
-    # the source data is longer than 256 characters.
   end
 
   private

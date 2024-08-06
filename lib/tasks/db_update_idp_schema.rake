@@ -15,7 +15,10 @@ namespace :db do
 
     schema_updater = RedshiftSchemaUpdater.new('idp')
     schema_updater.update_schema_from_yaml(
-      Rails.root.join('dms-filter-columns-transformation-rules.yml'),
+      File.join(
+        '/etc/login.gov/repos/identity-devops/terraform/app',
+        'dms-filter-columns-transformation-rules.yml',
+      ),
     )
   end
 end

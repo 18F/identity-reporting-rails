@@ -13,6 +13,9 @@
       datatype: datetime
     - name: some_numeric_column
       datatype: integer
+    - name: string_with_limit
+      datatype: string
+      limit: 300
 
 - table: events
   schema: public
