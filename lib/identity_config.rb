@@ -42,7 +42,7 @@ class IdentityConfig
     config.add(:redshift_database_name, type: :string)
     config.add(:redshift_host, type: :string)
 
-    "redshift!#{Identity::Hostdata.env || 'local'}-analytics-awsuser".
+    "redshift!#{Identity::Hostdata.env || 'local'}-analytics-superuser".
       then do |redshift_secrets_manager_key|
         config.add(
           :redshift_password,

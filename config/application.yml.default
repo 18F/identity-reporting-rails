@@ -41,7 +41,7 @@ development:
   secret_key_base: dev_secret_key_base
   redshift_database_name: ''
   redshift_host: ''
-  redshift!local-analytics-awsuser: '{"username":"","password":""}'
+  redshift!local-analytics-superuser: '{"username":"","password":""}'
 
 # These values serve as defaults for all production-like environments
 production:
@@ -76,4 +76,4 @@ test:
   secret_key_base: test_secret_key_base
   redshift_database_name: ''
   redshift_host: ''
-  redshift!local-analytics-awsuser: '{"username":"","password":""}'
+  redshift!local-analytics-superuser: '{"username":"","password":""}'
