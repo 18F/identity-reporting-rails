@@ -2,10 +2,10 @@ source 'https://rubygems.org'
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
-gem 'activerecord7-redshift-adapter-pennylane', '~> 1.0', '>= 1.0.4',
-    require: 'active_record/connection_adapters/redshift_adapter'
-gem 'rails', '~> 7.1.3.3'
+gem 'activerecord7-redshift-adapter-pennylane'
+gem 'rails', '~> 7.2.1'
 gem 'bootsnap', '~> 1.0', require: false
+gem 'csv'
 gem 'faker'
 gem 'good_job', '~> 3.0'
 gem 'identity-hostdata', github: '18F/identity-hostdata', tag: 'v4.1.0'
@@ -19,7 +19,7 @@ gem 'tzinfo-data', platforms: %i[ windows jruby ]
 
 group :development do
   gem 'better_errors', '>= 2.5.1'
-  gem 'irb', '~> 1.11.0'
+  gem 'irb'
   gem 'rack-mini-profiler', '>= 1.1.3', require: false
 end
 
