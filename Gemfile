@@ -2,7 +2,8 @@ source 'https://rubygems.org'
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
-gem 'activerecord7-redshift-adapter-pennylane', require: 'active_record/connection_adapters/redshift_adapter'
+gem 'activerecord7-redshift-adapter-pennylane',
+  require: 'active_record/connection_adapters/redshift_adapter'
 gem 'rails', '~> 7.2.1'
 gem 'bootsnap', '~> 1.0', require: false
 gem 'csv'
