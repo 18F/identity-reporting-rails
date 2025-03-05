@@ -13,7 +13,7 @@ gem 'identity-logging', github: '18F/identity-logging', tag: 'v0.1.0'
 gem 'identity_validations', github: '18F/identity-validations', tag: 'v0.7.2'
 gem 'puma', '>= 5.6.7'
 gem 'pg'
-gem 'rack', '>= 2.2.3.1'
+gem 'rack', '>= 3.1.11'
 gem 'redacted_struct'
 gem 'tzinfo-data', platforms: %i[ windows jruby ]
 gem 'caxlsx', require: false
