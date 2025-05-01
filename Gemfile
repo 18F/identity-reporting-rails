@@ -30,7 +30,7 @@ group :development, :test do
   gem 'bullet', '~> 8.0'
   gem 'knapsack'
   gem 'listen'
-  gem 'nokogiri', '~> 1.18.0'
+  gem 'nokogiri', '~> 1.18.8'
   gem 'pg_query', '~> 6.1.0', require: false
   gem 'pry-byebug'
   gem 'pry-doc', '>= 1.5.0'
