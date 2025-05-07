@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_03_03_175409) do
+ActiveRecord::Schema[7.2].define(version: 2025_05_07_072820) do
   create_schema "idp"
   create_schema "logs"
   create_schema "system_tables"
@@ -178,7 +178,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_03_03_175409) do
     t.boolean "piv_cac_scoped_by_email", default: false, null: false
     t.boolean "pkce", default: false, null: false
     t.string "push_notification_url"
-    t.jsonb "help_text", default: {"sign_in"=>{}, "sign_up"=>{}, "forgot_password"=>{}}
+    t.jsonb "help_text", default: {"sign_in" => {}, "sign_up" => {}, "forgot_password" => {}}
     t.boolean "allow_prompt_login", default: false, null: false
     t.boolean "signed_response_message_requested", default: false, null: false
     t.string "remote_logo_key"
