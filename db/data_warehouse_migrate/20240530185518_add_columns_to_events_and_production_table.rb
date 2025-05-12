@@ -1,7 +1,32 @@
-class AddColumnsToEventsAndProductionTable < ActiveRecord::Migration[7.1]
-  def change
-    # Add columns to 'logs.events' table
-    add_column 'logs.events', :id, :string
+class AddColumnsToEventsAndProductionTable < ActiveRecord::Migration[7.2]
+  def up
+    if connection.adapter_name.downcase.include?('redshift')
+
+      execute <<-SQL
+        ALTER TABLE logs.events
+          ADD COLUMN id VARCHAR(256) NOT NULL DEFAULT '';
+      SQL
+
+      execute <<-SQL
+        ALTER TABLE logs.events ADD PRIMARY KEY (id);
+      SQL
+
+      execute <<-SQL
+        ALTER TABLE logs.production
+          ADD COLUMN uuid VARCHAR(256) NOT NULL DEFAULT '';
+      SQL
+
+      execute <<-SQL
+        ALTER TABLE logs.production ADD PRIMARY KEY (uuid) ;
+      SQL
+      
+    else      
+      # Add columns to 'logs.events' table
+      add_column 'logs.events', :id, :string, null: false
+      # Add columns to 'logs.production' table
+      add_column 'logs.production', :uuid, :string, null: false
+    end
+
     add_column 'logs.events', :name, :string
     add_column 'logs.events', :time, :timestamp
     add_column 'logs.events', :visitor_id, :string
@@ -27,9 +52,8 @@ class AddColumnsToEventsAndProductionTable < ActiveRecord::Migration[7.1]
     add_column 'logs.events', :browser_mobile, :boolean, null: true
     add_column 'logs.events', :browser_bot, :boolean, null: true
     add_column 'logs.events', :success, :boolean, null: true
-
+    
     # Add columns to 'logs.production' table
-    add_column 'logs.production', :uuid, :string
     add_column 'logs.production', :method, :string
     add_column 'logs.production', :path, :string, limit: 12000
     add_column 'logs.production', :format, :string
