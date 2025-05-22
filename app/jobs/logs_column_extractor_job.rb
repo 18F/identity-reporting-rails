@@ -100,12 +100,9 @@ class LogsColumnExtractorJob < ApplicationJob
     if source_table_count > 0
       begin
         DataWarehouseApplicationRecord.transaction do
-          DataWarehouseApplicationRecord.connection.execute(lock_table_query)
-          DataWarehouseApplicationRecord.connection.execute(create_temp_table_query)
-          DataWarehouseApplicationRecord.
-            connection.execute(drop_duplicate_rows_from_temp_query)
-          DataWarehouseApplicationRecord.connection.execute(merge_temp_with_target_query)
-          DataWarehouseApplicationRecord.connection.execute(truncate_source_table_query)
+          transaction_queries_to_run.each do |query|
+            DataWarehouseApplicationRecord.connection.execute(query)
+          end
         end
       rescue => e
         Rails.logger.info(
@@ -150,8 +147,12 @@ class LogsColumnExtractorJob < ApplicationJob
         connection.quote_table_name(@source_table_name),
       source_table_name_temp: DataWarehouseApplicationRecord.
         connection.quote_table_name("#{@source_table_name}_temp"),
+      source_table_name_with_dups_temp: DataWarehouseApplicationRecord.
+        connection.quote_table_name("#{@source_table_name}_with_dups_temp"),
       target_table_name: DataWarehouseApplicationRecord.
         connection.quote_table_name(@target_table_name),
+      merge_key: DataWarehouseApplicationRecord.
+        connection.quote_column_name(@merge_key),
     }
   end
 
@@ -161,24 +162,25 @@ class LogsColumnExtractorJob < ApplicationJob
     SQL
   end
 
-  def create_temp_table_query
+  def create_temp_source_table_query
+    duplicate_key = extract_json_key(
+      column: 'message',
+      key: @merge_key,
+      type: 'VARCHAR',
+    )
     format(<<~SQL, build_params)
-      CREATE TEMP TABLE %{source_table_name_temp} AS
-      #{select_message_fields}
+      CREATE TEMP TABLE %{source_table_name_with_dups_temp} AS
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY #{duplicate_key}) as row_num
       FROM %{schema_name}.%{source_table_name};
     SQL
   end
 
-  def drop_duplicate_rows_from_temp_query
+  def create_temp_source_table_without_dups_query
     format(<<~SQL, build_params)
-      WITH duplicate_rows as (
-          SELECT #{@merge_key}
-          , ROW_NUMBER() OVER (PARTITION BY #{@merge_key} ORDER BY cloudwatch_timestamp desc) as row_num
-          FROM %{source_table_name_temp}
-      )
-      DELETE FROM %{source_table_name_temp}
-      USING duplicate_rows
-      WHERE duplicate_rows.#{@merge_key} = %{source_table_name_temp}.#{@merge_key} and duplicate_rows.row_num > 1;
+      CREATE TEMP TABLE %{source_table_name_temp} AS
+      #{select_message_fields}
+      FROM %{source_table_name_with_dups_temp}
+      WHERE row_num = 1;
     SQL
   end
 
@@ -204,10 +206,38 @@ class LogsColumnExtractorJob < ApplicationJob
     end
   end
 
-  def truncate_source_table_query
+  def drop_merged_records_from_source_table_query
+    merge_key_from_json = extract_json_key(
+      column: 'message',
+      key: @merge_key,
+      type: 'VARCHAR',
+      keep_parenthesis: false,
+    )
     format(<<~SQL, build_params)
-      TRUNCATE %{schema_name}.%{source_table_name};
+      DELETE FROM %{schema_name}.%{source_table_name}
+      USING %{schema_name}.%{target_table_name}
+      WHERE %{schema_name}.%{source_table_name}.#{merge_key_from_json} = %{schema_name}.%{target_table_name}.%{merge_key}
+      AND %{schema_name}.%{target_table_name}.cloudwatch_timestamp BETWEEN 
+        (
+          SELECT MIN(cloudwatch_timestamp)
+          FROM %{source_table_name_temp}
+        ) 
+        AND
+        (
+          SELECT MAX(cloudwatch_timestamp)
+          FROM %{source_table_name_temp}
+        )
+      ;
     SQL
+  end
+
+  def transaction_queries_to_run
+    [
+      create_temp_source_table_query,
+      create_temp_source_table_without_dups_query,
+      merge_temp_with_target_query,
+      drop_merged_records_from_source_table_query,
+    ]
   end
 
   def conflict_update_set
@@ -255,7 +285,7 @@ class LogsColumnExtractorJob < ApplicationJob
     end
   end
 
-  def extract_json_key(column:, key:, type:)
+  def extract_json_key(column:, key:, type:, keep_parenthesis: true)
     if DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
       # Redshift environment using SUPER Column type
       "#{column}.#{key}"
@@ -266,13 +296,14 @@ class LogsColumnExtractorJob < ApplicationJob
       to_string = TYPES_TO_EXTRACT_AS_TEXT.include?(type) || type.include?('VARCHAR') ? true : false
       if to_string
         if key_parts.length == 1
-          "(#{column}->>'#{key}')"
+          final_key = "(#{column}->>'#{key}')"
         else
-          "(#{column}->#{key_parts[0..-2].join('->') + '->>' + key_parts[-1]})"
+          final_key = "(#{column}->#{key_parts[0..-2].join('->') + '->>' + key_parts[-1]})"
         end
       else
-        "(#{column}->#{key_parts.join('->')})"
+        final_key = "(#{column}->#{key_parts.join('->')})"
       end
+      keep_parenthesis ? final_key : final_key[1..-2]
     end
   end
 end
