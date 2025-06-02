@@ -3,6 +3,7 @@ class IdentityConfig
   GIT_TAG = `git tag --points-at HEAD`.chomp.split("\n").first
   GIT_BRANCH = `git rev-parse --abbrev-ref HEAD`.chomp
   REPO_PATHS = {
+    etl_config: '/etc/login.gov/repos/identity-devops-private',
     identity_devops: '/etc/login.gov/repos/identity-devops',
     user_sync_identity_devops: '/usersync/identity-devops',
   }
