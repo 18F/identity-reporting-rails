@@ -14,9 +14,9 @@ namespace :db do
     end
 
     schema_updater = RedshiftSchemaUpdater.new('idp')
-    local_devops_path = IdentityConfig::REPO_PATHS[:identity_devops]
+    local_etl_path = IdentityConfig::REPO_PATHS[:etl_config]
     schema_updater.update_schema_from_yaml(
-      "#{local_devops_path}/terraform/modules/data_warehouse_export/dms-filter-columns-transformation-rules.yml", # rubocop:disable Layout/LineLength
+      "#{local_etl_path}/modules/data_warehouse_etl_config/config/db-transformation-rules.yml", # rubocop:disable Layout/LineLength
     )
   end
 end
