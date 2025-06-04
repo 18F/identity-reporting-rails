@@ -16,7 +16,7 @@ namespace :db do
     schema_updater = RedshiftSchemaUpdater.new('idp')
     local_etl_path = IdentityConfig::REPO_PATHS[:etl_config]
     schema_updater.update_schema_from_yaml(
-      "#{local_etl_path}/modules/data_warehouse_etl_config/config/db-transformation-rules.yml", 
+      "#{local_etl_path}/modules/data_warehouse_etl_config/config/db-transformation-rules.yml",
     )
   end
 end
