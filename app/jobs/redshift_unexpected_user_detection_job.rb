@@ -48,7 +48,7 @@ class RedshiftUnexpectedUserDetectionJob < ApplicationJob
     <<~SQL
       SELECT usename
       FROM pg_user
-      WHERE usename NOT IN ('rdsdb', 'rdsadmin', 'superuser', 'postgres', 'security_audit')
+      WHERE usename NOT IN ('rdsdb', 'rdsadmin', 'superuser', 'postgres', 'security_audit', 'quicksight_connector')
     SQL
   end
 
