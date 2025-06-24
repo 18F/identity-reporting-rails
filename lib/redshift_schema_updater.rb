@@ -96,11 +96,31 @@ class RedshiftSchemaUpdater
     config_column_data_type = column_info.fetch('datatype')
     default_varchar_limit = (using_redshift_adapter? &&
       ['string', 'text'].include?(config_column_data_type)) ? 256 : nil
-    {
+    is_not_null = column_info.fetch('not_null', false)
+    
+    options = {
       limit: column_info.fetch('limit', default_varchar_limit),
       if_not_exists: true,
-      null: !column_info.fetch('not_null', false),
+      null: true, # Temporarily make all columns nullable to avoid Redshift issues
     }
+    
+    # Add default value for NOT NULL columns when using Redshift
+    if using_redshift_adapter? && is_not_null && !column_info.key?('default')
+      case config_column_data_type
+      when 'bigint', 'integer'
+        options[:default] = 0
+      when 'string', 'text'
+        options[:default] = ''
+      when 'boolean'
+        options[:default] = false
+      when 'datetime'
+        options[:default] = -> { 'CURRENT_TIMESTAMP' }
+      end
+    elsif column_info.key?('default')
+      options[:default] = column_info['default']
+    end
+    
+    options
   end
 
   def update_existing_table(table_name, columns)
@@ -364,6 +384,7 @@ class RedshiftSchemaUpdater
   end
 
   def add_column(table_name, column_name, data_type, column_options = {})
+    log_info("Adding column #{column_name} to #{table_name} with options: #{column_options}")
     DataWarehouseApplicationRecord.connection.add_column(
       table_name,
       column_name,
