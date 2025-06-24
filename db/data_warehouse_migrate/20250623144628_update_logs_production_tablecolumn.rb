@@ -8,7 +8,7 @@ class UpdateLogsProductionTablecolumn < ActiveRecord::Migration[7.2]
       execute "UPDATE logs.production SET duration = duration_old::DECIMAL(10,6)"
       execute "ALTER TABLE logs.production DROP COLUMN duration_old"
     else
-      change_column 'logs.production', :duration, :decimal, precision: 10, scale: 6
+      change_column 'logs.production', :duration, :decimal, precision: 10, scale: 6, null: true
     end
   end
   
@@ -19,7 +19,7 @@ class UpdateLogsProductionTablecolumn < ActiveRecord::Migration[7.2]
       execute "UPDATE logs.production SET duration = duration_old::FLOAT"
       execute "ALTER TABLE logs.production DROP COLUMN duration_old"
     else
-      change_column 'logs.production', :duration, :float
+      change_column 'logs.production', :duration, :float, null: true
     end
   end
 end
