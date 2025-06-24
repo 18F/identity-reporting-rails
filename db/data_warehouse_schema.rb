@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2024_10_28_111230) do
+ActiveRecord::Schema[7.2].define(version: 2025_06_23_144628) do
   create_schema "idp"
   create_schema "logs"
   create_schema "system_tables"
@@ -59,7 +59,7 @@ ActiveRecord::Schema[7.2].define(version: 2024_10_28_111230) do
     t.string "controller"
     t.string "action"
     t.integer "status"
-    t.float "duration"
+    t.decimal "duration", precision: 10, scale: 6
     t.string "git_sha"
     t.string "git_branch"
     t.datetime "timestamp", precision: nil
