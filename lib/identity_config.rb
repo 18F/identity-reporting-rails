@@ -53,11 +53,10 @@ class IdentityConfig
     config.add(:redshift_host, type: :string)
     config.add(:data_freshness_threshold_hours, type: :integer)
     config.add(:unload_line_count_threshold, type: :integer)
-    config.add(:report_timeout, type: :integer)
     config.add(:s3_report_public_bucket_prefix, type: :string)
+    config.add(:report_timeout, type: :integer)
     config.add(:s3_reports_enabled, type: :boolean)
     config.add(:s3_report_bucket_prefix, type: :string)
-    config.add(:secret_key_base, type: :string)
     config.add(:redshift_sia_v3_enabled, type: :boolean)
 
     "redshift/#{Identity::Hostdata.env || 'local'}-analytics-superuser".
@@ -72,6 +71,7 @@ class IdentityConfig
           secrets_manager_name: redshift_secrets_manager_key,
           type: :string,
         ) { |raw| JSON.parse(raw).fetch('username') }
+        config.add(:secret_key_base, type: :string)
       end
   end.freeze
   # rubocop:enable Metrics/BlockLength
