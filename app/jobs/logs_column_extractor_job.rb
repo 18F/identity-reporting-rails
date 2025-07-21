@@ -47,7 +47,6 @@ class LogsColumnExtractorJob < ApplicationJob
       { column: 'controller', key: 'controller', type: 'VARCHAR' },
       { column: 'action', key: 'action', type: 'VARCHAR' },
       { column: 'status', key: 'status', type: 'INTEGER' },
-      { column: 'duration', key: 'duration', type: 'DECIMAL(15,4)' },
       { column: 'git_sha', key: 'git_sha', type: 'VARCHAR' },
       { column: 'git_branch', key: 'git_branch', type: 'VARCHAR' },
       { column: 'timestamp', key: 'timestamp', type: 'TIMESTAMP' },
@@ -56,6 +55,7 @@ class LogsColumnExtractorJob < ApplicationJob
       { column: 'ip', key: 'ip', type: 'VARCHAR' },
       { column: 'host', key: 'host', type: 'VARCHAR' },
       { column: 'trace_id', key: 'trace_id', type: 'VARCHAR' },
+      { column: 'duration', key: 'duration', type: 'DECIMAL(15,4)' },
     ],
   }
 
