@@ -184,12 +184,44 @@ class LogsColumnExtractorJob < ApplicationJob
     SQL
   end
 
+  def build_merge_variables(source_table_name_temp, column_map)
+    # Include message and cloudwatch_timestamp at the beginning of the column map
+    all_columns = [
+      { column: 'message', key: 'message', type: 'JSONB' },
+      { column: 'cloudwatch_timestamp', key: 'cloudwatch_timestamp', type: 'TIMESTAMP' },
+    ] + column_map.map do |col|
+      { column: col[:column], key: col[:key], type: col[:type] }
+    end
+
+    update_set = all_columns.map do |c|
+      "#{c[:column]} = #{source_table_name_temp}.#{c[:column]}"
+    end
+    insert_columns = all_columns.map { |c| c[:column] }.join(' ,')
+    insert_values = all_columns.map { |c| "#{source_table_name_temp}.#{c[:column]}" }.join(' ,')
+
+    {
+      update_set: update_set.join(",\n    "),
+      insert_columns: insert_columns,
+      insert_values: insert_values,
+    }
+  end
+
   def merge_temp_with_target_query
+    @source_table_name_temp = "#{@source_table_name}_temp"
+    vars = build_merge_variables(@source_table_name_temp, @column_map)
+
     if DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
       format(<<~SQL, build_params)
         MERGE INTO %{schema_name}.%{target_table_name}
         USING %{source_table_name_temp}
         ON %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
+        WHEN MATCHED THEN
+          UPDATE SET
+            #{vars[:update_set]}
+        WHEN NOT MATCHED THEN
+          INSERT (#{vars[:insert_columns]})
+          VALUES (#{vars[:insert_values]} )
+          ;
         REMOVE DUPLICATES;
       SQL
     else
