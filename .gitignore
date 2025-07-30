@@ -56,3 +56,13 @@ Vagrantfile
 /config/deploy/*.rb
 /kitchen/data_bags/config/*.yml
 /kitchen/data_bags/config/databag_secrets.json
+
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

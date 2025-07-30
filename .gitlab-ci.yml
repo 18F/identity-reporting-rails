@@ -133,6 +133,8 @@ include:
   - template: Jobs/SAST.latest.gitlab-ci.yml
   - template: Jobs/Secret-Detection.latest.gitlab-ci.yml
   - template: Jobs/Dependency-Scanning.latest.gitlab-ci.yml
+  - local: .gitlab-ci-devenv.yml
+  - local: .gitlab-ci-rules.yml
 
 audit_packages_scheduled:
   stage:
