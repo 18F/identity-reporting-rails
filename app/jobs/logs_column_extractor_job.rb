@@ -222,7 +222,6 @@ class LogsColumnExtractorJob < ApplicationJob
           INSERT (#{vars[:insert_columns]})
           VALUES (#{vars[:insert_values]} )
           ;
-        REMOVE DUPLICATES;
       SQL
     else
       # Local Postgres DB does not support REMOVE DUPLICATES clause
