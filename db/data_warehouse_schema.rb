@@ -59,7 +59,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_06_23_144628) do
     t.string "controller"
     t.string "action"
     t.integer "status"
-    t.decimal "duration", precision: 10, scale: 6
+    t.decimal "duration", precision: 15, scale: 4
     t.string "git_sha"
     t.string "git_branch"
     t.datetime "timestamp", precision: nil
