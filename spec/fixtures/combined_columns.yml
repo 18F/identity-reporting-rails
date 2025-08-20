@@ -1,0 +1,46 @@
+- table: new_users
+  schema: public
+  primary_key: id
+  include_columns:
+    - name: id
+      datatype: integer
+      not_null: true
+    - name: name
+      datatype: string
+      not_null: true
+    - name: email
+      datatype: string
+  add_columns:
+    - name: created_at
+      datatype: datetime
+    - name: updated_at
+      datatype: datetime
+    - name: redshift_only_field
+      datatype: string
+      limit: 256
+
+- table: events
+  schema: public
+  primary_key: id
+  foreign_keys:
+    - column: new_user_id
+      references:
+        table: new_users
+        column: id
+  include_columns:
+    - name: id
+      datatype: integer
+      not_null: true
+    - name: name
+      datatype: string
+    - name: new_user_id
+      datatype: integer
+    - name: event_type
+      datatype: integer
+  add_columns:
+    - name: created_at
+      datatype: datetime
+    - name: updated_at
+      datatype: datetime
+    - name: analytics_score
+      datatype: float

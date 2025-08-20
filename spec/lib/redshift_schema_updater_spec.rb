@@ -5,10 +5,14 @@ RSpec.describe RedshiftSchemaUpdater do
   let!(:redshift_schema_updater) { RedshiftSchemaUpdater.new('idp') }
   let!(:file_path) { Rails.root.join('spec', 'fixtures', 'includes_columns.yml') }
   let!(:file_path2) { Rails.root.join('spec', 'fixtures', 'includes_columns2.yml') }
+  let!(:combined_columns_file_path) { Rails.root.join('spec', 'fixtures', 'combined_columns.yml') }
   let!(:users_table) { 'idp.new_users' }
   let!(:events_table) { 'idp.events' }
   let!(:primary_key) { 'id' }
   let!(:expected_columns) { ['id', 'name', 'email', 'created_at', 'updated_at'] }
+  let!(:expected_combined_columns) do
+    ['id', 'name', 'email', 'created_at', 'updated_at', 'redshift_only_field']
+  end
   let!(:yaml_data) do
     [
       {
@@ -267,6 +271,121 @@ RSpec.describe RedshiftSchemaUpdater do
 
         msg = 'Foreign keys and Primary_keys are not processed'
         expect(redshift_schema_updater).to have_received(:log_info).with(msg)
+      end
+    end
+  end
+
+  describe '.update_schema_from_yaml with combined include_columns and add_columns' do
+    context 'when data_warehouse_fcms_enabled is true' do
+      before do
+        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(true)
+      end
+
+      context 'when using both include_columns and add_columns in same table' do
+        it 'creates new table with columns from both configurations' do
+          expect(redshift_schema_updater.table_exists?(users_table)).to eq(false)
+          expect(redshift_schema_updater.table_exists?(events_table)).to eq(false)
+
+          redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+          expect(redshift_schema_updater.table_exists?(users_table)).to eq(true)
+          expect(redshift_schema_updater.table_exists?(events_table)).to eq(true)
+
+          users_columns = DataWarehouseApplicationRecord.connection.columns(users_table)
+          expect(users_columns.map(&:name)).to match_array(expected_combined_columns)
+
+          redshift_only_field = users_columns.find { |col| col.name == 'redshift_only_field' }
+          expect(redshift_only_field).not_to be_nil
+          expect(redshift_only_field.limit).to eq(256)
+
+          id_column = users_columns.find { |col| col.name == 'id' }
+          expect(id_column.null).to eq(false)
+
+          primary_key_query = <<~SQL
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tco
+            JOIN information_schema.key_column_usage kcu
+            ON kcu.constraint_name = tco.constraint_name
+            WHERE tco.table_name = 'new_users' AND tco.constraint_type = 'PRIMARY KEY';
+          SQL
+          primary_key_result = DataWarehouseApplicationRecord.
+            connection.exec_query(primary_key_query).to_a
+          expect(primary_key_result.map { |row| row['column_name'] }).to include('id')
+        end
+
+        context 'when table already exists' do
+          let(:existing_columns) { [{ 'name' => 'id', 'datatype' => 'integer' }] }
+          let(:foreign_keys) { [] }
+
+          before do
+            redshift_schema_updater.
+              create_table(users_table, existing_columns, primary_key, foreign_keys)
+          end
+
+          it 'adds new columns from both include_columns and add_columns' do
+            expect(redshift_schema_updater.table_exists?(users_table)).to eq(true)
+            existing_columns = DataWarehouseApplicationRecord.connection.columns(users_table)
+            expect(existing_columns.map(&:name)).to eq(['id'])
+
+            redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+            new_columns = DataWarehouseApplicationRecord.connection.columns(users_table).map(&:name)
+            expect(new_columns).to match_array(expected_combined_columns)
+
+            redshift_only_field = DataWarehouseApplicationRecord.connection.columns(users_table).find do |col|
+              col.name == 'redshift_only_field'
+            end
+            expect(redshift_only_field).not_to be_nil
+          end
+        end
+
+        it 'handles events table with both column types correctly' do
+          redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+          events_columns = DataWarehouseApplicationRecord.connection.columns(events_table)
+          expected_events_columns = ['id', 'name', 'new_user_id', 'event_type', 'created_at',
+                                     'updated_at', 'analytics_score']
+          expect(events_columns.map(&:name)).to match_array(expected_events_columns)
+
+          analytics_score_field = events_columns.find { |col| col.name == 'analytics_score' }
+          expect(analytics_score_field).not_to be_nil
+          expect(analytics_score_field.type).to eq(:float)
+        end
+      end
+    end
+
+    context 'when data_warehouse_fcms_enabled is false' do
+      before do
+        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(false)
+      end
+
+      it 'ignores add_columns and only processes include_columns' do
+        expect(redshift_schema_updater.table_exists?(users_table)).to eq(false)
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+        expect(redshift_schema_updater.table_exists?(users_table)).to eq(true)
+
+        users_columns = DataWarehouseApplicationRecord.connection.columns(users_table)
+        expected_include_only_columns = ['id', 'name', 'email']
+        expect(users_columns.map(&:name)).to match_array(expected_include_only_columns)
+
+        redshift_only_field = users_columns.find { |col| col.name == 'redshift_only_field' }
+        expect(redshift_only_field).to be_nil
+
+        created_at_field = users_columns.find { |col| col.name == 'created_at' }
+        expect(created_at_field).to be_nil
+      end
+
+      it 'handles events table correctly when feature flag is disabled' do
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+        events_columns = DataWarehouseApplicationRecord.connection.columns(events_table)
+        expected_include_only_columns = ['id', 'name', 'new_user_id', 'event_type']
+        expect(events_columns.map(&:name)).to match_array(expected_include_only_columns)
+
+        analytics_score_field = events_columns.find { |col| col.name == 'analytics_score' }
+        expect(analytics_score_field).to be_nil
       end
     end
   end
