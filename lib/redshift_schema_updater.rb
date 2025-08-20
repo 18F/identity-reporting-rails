@@ -34,7 +34,9 @@ class RedshiftSchemaUpdater
 
     yaml_data.each do |table_data|
       table_name = "#{@schema_name}.#{table_data['table']}"
-      columns = table_data['include_columns']
+      include_columns = table_data['include_columns'] || []
+      add_columns = fcms_enabled? ? (table_data['add_columns'] || []) : []
+      columns = include_columns + add_columns
       primary_key_column = table_data['primary_key']
       foreign_key_columns = table_data['foreign_keys'] || []
 
@@ -426,6 +428,10 @@ class RedshiftSchemaUpdater
   end
 
   private
+
+  def fcms_enabled?
+    IdentityConfig.store.data_warehouse_fcms_enabled
+  end
 
   def execute_query(query, *args)
     DataWarehouseApplicationRecord.connection.exec_query(
