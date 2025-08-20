@@ -136,6 +136,10 @@ class RedshiftSchemaUpdater
           config_column_data_type,
           config_column_options,
         )
+
+        if column_info['encrypt']
+          set_column_permissions_for_encrypted(table_name, config_column_name)
+        end
       elsif varchar_requires_update
         # Redshift supports altering the length of a VARCHAR column in place.
         update_varchar_length(table_name, config_column_name, config_column_options[:limit])
@@ -146,6 +150,10 @@ class RedshiftSchemaUpdater
           table_name, config_column_name, config_column_data_type,
           config_column_options
         )
+
+        if column_info['encrypt']
+          set_column_permissions_for_encrypted(table_name, config_column_name)
+        end
       end
     end
     # rubocop:enable Metrics/BlockLength
@@ -347,6 +355,13 @@ class RedshiftSchemaUpdater
     end
     log_info("Table created: #{table_name}")
 
+    # Set column permissions for encrypted columns
+    columns.each do |column_info|
+      if column_info['encrypt']
+        set_column_permissions_for_encrypted(table_name, column_info['name'])
+      end
+    end
+
     if primary_key
       add_primary_key(table_name, primary_key) unless primary_key_exists?(
         table_name,
@@ -372,6 +387,25 @@ class RedshiftSchemaUpdater
       redshift_data_type(data_type),
       **column_options,
     )
+  end
+
+  def set_column_permissions_for_encrypted(table_name, column_name)
+    if using_redshift_adapter?
+      revoke_sql = "REVOKE SELECT ON #{table_name}(#{column_name}) FROM PUBLIC"
+      grant_sql = "GRANT SELECT ON #{table_name}(#{column_name}) TO GROUP dwadmin"
+
+      DataWarehouseApplicationRecord.connection.execute(
+        DataWarehouseApplicationRecord.sanitize_sql(revoke_sql),
+      )
+      DataWarehouseApplicationRecord.connection.execute(
+        DataWarehouseApplicationRecord.sanitize_sql(grant_sql),
+      )
+
+      log_info("Column permissions set for #{table_name}.#{column_name} - restricted to dwadmin group")
+    end
+  rescue StandardError => e
+    log_error("Error setting column permissions for #{column_name}: #{e.message}")
+    raise e
   end
 
   def remove_column(table_name, column_name)
