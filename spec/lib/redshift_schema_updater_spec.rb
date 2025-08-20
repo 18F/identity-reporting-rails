@@ -429,4 +429,177 @@ RSpec.describe RedshiftSchemaUpdater do
       end
     end
   end
+
+  describe 'set_column_permissions_for_encrypted' do
+    let(:table_name) { 'idp.secure_users' }
+    let(:column_name) { 'decrypted_ssn' }
+    let(:connection) { DataWarehouseApplicationRecord.connection }
+
+    before do
+      allow(redshift_schema_updater).to receive(:log_info)
+      allow(redshift_schema_updater).to receive(:log_error)
+    end
+
+    context 'when using redshift adapter' do
+      before do
+        allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_return(true)
+        allow(connection).to receive(:execute)
+      end
+
+      it 'revokes SELECT from PUBLIC and grants to dwadmin group' do
+        expect(connection).to receive(:execute).with(
+          "REVOKE SELECT ON #{table_name}(#{column_name}) FROM PUBLIC",
+        ).ordered
+        expect(connection).to receive(:execute).with(
+          "GRANT SELECT ON #{table_name}(#{column_name}) TO GROUP dwadmin",
+        ).ordered
+
+        redshift_schema_updater.set_column_permissions_for_encrypted(table_name, column_name)
+      end
+
+      it 'logs the permission changes' do
+        redshift_schema_updater.set_column_permissions_for_encrypted(table_name, column_name)
+
+        expect(redshift_schema_updater).to have_received(:log_info).with(
+          "Column permissions set for #{table_name}.#{column_name} - restricted to dwadmin group",
+        )
+      end
+
+      context 'when SQL execution fails' do
+        before do
+          allow(connection).to receive(:execute).and_raise(
+            StandardError.new('Permission denied'),
+          )
+        end
+
+        it 'logs error and re-raises exception' do
+          expect(redshift_schema_updater).to receive(:log_error).with(
+            "Error setting column permissions for #{column_name}: Permission denied",
+          )
+
+          expect do
+            redshift_schema_updater.set_column_permissions_for_encrypted(table_name, column_name)
+          end.to raise_error(StandardError, 'Permission denied')
+        end
+      end
+    end
+
+    context 'when not using redshift adapter' do
+      before do
+        allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_return(false)
+      end
+
+      it 'does not execute any SQL commands' do
+        expect(connection).not_to receive(:execute)
+        redshift_schema_updater.set_column_permissions_for_encrypted(table_name, column_name)
+      end
+    end
+  end
+
+  describe 'encrypted column integration' do
+    let!(:encrypted_columns_file_path) do
+      Rails.root.join('spec', 'fixtures', 'encrypted_columns.yml')
+    end
+    let!(:secure_users_table) { 'idp.secure_users' }
+
+    before do
+      allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(true)
+      allow(redshift_schema_updater).to receive(:log_info)
+      allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_return(true)
+      allow(DataWarehouseApplicationRecord.connection).to receive(:execute)
+    end
+
+    context 'when creating table with encrypted columns' do
+      it 'sets permissions for encrypted columns during table creation' do
+        expect(redshift_schema_updater).to receive(:set_column_permissions_for_encrypted).with(
+          secure_users_table, 'decrypted_ssn'
+        )
+        expect(redshift_schema_updater).to receive(:set_column_permissions_for_encrypted).with(
+          secure_users_table, 'decrypted_phone'
+        )
+        expect(redshift_schema_updater).not_to receive(:set_column_permissions_for_encrypted).with(
+          secure_users_table, 'regular_field'
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(encrypted_columns_file_path)
+      end
+    end
+
+    context 'when adding encrypted columns to existing table' do
+      let(:existing_columns) { [{ 'name' => 'id', 'datatype' => 'integer' }] }
+      let(:foreign_keys) { [] }
+
+      before do
+        redshift_schema_updater.create_table(
+          secure_users_table, existing_columns, 'id',
+          foreign_keys
+        )
+      end
+
+      it 'sets permissions for newly added encrypted columns' do
+        expect(redshift_schema_updater).to receive(:set_column_permissions_for_encrypted).with(
+          secure_users_table, 'decrypted_ssn'
+        )
+        expect(redshift_schema_updater).to receive(:set_column_permissions_for_encrypted).with(
+          secure_users_table, 'decrypted_phone'
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(encrypted_columns_file_path)
+      end
+    end
+
+    context 'when updating encrypted column data types' do
+      let(:existing_columns) do
+        [
+          { 'name' => 'id', 'datatype' => 'integer' },
+          { 'name' => 'decrypted_ssn', 'datatype' => 'integer', 'encrypt' => true },
+        ]
+      end
+      let(:foreign_keys) { [] }
+
+      before do
+        redshift_schema_updater.create_table(
+          secure_users_table, existing_columns, 'id',
+          foreign_keys
+        )
+
+        # Mock the column metadata to simulate datatype change
+        mock_column = double(
+          'column', name: 'decrypted_ssn', type: 'integer', sql_type: 'integer',
+                    limit: nil
+        )
+        allow(DataWarehouseApplicationRecord.connection).to receive(:columns).with(secure_users_table).and_return(
+          [
+            double(
+              'column', name: 'id'
+            ),
+            mock_column,
+          ],
+        )
+      end
+
+      it 'sets permissions after column recreation due to data type change' do
+        expect(redshift_schema_updater).to receive(:set_column_permissions_for_encrypted).with(
+          secure_users_table, 'decrypted_ssn'
+        )
+        expect(redshift_schema_updater).to receive(:set_column_permissions_for_encrypted).with(
+          secure_users_table, 'decrypted_phone'
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(encrypted_columns_file_path)
+      end
+    end
+
+    context 'when FCMS is disabled' do
+      before do
+        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(false)
+      end
+
+      it 'does not process encrypted columns when FCMS is disabled' do
+        expect(redshift_schema_updater).not_to receive(:set_column_permissions_for_encrypted)
+
+        redshift_schema_updater.update_schema_from_yaml(encrypted_columns_file_path)
+      end
+    end
+  end
 end
