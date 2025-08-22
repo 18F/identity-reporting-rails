@@ -149,16 +149,12 @@ class RedshiftSchemaUpdater
       end
     end
     # rubocop:enable Metrics/BlockLength
-    if columns.any? { |col| col['encrypt'] }
+    if columns.any? { it['encrypt'] }
       revoke_table_select_permissions(table_name)
     end
 
-    # Set column permissions for encrypted columns
     columns.each do |column_info|
-      grant_select_column_permissions(table_name, column_info['name'])
-      if column_info['encrypt']
-        revoke_column_permissions_for_fcms(table_name, column_info['name'])
-      end
+      grant_select_column_permissions(table_name, column_info['name']) unless column_info['encrypt']
     end
 
     existing_columns.each do |existing_column_name|
@@ -372,17 +368,12 @@ class RedshiftSchemaUpdater
       collect_foreign_keys(table_name, foreign_keys)
     end
 
-    # revoke table select permissions if columns contains encrypt
-    if columns.any? { |col| col['encrypt'] }
+    if columns.any? { it['encrypt'] }
       revoke_table_select_permissions(table_name)
     end
 
-    # Set column permissions for encrypted columns
     columns.each do |column_info|
-      grant_select_column_permissions(table_name, column_info['name'])
-      if column_info['encrypt']
-        revoke_column_permissions_for_fcms(table_name, column_info['name'])
-      end
+      grant_select_column_permissions(table_name, column_info['name']) unless column_info['encrypt']
     end
   rescue StandardError => e
     log_error("Error creating table: #{e.message}")
@@ -412,15 +403,6 @@ class RedshiftSchemaUpdater
       grant_sql = "GRANT SELECT(#{column_name}) ON #{table_name} TO GROUP lg_users"
       DataWarehouseApplicationRecord.connection.execute(
         DataWarehouseApplicationRecord.sanitize_sql(grant_sql),
-      )
-    end
-  end
-
-  def revoke_column_permissions_for_fcms(table_name, column_name)
-    if using_redshift_adapter? && fcms_enabled?
-      revoke_sql = "REVOKE SELECT(#{column_name}) ON #{table_name} FROM GROUP lg_users"
-      DataWarehouseApplicationRecord.connection.execute(
-        DataWarehouseApplicationRecord.sanitize_sql(revoke_sql),
       )
     end
   end
