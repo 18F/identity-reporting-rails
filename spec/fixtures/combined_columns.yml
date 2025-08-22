@@ -18,6 +18,9 @@
     - name: redshift_only_field
       datatype: string
       limit: 256
+    - name: encrypted_ssn
+      datatype: string
+      encrypt: true
 
 - table: events
   schema: public
