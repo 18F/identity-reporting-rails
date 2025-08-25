@@ -332,7 +332,8 @@ RSpec.describe RedshiftSchemaUpdater do
             new_columns = DataWarehouseApplicationRecord.connection.columns(users_table).map(&:name)
             expect(new_columns).to match_array(expected_combined_columns)
 
-            redshift_only_field = DataWarehouseApplicationRecord.connection.columns(users_table).find do |col|
+            redshift_only_field = DataWarehouseApplicationRecord.connection.columns(users_table).
+              find do |col|
               col.name == 'redshift_only_field'
             end
             expect(redshift_only_field).not_to be_nil
@@ -443,13 +444,16 @@ RSpec.describe RedshiftSchemaUpdater do
     context 'when table has encrypted columns' do
       it 'revokes table permissions and skips encrypted columns for individual grants' do
         expect(connection).to receive(:execute).with(
-          DataWarehouseApplicationRecord.sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
         )
         expect(connection).to receive(:execute).with(
-          DataWarehouseApplicationRecord.sanitize_sql("GRANT SELECT(name) ON #{users_table} TO GROUP lg_users"),
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(name) ON #{users_table} TO GROUP lg_users"),
         )
         expect(connection).not_to receive(:execute).with(
-          DataWarehouseApplicationRecord.sanitize_sql("GRANT SELECT(encrypted_ssn) ON #{users_table} TO GROUP lg_users"),
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(encrypted_ssn) ON #{users_table} TO GROUP lg_users"),
         )
 
         redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
@@ -459,7 +463,8 @@ RSpec.describe RedshiftSchemaUpdater do
     context 'when table has no encrypted columns' do
       it 'does not revoke table permissions' do
         expect(connection).not_to receive(:execute).with(
-          DataWarehouseApplicationRecord.sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
         )
 
         redshift_schema_updater.update_schema_from_yaml(file_path)
@@ -488,7 +493,8 @@ RSpec.describe RedshiftSchemaUpdater do
 
       it 'skips permission commands' do
         expect(connection).not_to receive(:execute).with(
-          DataWarehouseApplicationRecord.sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
         )
 
         redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
