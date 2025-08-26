@@ -375,10 +375,10 @@ class RedshiftSchemaUpdater
 
     if columns.any? { it['encrypt'] }
       revoke_table_select_permissions(table_name)
-    end
 
-    columns.each do |column_info|
-      grant_select_column_permissions(table_name, column_info['name']) unless column_info['encrypt']
+      columns.each do |column_info|
+        grant_select_column_permissions(table_name, column_info['name']) unless column_info['encrypt']
+      end
     end
   rescue StandardError => e
     log_error("Error creating table: #{e.message}")

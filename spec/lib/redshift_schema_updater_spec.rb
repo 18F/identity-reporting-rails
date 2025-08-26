@@ -431,7 +431,7 @@ RSpec.describe RedshiftSchemaUpdater do
     end
   end
 
-  describe 'encrypted column functionality' do
+  describe 'encrypted column functionality and permission management' do
     let(:connection) { DataWarehouseApplicationRecord.connection }
 
     before do
@@ -442,7 +442,7 @@ RSpec.describe RedshiftSchemaUpdater do
     end
 
     context 'when table has encrypted columns' do
-      it 'revokes table permissions and skips encrypted columns for individual grants' do
+      it 'revokes table permissions and grants only to non-encrypted columns' do
         expect(connection).to receive(:execute).with(
           DataWarehouseApplicationRecord.
           sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
@@ -458,14 +458,143 @@ RSpec.describe RedshiftSchemaUpdater do
 
         redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
       end
+
+      it 'grants column permissions for all non-encrypted columns' do
+        expected_granted_columns = ['id', 'name', 'email', 'created_at', 'updated_at',
+                                    'redshift_only_field']
+
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+
+        expected_granted_columns.each do |column|
+          expect(connection).to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(encrypted_ssn) ON #{users_table} TO GROUP lg_users"),
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
     end
 
     context 'when table has no encrypted columns' do
-      it 'does not revoke table permissions' do
+      it 'does not revoke table permissions and does not grant column permissions' do
         expect(connection).not_to receive(:execute).with(
           DataWarehouseApplicationRecord.
           sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
         )
+        ['id', 'name', 'email', 'created_at', 'updated_at'].each do |column|
+          expect(connection).not_to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        redshift_schema_updater.update_schema_from_yaml(file_path)
+      end
+    end
+
+    context 'when updating existing table with encrypted columns' do
+      let(:existing_columns) { [{ 'name' => 'id', 'datatype' => 'integer' }] }
+      let(:foreign_keys) { [] }
+
+      before do
+        redshift_schema_updater.
+          create_table(users_table, existing_columns, primary_key, foreign_keys)
+      end
+
+      it 'revokes table permissions and grants column permissions only for revoked tables' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+        expected_granted_columns = ['id', 'name', 'email', 'created_at', 'updated_at',
+                                    'redshift_only_field']
+        expected_granted_columns.each do |column|
+          expect(connection).to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(encrypted_ssn) ON #{users_table} TO GROUP lg_users"),
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
+    end
+
+    context 'when creating new table with encrypted columns' do
+      it 'revokes table permissions and grants column permissions for new table' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+        expected_granted_columns = ['id', 'name', 'email', 'created_at', 'updated_at',
+                                    'redshift_only_field']
+        expected_granted_columns.each do |column|
+          expect(connection).to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
+    end
+
+    context 'when table has mixed encrypted and non-encrypted columns across include_columns and add_columns' do
+      let(:mixed_encrypted_yaml) do
+        YAML.dump(
+          [{
+            'table' => 'mixed_table',
+            'schema' => 'public',
+            'primary_key' => 'id',
+            'include_columns' => [
+              { 'name' => 'id', 'datatype' => 'integer', 'not_null' => true },
+              { 'name' => 'public_field', 'datatype' => 'string' },
+              { 'name' => 'encrypted_field1', 'datatype' => 'string', 'encrypt' => true },
+            ],
+            'add_columns' => [
+              { 'name' => 'another_public_field', 'datatype' => 'string' },
+              { 'name' => 'encrypted_field2', 'datatype' => 'string', 'encrypt' => true },
+            ],
+          }],
+        )
+      end
+      let(:mixed_table) { 'idp.mixed_table' }
+
+      before do
+        allow(File).to receive(:read).and_return(mixed_encrypted_yaml)
+        allow(YAML).to receive(:load_file).and_return(YAML.load(mixed_encrypted_yaml))
+      end
+
+      it 'grants permissions only to non-encrypted columns from both sections' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{mixed_table} FROM GROUP lg_users"),
+        )
+        ['id', 'public_field', 'another_public_field'].each do |column|
+          expect(connection).to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{mixed_table} TO GROUP lg_users"),
+          )
+        end
+        ['encrypted_field1', 'encrypted_field2'].each do |column|
+          expect(connection).not_to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{mixed_table} TO GROUP lg_users"),
+          )
+        end
 
         redshift_schema_updater.update_schema_from_yaml(file_path)
       end
@@ -478,7 +607,12 @@ RSpec.describe RedshiftSchemaUpdater do
         allow(connection).to receive(:execute).and_call_original
       end
 
-      it 'excludes encrypted columns from add_columns' do
+      it 'excludes encrypted columns from add_columns and does not manage permissions' do
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+
         redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
 
         users_columns = DataWarehouseApplicationRecord.connection.columns(users_table)
@@ -491,13 +625,63 @@ RSpec.describe RedshiftSchemaUpdater do
         allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_return(false)
       end
 
-      it 'skips permission commands' do
+      it 'skips all permission management commands' do
         expect(connection).not_to receive(:execute).with(
           DataWarehouseApplicationRecord.
           sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
         )
+        ['id', 'name', 'email', 'created_at', 'updated_at', 'redshift_only_field'].each do |column|
+          expect(connection).not_to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
 
         redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
+    end
+
+    context 'edge case: table with only encrypted columns' do
+      let(:encrypted_only_yaml) do
+        YAML.dump(
+          [{
+            'table' => 'encrypted_only_table',
+            'schema' => 'public',
+            'primary_key' => 'id',
+            'include_columns' => [
+              { 'name' => 'id', 'datatype' => 'integer', 'not_null' => true },
+            ],
+            'add_columns' => [
+              { 'name' => 'encrypted_field1', 'datatype' => 'string', 'encrypt' => true },
+              { 'name' => 'encrypted_field2', 'datatype' => 'string', 'encrypt' => true },
+            ],
+          }],
+        )
+      end
+      let(:encrypted_only_table) { 'idp.encrypted_only_table' }
+
+      before do
+        allow(File).to receive(:read).and_return(encrypted_only_yaml)
+        allow(YAML).to receive(:load_file).and_return(YAML.load(encrypted_only_yaml))
+      end
+
+      it 'revokes table permissions but only grants to non-encrypted columns' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{encrypted_only_table} FROM GROUP lg_users"),
+        )
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(id) ON #{encrypted_only_table} TO GROUP lg_users"),
+        )
+        ['encrypted_field1', 'encrypted_field2'].each do |column|
+          expect(connection).not_to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{encrypted_only_table} TO GROUP lg_users"),
+          )
+        end
+
+        redshift_schema_updater.update_schema_from_yaml(file_path)
       end
     end
   end
