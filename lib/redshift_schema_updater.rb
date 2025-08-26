@@ -149,18 +149,7 @@ class RedshiftSchemaUpdater
       end
     end
     # rubocop:enable Metrics/BlockLength
-    if columns.any? { it['encrypt'] }
-      revoke_table_select_permissions(table_name)
-
-      columns.each do |column_info|
-        unless column_info['encrypt']
-          grant_select_column_permissions(
-            table_name,
-            column_info['name'],
-          )
-        end
-      end
-    end
+    grant_select_permissions_for_columns(table_name, columns) if columns.any? { it['encrypt'] }
 
     existing_columns.each do |existing_column_name|
       column_names = columns.map { |item| item['name'] }
@@ -373,18 +362,7 @@ class RedshiftSchemaUpdater
       collect_foreign_keys(table_name, foreign_keys)
     end
 
-    if columns.any? { it['encrypt'] }
-      revoke_table_select_permissions(table_name)
-
-      columns.each do |column_info|
-        unless column_info['encrypt']
-          grant_select_column_permissions(
-            table_name,
-            column_info['name'],
-          )
-        end
-      end
-    end
+    grant_select_permissions_for_columns(table_name, columns) if columns.any? { it['encrypt'] }
   rescue StandardError => e
     log_error("Error creating table: #{e.message}")
     raise e
@@ -414,6 +392,15 @@ class RedshiftSchemaUpdater
       DataWarehouseApplicationRecord.connection.execute(
         DataWarehouseApplicationRecord.sanitize_sql(grant_sql),
       )
+    end
+  end
+
+  def grant_select_permissions_for_columns(table_name, columns)
+    revoke_table_select_permissions(table_name)
+
+    columns.each do |column_info|
+      next if column_info['encrypt']
+      grant_select_column_permissions(table_name, column_info['name'])
     end
   end
 
