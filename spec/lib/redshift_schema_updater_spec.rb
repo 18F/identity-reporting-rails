@@ -552,7 +552,7 @@ RSpec.describe RedshiftSchemaUpdater do
       end
     end
 
-    context 'when table has mixed encrypted and non-encrypted columns across include_columns and add_columns' do
+    context 'when table has encrypted columns across include_columns and add_columns' do
       let(:mixed_encrypted_yaml) do
         YAML.dump(
           [{
