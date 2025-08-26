@@ -151,10 +151,15 @@ class RedshiftSchemaUpdater
     # rubocop:enable Metrics/BlockLength
     if columns.any? { it['encrypt'] }
       revoke_table_select_permissions(table_name)
-    end
 
-    columns.each do |column_info|
-      grant_select_column_permissions(table_name, column_info['name']) unless column_info['encrypt']
+      columns.each do |column_info|
+        unless column_info['encrypt']
+          grant_select_column_permissions(
+            table_name,
+            column_info['name'],
+          )
+        end
+      end
     end
 
     existing_columns.each do |existing_column_name|
