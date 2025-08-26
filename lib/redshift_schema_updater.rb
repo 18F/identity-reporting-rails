@@ -377,7 +377,12 @@ class RedshiftSchemaUpdater
       revoke_table_select_permissions(table_name)
 
       columns.each do |column_info|
-        grant_select_column_permissions(table_name, column_info['name']) unless column_info['encrypt']
+        unless column_info['encrypt']
+          grant_select_column_permissions(
+            table_name,
+            column_info['name'],
+          )
+        end
       end
     end
   rescue StandardError => e
