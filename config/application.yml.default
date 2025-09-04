@@ -71,7 +71,6 @@ production:
   report_timeout: 1_000_000
   s3_reports_enabled: false
   redshift_sia_v3_enabled: false
-  api_private_key: ''
 
 test:
   database_host: ''
@@ -93,4 +92,3 @@ test:
   s3_report_public_bucket_prefix: ''
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
-  api_private_key: ''
