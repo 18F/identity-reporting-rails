@@ -9,16 +9,20 @@ class AttemptsApiImportJob < ApplicationJob
   # API_URL = 'https://localhost:3000/attemptsapi'
   # HEADERS = { 'Content-Type' => 'application/json' }
   TABLE_NAME = 'fcms.unextracted_events'
+  PRIVATE_KEY = JobHelpers::AttemptsApiKeypairHelper.private_key
+  PUBLIC_KEY = JobHelpers::AttemptsApiKeypairHelper.public_key
 
   def perform
     log_info('AttemptsApiImportJob: Job started', true)
 
-    private_key = JobHelpers::AttemptsApiKeypairHelper.private_key
-    public_key = JobHelpers::AttemptsApiKeypairHelper.public_key
-    encrypted_jwt_payload = encrypt_jwt(mock_jwt_payload, public_key)
-    decrypted_jwt_payload = decrypt_jwt(encrypted_jwt_payload, private_key)
-
-    # import_to_redshift(encrypted_jwt_payload)
+    begin
+      response_data = fetch_api_data
+      import_to_redshift(response_data)
+      # decrypted_response = decrypt_jwt(response_data, PRIVATE_KEY)
+    rescue => e
+      log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
+      raise e
+    end
 
     # Call the API request service
     # Attempts::ApiRequestService.new.call
@@ -49,8 +53,13 @@ class AttemptsApiImportJob < ApplicationJob
   # else
   #   log_info('AttemptsApiImportJob: API call failed', false, response[:data])
   # end
+  #
 
   private
+
+  def fetch_api_data
+    return encrypt_mock_jwt_payload(mock_jwt_payload, PUBLIC_KEY)
+  end
 
   def import_to_redshift(encrypted_payload)
     begin
@@ -79,7 +88,14 @@ class AttemptsApiImportJob < ApplicationJob
     )
   end
 
-  def encrypt_jwt(payload, private_key)
+  # todo: move to the other decrypting job
+  def decrypt_jwt(encrypted_jwt, public_key)
+    decrypted_jwt = JWE.decrypt(encrypted_jwt, public_key)
+    parsed_jwt = JSON.parse(decrypted_jwt)
+    return parsed_jwt
+  end
+
+  def encrypt_mock_jwt_payload(payload, private_key)
     jwk = JWT::JWK.new(private_key)
     JWE.encrypt(
       payload.to_json,
@@ -90,12 +106,6 @@ class AttemptsApiImportJob < ApplicationJob
       enc: 'A256GCM',
       kid: jwk.kid,
     )
-  end
-
-  def decrypt_jwt(encrypted_jwt, public_key)
-    decrypted_jwt = JWE.decrypt(encrypted_jwt, public_key)
-    parsed_jwt = JSON.parse(decrypted_jwt)
-    return parsed_jwt
   end
 
   def mock_jwt_payload
