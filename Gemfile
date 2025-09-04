@@ -19,6 +19,7 @@ gem 'tzinfo-data', platforms: %i[ windows jruby ]
 gem 'caxlsx', require: false
 gem 'simple_xlsx_reader', require: false
 gem 'jwt'
+gem 'jwe'
 
 group :development do
   gem 'better_errors', '>= 2.5.1'
