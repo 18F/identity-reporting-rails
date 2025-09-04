@@ -206,6 +206,7 @@ GEM
       reline (>= 0.4.2)
     jmespath (1.6.2)
     json (2.10.2)
+    jwt (2.7.1)
     knapsack (4.0.0)
       rake
     language_server-protocol (3.17.0.4)
@@ -424,10 +425,10 @@ PLATFORMS
   arm64-darwin-21
   arm64-darwin-22
   arm64-darwin-23
-  arm64-darwin-24
   ruby
   x86_64-darwin-22
   x86_64-darwin-23
+  x86_64-darwin-24
 
 DEPENDENCIES
   activerecord7-redshift-adapter-pennylane
@@ -445,6 +446,7 @@ DEPENDENCIES
   identity-logging!
   identity_validations!
   irb
+  jwt
   knapsack
   listen
   nokogiri (~> 1.18.0)
