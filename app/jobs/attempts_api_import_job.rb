@@ -1,5 +1,6 @@
 require 'net/http'
 require 'json'
+require 'jwt'
 
 class AttemptsApiImportJob < ApplicationJob
   queue_as :default
