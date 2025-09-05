@@ -3,32 +3,39 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
     using_redshift_adapter = connection.adapter_name.downcase.include?('redshift')
 
     reversible do |dir|
-      dir.up { execute 'CREATE SCHEMA IF NOT EXISTS fcms' }
-      dir.down { execute 'DROP SCHEMA IF EXISTS fcms' }
+      dir.up do
+        execute 'CREATE SCHEMA IF NOT EXISTS fcms'
+        execute <<-SQL
+          CREATE TABLE IF NOT EXISTS fcms.unextracted_events (
+            key_hash VARCHAR(512),
+            message TEXT,
+            import_timestamp TIMESTAMP
+          );
+        SQL
+
+        execute <<-SQL
+          CREATE TABLE IF NOT EXISTS fcms.encrypted_events (
+            message TEXT,
+            import_timestamp TIMESTAMP,
+            processed_timestamp TIMESTAMP
+          );
+        SQL
+
+        execute <<-"SQL"
+          CREATE TABLE IF NOT EXISTS fcms.events (
+            jti VARCHAR(256) PRIMARY KEY,
+            message #{using_redshift_adapter ? 'SUPER' : 'JSONB'},
+            import_timestamp TIMESTAMP
+          );
+        SQL
+      end
+
+      dir.down do
+        execute 'DROP TABLE IF EXISTS fcms.unextracted_events'
+        execute 'DROP TABLE IF EXISTS fcms.encrypted_events'
+        execute 'DROP TABLE IF EXISTS fcms.events'
+        execute 'DROP SCHEMA IF EXISTS fcms'
+      end
     end
-
-    execute <<-SQL
-      CREATE TABLE IF NOT EXISTS fcms.unextracted_events (
-        message TEXT,
-        import_timestamp TIMESTAMP
-      );
-    SQL
-
-    execute <<-SQL
-      CREATE TABLE IF NOT EXISTS fcms.encrypted_events (
-        message TEXT,
-        import_timestamp TIMESTAMP,
-        processed_timestamp TIMESTAMP
-      );
-    SQL
-
-    execute <<-"SQL"
-      CREATE TABLE IF NOT EXISTS fcms.events (
-        jti VARCHAR(256) PRIMARY KEY,
-        message #{using_redshift_adapter ? 'SUPER' : 'JSONB'},
-        import_timestamp TIMESTAMP
-      );
-    SQL
-
   end
 end
