@@ -17,7 +17,9 @@ class AttemptsApiImportJob < ApplicationJob
 
     begin
       response_data = fetch_api_data
-      import_to_redshift(response_data)
+      response_data[:sets].each do |event_set|
+        import_to_redshift(event_set)
+      end
       # decrypted_response = decrypt_jwt(response_data, PRIVATE_KEY)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
@@ -58,7 +60,19 @@ class AttemptsApiImportJob < ApplicationJob
   private
 
   def fetch_api_data
-    return encrypt_mock_jwt_payload(mock_jwt_payload, PUBLIC_KEY)
+    {
+      sets: [
+        encrypt_mock_jwt_payload(
+          mock_jwt_payload(event_type: 'mfa-login-auth-submitted'),
+          PUBLIC_KEY,
+        ),
+        encrypt_mock_jwt_payload(
+          mock_jwt_payload(event_type: 'mfa-submission-code-rate-limited'),
+          PUBLIC_KEY,
+        ),
+        encrypt_mock_jwt_payload(mock_jwt_payload(event_type: 'session-timeout'), PUBLIC_KEY),
+      ],
+    }.with_indifferent_access
   end
 
   def import_to_redshift(encrypted_payload)
@@ -91,8 +105,7 @@ class AttemptsApiImportJob < ApplicationJob
   # todo: move to the other decrypting job
   def decrypt_jwt(encrypted_jwt, public_key)
     decrypted_jwt = JWE.decrypt(encrypted_jwt, public_key)
-    parsed_jwt = JSON.parse(decrypted_jwt)
-    return parsed_jwt
+    JSON.parse(decrypted_jwt)
   end
 
   def encrypt_mock_jwt_payload(payload, private_key)
@@ -108,7 +121,7 @@ class AttemptsApiImportJob < ApplicationJob
     )
   end
 
-  def mock_jwt_payload
+  def mock_jwt_payload(event_type:)
     current_time = Time.current
 
     {
@@ -117,7 +130,7 @@ class AttemptsApiImportJob < ApplicationJob
       'iss' => 'http://localhost:3000/',
       'aud' => 'urn:gov:gsa:openidconnect:sp:sinatra',
       'events' => {
-        'https://schemas.login.gov/secevent/attempts-api/event-type/mfa-login-auth-submitted' => {
+        "https://schemas.login.gov/secevent/attempts-api/event-type/#{event_type}" => {
           'subject' => {
             'subject_type' => 'session',
             'session_id' => SecureRandom.uuid,
@@ -137,7 +150,7 @@ class AttemptsApiImportJob < ApplicationJob
           'reauthentication' => false,
           'success' => true,
           'agency_uuid' => SecureRandom.uuid,
-          'user_id' => 3,
+          'user_id' => rand(1..1000),
         },
       },
     }.with_indifferent_access
