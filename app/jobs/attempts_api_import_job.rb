@@ -6,63 +6,32 @@ require 'jwe'
 class AttemptsApiImportJob < ApplicationJob
   queue_as :default
 
-  # API_URL = 'https://localhost:3000/attemptsapi'
-  # HEADERS = { 'Content-Type' => 'application/json' }
-  TABLE_NAME = 'fcms.unextracted_events'
+  SCHEMA_NAME = 'fcms'
+  TABLE_NAME = 'unextracted_events'
   PRIVATE_KEY = JobHelpers::AttemptsApiKeypairHelper.private_key
   PUBLIC_KEY = JobHelpers::AttemptsApiKeypairHelper.public_key
 
   def perform
     log_info('AttemptsApiImportJob: Job started', true)
 
+    @schema_name = SCHEMA_NAME
+    @table_name = TABLE_NAME
+
     begin
       response_data = fetch_api_data
-      # response_data[:sets].each do |event|
       log_info('AttemptsApiImportJob: Processing event', true, { response_data: response_data })
       import_to_redshift(response_data[:sets])
-      # end
-      # decrypted_response = decrypt_jwt(response_data, PRIVATE_KEY)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
       raise e
     end
-
-    # Call the API request service
-    # Attempts::ApiRequestService.new.call
-    # mock api call
-    # sleep(1)
-    # mock api response
-    # response = Net::HTTP.get_response(URI(API_URL))
-    # if response.is_a?(Net::HTTPSuccess)
-    #   events = response.body
-    #   log_info('AttemptsApiImportJob: API call succeeded', true, events)
-    #   import_to_redshift(events)
-    # else
-    #   log_info('AttemptsApiImportJob: API call failed', false, response.body)
-    # end
-    # rescue => e
-    #   log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
-    # end
-    # sleep 5
-    # end
     log_info('AttemptsApiImportJob: Job completed', true)
   end
-
-  # mock api response
-  # response = { success: true, data: { message: 'Mock API call successful' } }
-  # Rails.logger.info("AttemptsApiImportJob: Mock API call response: #{response.to_json}")
-  # if response[:success]
-  #   log_info('AttemptsApiImportJob: API call succeeded', true, response[:data])
-  # else
-  #   log_info('AttemptsApiImportJob: API call failed', false, response[:data])
-  # end
-  #
 
   private
 
   def fetch_api_data
-    # loop through 3 mock events and encrypt them
-    # return as array of encrypted events
+    # loop through 999 mock events and encrypt them
     event_key = 999.times.map { |i| "event-#{SecureRandom.hex(4)}-#{i}" }
 
     sets = event_key.map do |event_type|
@@ -78,29 +47,42 @@ class AttemptsApiImportJob < ApplicationJob
   end
 
   def import_to_redshift(encrypted_payloads)
-    binding.pry
-    # Here you would implement the logic to import the event_json data into Redshift
-    # hash_payload = { payload: encrypted_payload }
-    # log_info('AttemptsApiImportJob: Data imported to Redshift', true, hash_payload)
-    # message = event_json.to_json.gsub("'", "''") # Escape single quotes for SQL
     import_timestamp = Time.zone.now.utc.strftime('%Y-%m-%d %H:%M:%S')
-    values_sql = encrypted_payloads.map do |payload_hash|
-      key_hash = payload_hash.keys.first
-      encrypted_payload = payload_hash.values.first
-      "('#{key_hash.gsub(
-        "'",
-        "''",
-      )}', '#{encrypted_payload.gsub("'", "''")}', '#{import_timestamp}')"
+    columns = %w[key_hash message import_timestamp]
+    insert_columns = columns.join(', ')
+    values = encrypted_payloads.map do |payload_hash|
+      [
+        payload_hash.keys.first,
+        payload_hash.values.first,
+        import_timestamp,
+      ]
+    end
+    values_sql = values.map do |row|
+      "(#{row.map do |v|
+        ActiveRecord::Base.connection.quote(v)
+      end.join(', ')})"
     end.join(",\n")
 
-    sql = <<-SQL
-      INSERT INTO #{TABLE_NAME} (key_hash, message, import_timestamp)
-      VALUES #{values_sql}
+    build_params = {
+      schema_name: @schema_name,
+      table_name: @table_name,
+      insert_columns: insert_columns,
+      values_sql: values_sql,
+    }
+
+    insert_query = format(<<~SQL.squish, build_params)
+      INSERT INTO %{schema_name}.%{table_name} (%{insert_columns})
+      VALUES
+      %{values_sql}
+      ;
     SQL
 
     begin
-      DataWarehouseApplicationRecord.connection.execute(sql)
-      log_info('AttemptsApiImportJob: Data import to Redshift succeeded', true, hash_payload)
+      DataWarehouseApplicationRecord.connection.execute(insert_query)
+      log_info(
+        'AttemptsApiImportJob: Data imported to Redshift', true,
+        { row_count: encrypted_payloads.size }
+      )
     rescue => e
       log_info('AttemptsApiImportJob: Data import to Redshift failed', false, { error: e.message })
     end
@@ -150,7 +132,7 @@ class AttemptsApiImportJob < ApplicationJob
             'session_id' => SecureRandom.uuid,
           },
           'occurred_at' => current_time.to_f,
-          'user_agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+          'user_agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36', # rubocop:disable Layout/LineLength
           'unique_session_id' => SecureRandom.alphanumeric(20),
           'user_uuid' => SecureRandom.uuid,
           'device_id' => SecureRandom.hex(64),
