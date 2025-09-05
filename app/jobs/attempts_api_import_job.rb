@@ -17,10 +17,10 @@ class AttemptsApiImportJob < ApplicationJob
 
     begin
       response_data = fetch_api_data
-      response_data[:sets].each do |event|
-        log_info('AttemptsApiImportJob: Processing event', true, { event: event })
-        import_to_redshift(event)
-      end
+      # response_data[:sets].each do |event|
+      log_info('AttemptsApiImportJob: Processing event', true, { response_data: response_data })
+      import_to_redshift(response_data[:sets])
+      # end
       # decrypted_response = decrypt_jwt(response_data, PRIVATE_KEY)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
@@ -61,33 +61,44 @@ class AttemptsApiImportJob < ApplicationJob
   private
 
   def fetch_api_data
+    # loop through 3 mock events and encrypt them
+    # return as array of encrypted events
+    event_key = 999.times.map { |i| "event-#{SecureRandom.hex(4)}-#{i}" }
+
+    sets = event_key.map do |event_type|
+      { event_type => encrypt_mock_jwt_payload(
+        mock_jwt_payload(event_type: event_type),
+        PUBLIC_KEY,
+      ) }
+    end
+
     {
-      sets: [
-        encrypt_mock_jwt_payload(
-          mock_jwt_payload(event_type: 'mfa-login-auth-submitted'),
-          PUBLIC_KEY,
-        ),
-        encrypt_mock_jwt_payload(
-          mock_jwt_payload(event_type: 'mfa-submission-code-rate-limited'),
-          PUBLIC_KEY,
-        ),
-        encrypt_mock_jwt_payload(mock_jwt_payload(event_type: 'session-timeout'), PUBLIC_KEY),
-      ],
+      sets: sets,
     }.with_indifferent_access
   end
 
-  def import_to_redshift(encrypted_payload)
+  def import_to_redshift(encrypted_payloads)
     binding.pry
+    # Here you would implement the logic to import the event_json data into Redshift
+    # hash_payload = { payload: encrypted_payload }
+    # log_info('AttemptsApiImportJob: Data imported to Redshift', true, hash_payload)
+    # message = event_json.to_json.gsub("'", "''") # Escape single quotes for SQL
+    import_timestamp = Time.zone.now.utc.strftime('%Y-%m-%d %H:%M:%S')
+    values_sql = encrypted_payloads.map do |payload_hash|
+      key_hash = payload_hash.keys.first
+      encrypted_payload = payload_hash.values.first
+      "('#{key_hash.gsub(
+        "'",
+        "''",
+      )}', '#{encrypted_payload.gsub("'", "''")}', '#{import_timestamp}')"
+    end.join(",\n")
+
+    sql = <<-SQL
+      INSERT INTO #{TABLE_NAME} (key_hash, message, import_timestamp)
+      VALUES #{values_sql}
+    SQL
+
     begin
-      # Here you would implement the logic to import the event_json data into Redshift
-      hash_payload = { payload: encrypted_payload }
-      log_info('AttemptsApiImportJob: Data imported to Redshift', true, hash_payload)
-      # message = event_json.to_json.gsub("'", "''") # Escape single quotes for SQL
-      import_timestamp = Time.zone.now.utc.strftime('%Y-%m-%d %H:%M:%S')
-      sql = <<-SQL
-        INSERT INTO #{TABLE_NAME} (message, import_timestamp)
-        VALUES ('#{encrypted_payload}', '#{import_timestamp}')
-      SQL
       DataWarehouseApplicationRecord.connection.execute(sql)
       log_info('AttemptsApiImportJob: Data import to Redshift succeeded', true, hash_payload)
     rescue => e
