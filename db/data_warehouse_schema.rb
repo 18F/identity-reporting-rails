@@ -14,6 +14,8 @@ ActiveRecord::Schema[7.2].define(version: 2025_09_03_184139) do
   create_schema "fcms"
   create_schema "idp"
   create_schema "logs"
+  create_schema "marts"
+  create_schema "qa_marts"
   create_schema "system_tables"
 
   # These are extensions that must be enabled in order to support this database
