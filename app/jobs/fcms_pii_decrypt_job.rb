@@ -12,7 +12,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     log_info('FcmsPiiDecryptJob: Job completed', true)
   rescue => e
     log_info('FcmsPiiDecryptJob: Job failed', false, { error: e.message })
-    raise e
+    raise
   end
 
   private
@@ -41,7 +41,7 @@ class FcmsPiiDecryptJob < ApplicationJob
       'FcmsPiiDecryptJob: Data fetch from unextracted_events to encrypted_events failed',
       false, { error: e.message }
     )
-    raise e
+    raise
   end
 
   def insert_data_to_redshift_events(private_key)
@@ -81,23 +81,26 @@ class FcmsPiiDecryptJob < ApplicationJob
         'FcmsPiiDecryptJob: Data insert to Redshift events failed', false,
         { error: e.message }
       )
-      raise e
+      raise
     end
     update_encrypted_events_processed
   end
 
   def update_encrypted_events_processed
     begin
-      DataWarehouseApplicationRecord.connection.execute(
-        'UPDATE fcms.encrypted_events SET processed_timestamp = CURRENT_TIMESTAMP WHERE processed_timestamp IS NULL',
-      )
+      query = <<~SQL
+        UPDATE fcms.encrypted_events
+        SET processed_timestamp = CURRENT_TIMESTAMP
+        WHERE processed_timestamp IS NULL
+      SQL
+      DataWarehouseApplicationRecord.connection.execute(query)
       log_info('FcmsPiiDecryptJob: Updated processed_timestamp in encrypted_events', true)
     rescue ActiveRecord::StatementInvalid => e
       log_info(
         'FcmsPiiDecryptJob: Failed to update processed_timestamp in encrypted_events',
         false, { error: e.message }
       )
-      raise e
+      raise
     end
   end
 
