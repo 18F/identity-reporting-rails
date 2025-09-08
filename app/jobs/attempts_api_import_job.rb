@@ -19,7 +19,9 @@ class AttemptsApiImportJob < ApplicationJob
 
     begin
       response_data = fetch_api_data
-      log_info('AttemptsApiImportJob: Processing event', true, { response_data: response_data })
+
+      log_info("AttemptsApiImportJob: Processing #{response_data[:sets].size} events", true)
+
       import_to_redshift(response_data[:sets])
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
@@ -31,61 +33,46 @@ class AttemptsApiImportJob < ApplicationJob
   private
 
   def fetch_api_data
-    # loop through 999 mock events and encrypt them
-    event_key = 999.times.map { |i| "event-#{SecureRandom.hex(4)}-#{i}" }
-
-    sets = event_key.map do |event_type|
-      { event_type => encrypt_mock_jwt_payload(
+    sets = 999.times.map do |i|
+      event_type = "event-#{SecureRandom.hex(4)}-#{i}"
+      encrypted_payload = encrypt_mock_jwt_payload(
         mock_jwt_payload(event_type: event_type),
         PUBLIC_KEY,
-      ) }
+      )
+
+      { event_type => encrypted_payload }
     end
 
-    {
-      sets: sets,
-    }.with_indifferent_access
+    { sets: sets }.with_indifferent_access
   end
 
   def import_to_redshift(encrypted_payloads)
-    import_timestamp = Time.zone.now.utc.strftime('%Y-%m-%d %H:%M:%S')
-    columns = %w[key_hash message import_timestamp]
-    insert_columns = columns.join(', ')
-    values = encrypted_payloads.map do |payload_hash|
-      [
-        payload_hash.keys.first,
-        payload_hash.values.first,
-        import_timestamp,
-      ]
+    DataWarehouseApplicationRecord.transaction do
+      encrypted_payloads.each do |payload_hash|
+        key_hash, encrypted_payload = payload_hash.first
+
+        DataWarehouseApplicationRecord.connection.execute(
+          ActiveRecord::Base.sanitize_sql_array(
+            [
+              <<~SQL.squish,
+                INSERT INTO fcms.unextracted_events (key_hash, message, import_timestamp)
+                VALUES (?, ?, ?)
+              SQL
+              key_hash,
+              encrypted_payload,
+              Time.current,
+            ],
+          ),
+        )
+      end
     end
-    values_sql = values.map do |row|
-      "(#{row.map do |v|
-        ActiveRecord::Base.connection.quote(v)
-      end.join(', ')})"
-    end.join(",\n")
 
-    build_params = {
-      schema_name: @schema_name,
-      table_name: @table_name,
-      insert_columns: insert_columns,
-      values_sql: values_sql,
-    }
-
-    insert_query = format(<<~SQL.squish, build_params)
-      INSERT INTO %{schema_name}.%{table_name} (%{insert_columns})
-      VALUES
-      %{values_sql}
-      ;
-    SQL
-
-    begin
-      DataWarehouseApplicationRecord.connection.execute(insert_query)
-      log_info(
-        'AttemptsApiImportJob: Data imported to Redshift', true,
-        { row_count: encrypted_payloads.size }
-      )
-    rescue => e
-      log_info('AttemptsApiImportJob: Data import to Redshift failed', false, { error: e.message })
-    end
+    log_info(
+      'AttemptsApiImportJob: Data import to Redshift succeeded', true,
+      { row_count: encrypted_payloads.size }
+    )
+  rescue ActiveRecord::StatementInvalid => e
+    log_info('AttemptsApiImportJob: Data import to Redshift failed', false, { error: e.message })
   end
 
   def log_info(message, success, additional_info = {})
