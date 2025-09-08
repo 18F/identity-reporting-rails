@@ -6,16 +6,11 @@ require 'jwe'
 class AttemptsApiImportJob < ApplicationJob
   queue_as :default
 
-  SCHEMA_NAME = 'fcms'
-  TABLE_NAME = 'unextracted_events'
   PRIVATE_KEY = JobHelpers::AttemptsApiKeypairHelper.private_key
   PUBLIC_KEY = JobHelpers::AttemptsApiKeypairHelper.public_key
 
   def perform
     log_info('AttemptsApiImportJob: Job started', true)
-
-    @schema_name = SCHEMA_NAME
-    @table_name = TABLE_NAME
 
     begin
       response_data = fetch_api_data
