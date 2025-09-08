@@ -23,7 +23,7 @@ class AttemptsApiImportJob < ApplicationJob
       FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
-      raise e
+      raise
     end
 
     log_info('AttemptsApiImportJob: Job completed', true)
@@ -46,25 +46,26 @@ class AttemptsApiImportJob < ApplicationJob
   end
 
   def import_to_redshift(encrypted_payloads)
-    DataWarehouseApplicationRecord.transaction do
-      encrypted_payloads.each do |payload_hash|
-        key_hash, encrypted_payload = payload_hash.first
+    return if encrypted_payloads.empty?
 
-        DataWarehouseApplicationRecord.connection.execute(
-          ActiveRecord::Base.sanitize_sql_array(
-            [
-              <<~SQL.squish,
-                INSERT INTO fcms.unextracted_events (key_hash, message, import_timestamp)
-                VALUES (?, ?, ?)
-              SQL
-              key_hash,
-              encrypted_payload,
-              Time.current,
-            ],
-          ),
-        )
-      end
+    values = encrypted_payloads.flat_map do |payload_hash|
+      key_hash, encrypted_payload = payload_hash.first
+      [key_hash, encrypted_payload]
     end
+
+    placeholders = (['(?, ?, CURRENT_TIMESTAMP)'] * encrypted_payloads.size).join(', ')
+
+    sql = <<~SQL
+      INSERT INTO fcms.unextracted_events (key_hash, message, import_timestamp)
+      VALUES #{placeholders}
+    SQL
+
+    DataWarehouseApplicationRecord.connection.execute(
+      ActiveRecord::Base.sanitize_sql_array(
+        [sql,
+         *values],
+      ),
+    )
 
     log_info(
       'AttemptsApiImportJob: Data import to Redshift succeeded', true,
@@ -72,6 +73,7 @@ class AttemptsApiImportJob < ApplicationJob
     )
   rescue ActiveRecord::StatementInvalid => e
     log_info('AttemptsApiImportJob: Data import to Redshift failed', false, { error: e.message })
+    raise
   end
 
   def log_info(message, success, additional_info = {})
