@@ -53,26 +53,26 @@ class AttemptsApiImportJob < ApplicationJob
       [key_hash, encrypted_payload]
     end
 
-    placeholders = (['(?, ?, CURRENT_TIMESTAMP)'] * encrypted_payloads.size).join(', ')
-
     sql = <<~SQL
       INSERT INTO fcms.unextracted_events (key_hash, message, import_timestamp)
-      VALUES #{placeholders}
+      VALUES #{(['(?, ?, CURRENT_TIMESTAMP)'] * encrypted_payloads.size).join(', ')}
     SQL
 
-    DataWarehouseApplicationRecord.connection.execute(
-      ActiveRecord::Base.sanitize_sql_array(
-        [sql,
-         *values],
-      ),
-    )
+    DataWarehouseApplicationRecord.transaction do
+      DataWarehouseApplicationRecord.connection.execute(
+        ActiveRecord::Base.sanitize_sql_array([sql, *values]),
+      )
+    end
 
     log_info(
       'AttemptsApiImportJob: Data import to Redshift succeeded', true,
       { row_count: encrypted_payloads.size }
     )
-  rescue ActiveRecord::StatementInvalid => e
-    log_info('AttemptsApiImportJob: Data import to Redshift failed', false, { error: e.message })
+  rescue => e
+    log_info(
+      'AttemptsApiImportJob: Data import to Redshift failed', false,
+      { error: e.message, error_class: e.class.name }
+    )
     raise
   end
 
