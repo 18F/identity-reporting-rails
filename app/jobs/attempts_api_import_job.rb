@@ -18,10 +18,14 @@ class AttemptsApiImportJob < ApplicationJob
       log_info("AttemptsApiImportJob: Processing #{response_data[:sets].size} events", true)
 
       import_to_redshift(response_data[:sets])
+
+      # todo: this is for testing purposes. Job will be handled in job_configurations.rb
+      FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
       raise e
     end
+
     log_info('AttemptsApiImportJob: Job completed', true)
   end
 
@@ -80,17 +84,11 @@ class AttemptsApiImportJob < ApplicationJob
     )
   end
 
-  # todo: move to the other decrypting job
-  def decrypt_jwt(encrypted_jwt, public_key)
-    decrypted_jwt = JWE.decrypt(encrypted_jwt, public_key)
-    JSON.parse(decrypted_jwt)
-  end
-
-  def encrypt_mock_jwt_payload(payload, private_key)
-    jwk = JWT::JWK.new(private_key)
+  def encrypt_mock_jwt_payload(payload, public_key)
+    jwk = JWT::JWK.new(public_key)
     JWE.encrypt(
       payload.to_json,
-      private_key,
+      public_key,
       typ: 'secevent+jwe',
       zip: 'DEF',
       alg: 'RSA-OAEP',
