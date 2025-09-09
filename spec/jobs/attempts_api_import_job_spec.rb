@@ -29,7 +29,7 @@ RSpec.describe AttemptsApiImportJob, type: :job do
         expect(Rails.logger).to receive(:info).with(
           '{"job":"AttemptsApiImportJob","success":true,"message":"AttemptsApiImportJob: Data import to Redshift succeeded","row_count":1}',
         )
-        expect(Rails.logger).to receive(:info).with('AttemptsApiImportJob: Job completed')
+        expect(Rails.logger).to receive(:info).with('{"job":"AttemptsApiImportJob","success":true,"message":"AttemptsApiImportJob: Job completed"}')
         fcms_job.perform
 
         # result = DataWarehouseApplicationRecord.connection.execute(
