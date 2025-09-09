@@ -1,7 +1,7 @@
 FactoryBot.define do
-  factory :fcms_unextracted_event do
-    import_timestamp { Time.zone.now }
+  factory :fcms_encrypted_event do
     message { { text: Faker::Lorem.sentence } }
-    key_hash { Faker::Internet.uuid }
+    import_timestamp { Time.zone.now }
+    processsed_timestamp { Time.zone.now }
   end
 end
