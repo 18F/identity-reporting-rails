@@ -29,6 +29,7 @@ group :development, :test do
   gem 'brakeman', require: false
   gem 'bullet', '~> 8.0'
   gem 'knapsack'
+  gem 'foreman'
   gem 'listen'
   gem 'nokogiri', '~> 1.18.0'
   gem 'pg_query', '~> 6.1.0', require: false

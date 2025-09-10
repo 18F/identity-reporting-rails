@@ -118,6 +118,7 @@ tmp/$(HOST)-$(PORT).key tmp/$(HOST)-$(PORT).crt: ## Self-signed cert for local H
 		-out tmp/$(HOST)-$(PORT).crt
 
 run: ## Runs the development server
+	@mkdir -p tmp/pids
 	foreman start -p $(PORT)
 
 urn:

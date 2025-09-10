@@ -13,8 +13,8 @@ Installing the packages differs slightly if you're on a macOS or a different OS.
 If using macOS:
 
 1. Install [rbenv](https://github.com/rbenv/rbenv) (lets you install and switch between different versions of Ruby)
-1. Install Ruby. Choose the version [in the `.ruby-version` file](../.ruby-version)
-1. Skip to the [set up local environment section](#set-up-local-environment). Your other dependencies will be installed in that step.
+2. Install Ruby. Choose the version [in the `.ruby-version` file](../.ruby-version) (run `rbenv install`)
+3. Skip to the [set up local environment section](#set-up-local-environment). Your other dependencies will be installed in that step.
 
 If not using macOS:
 

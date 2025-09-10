@@ -174,6 +174,7 @@ GEM
     ffi (1.17.1)
     ffi (1.17.1-arm64-darwin)
     ffi (1.17.1-x86_64-darwin)
+    foreman (0.89.1)
     fugit (1.11.1)
       et-orbi (~> 1, >= 1.2.11)
       raabro (~> 1.4)
@@ -440,6 +441,7 @@ DEPENDENCIES
   csv
   factory_bot_rails (>= 6.2.0)
   faker
+  foreman
   good_job (~> 4.0)
   identity-hostdata!
   identity-logging!

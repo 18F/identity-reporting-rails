@@ -56,3 +56,5 @@ Vagrantfile
 /config/deploy/*.rb
 /kitchen/data_bags/config/*.yml
 /kitchen/data_bags/config/databag_secrets.json
+db/data_warehouse_schema.rb
+db/worker_jobs_schema.rb
