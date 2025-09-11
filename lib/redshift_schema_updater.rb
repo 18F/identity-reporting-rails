@@ -34,7 +34,9 @@ class RedshiftSchemaUpdater
 
     yaml_data.each do |table_data|
       table_name = "#{@schema_name}.#{table_data['table']}"
-      columns = table_data['include_columns']
+      include_columns = table_data['include_columns'] || []
+      add_columns = fcms_enabled? ? (table_data['add_columns'] || []) : []
+      columns = include_columns + add_columns
       primary_key_column = table_data['primary_key']
       foreign_key_columns = table_data['foreign_keys'] || []
 
@@ -147,6 +149,7 @@ class RedshiftSchemaUpdater
       end
     end
     # rubocop:enable Metrics/BlockLength
+    grant_select_permissions_for_columns(table_name, columns) if columns.any? { it['encrypt'] }
 
     existing_columns.each do |existing_column_name|
       column_names = columns.map { |item| item['name'] }
@@ -358,6 +361,8 @@ class RedshiftSchemaUpdater
     if foreign_keys.any?
       collect_foreign_keys(table_name, foreign_keys)
     end
+
+    grant_select_permissions_for_columns(table_name, columns) if columns.any? { it['encrypt'] }
   rescue StandardError => e
     log_error("Error creating table: #{e.message}")
     raise e
@@ -370,6 +375,33 @@ class RedshiftSchemaUpdater
       redshift_data_type(data_type),
       **column_options,
     )
+  end
+
+  def revoke_table_select_permissions(table_name)
+    if using_redshift_adapter?
+      revoke_sql = "REVOKE SELECT ON #{table_name} FROM GROUP lg_users"
+      DataWarehouseApplicationRecord.connection.execute(
+        DataWarehouseApplicationRecord.sanitize_sql(revoke_sql),
+      )
+    end
+  end
+
+  def grant_select_column_permissions(table_name, column_name)
+    if using_redshift_adapter?
+      grant_sql = "GRANT SELECT(#{column_name}) ON #{table_name} TO GROUP lg_users"
+      DataWarehouseApplicationRecord.connection.execute(
+        DataWarehouseApplicationRecord.sanitize_sql(grant_sql),
+      )
+    end
+  end
+
+  def grant_select_permissions_for_columns(table_name, columns)
+    revoke_table_select_permissions(table_name)
+
+    columns.each do |column_info|
+      next if column_info['encrypt']
+      grant_select_column_permissions(table_name, column_info['name'])
+    end
   end
 
   def remove_column(table_name, column_name)
@@ -426,6 +458,10 @@ class RedshiftSchemaUpdater
   end
 
   private
+
+  def fcms_enabled?
+    IdentityConfig.store.data_warehouse_fcms_enabled
+  end
 
   def execute_query(query, *args)
     DataWarehouseApplicationRecord.connection.exec_query(
