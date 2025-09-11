@@ -17,7 +17,7 @@ class SchemaTableService
       table_set = Set.new
       tables = fetch_tables(schema_name)
       tables.each do |table_name|
-        table_set << (table_name)
+        table_set << table_name
       end
       table_set.to_a
     end

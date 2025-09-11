@@ -5,10 +5,14 @@ RSpec.describe RedshiftSchemaUpdater do
   let!(:redshift_schema_updater) { RedshiftSchemaUpdater.new('idp') }
   let!(:file_path) { Rails.root.join('spec', 'fixtures', 'includes_columns.yml') }
   let!(:file_path2) { Rails.root.join('spec', 'fixtures', 'includes_columns2.yml') }
+  let!(:combined_columns_file_path) { Rails.root.join('spec', 'fixtures', 'combined_columns.yml') }
   let!(:users_table) { 'idp.new_users' }
   let!(:events_table) { 'idp.events' }
   let!(:primary_key) { 'id' }
   let!(:expected_columns) { ['id', 'name', 'email', 'created_at', 'updated_at'] }
+  let!(:expected_combined_columns) do
+    ['id', 'name', 'email', 'created_at', 'updated_at', 'redshift_only_field', 'encrypted_ssn']
+  end
   let!(:yaml_data) do
     [
       {
@@ -271,6 +275,122 @@ RSpec.describe RedshiftSchemaUpdater do
     end
   end
 
+  describe '.update_schema_from_yaml with combined include_columns and add_columns' do
+    context 'when data_warehouse_fcms_enabled is true' do
+      before do
+        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(true)
+      end
+
+      context 'when using both include_columns and add_columns in same table' do
+        it 'creates new table with columns from both configurations' do
+          expect(redshift_schema_updater.table_exists?(users_table)).to eq(false)
+          expect(redshift_schema_updater.table_exists?(events_table)).to eq(false)
+
+          redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+          expect(redshift_schema_updater.table_exists?(users_table)).to eq(true)
+          expect(redshift_schema_updater.table_exists?(events_table)).to eq(true)
+
+          users_columns = DataWarehouseApplicationRecord.connection.columns(users_table)
+          expect(users_columns.map(&:name)).to match_array(expected_combined_columns)
+
+          redshift_only_field = users_columns.find { |col| col.name == 'redshift_only_field' }
+          expect(redshift_only_field).not_to be_nil
+          expect(redshift_only_field.limit).to eq(256)
+
+          id_column = users_columns.find { |col| col.name == 'id' }
+          expect(id_column.null).to eq(false)
+
+          primary_key_query = <<~SQL
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tco
+            JOIN information_schema.key_column_usage kcu
+            ON kcu.constraint_name = tco.constraint_name
+            WHERE tco.table_name = 'new_users' AND tco.constraint_type = 'PRIMARY KEY';
+          SQL
+          primary_key_result = DataWarehouseApplicationRecord.
+            connection.exec_query(primary_key_query).to_a
+          expect(primary_key_result.map { |row| row['column_name'] }).to include('id')
+        end
+
+        context 'when table already exists' do
+          let(:existing_columns) { [{ 'name' => 'id', 'datatype' => 'integer' }] }
+          let(:foreign_keys) { [] }
+
+          before do
+            redshift_schema_updater.
+              create_table(users_table, existing_columns, primary_key, foreign_keys)
+          end
+
+          it 'adds new columns from both include_columns and add_columns' do
+            expect(redshift_schema_updater.table_exists?(users_table)).to eq(true)
+            existing_columns = DataWarehouseApplicationRecord.connection.columns(users_table)
+            expect(existing_columns.map(&:name)).to eq(['id'])
+
+            redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+            new_columns = DataWarehouseApplicationRecord.connection.columns(users_table).map(&:name)
+            expect(new_columns).to match_array(expected_combined_columns)
+
+            redshift_only_field = DataWarehouseApplicationRecord.connection.columns(users_table).
+              find do |col|
+              col.name == 'redshift_only_field'
+            end
+            expect(redshift_only_field).not_to be_nil
+          end
+        end
+
+        it 'handles events table with both column types correctly' do
+          redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+          events_columns = DataWarehouseApplicationRecord.connection.columns(events_table)
+          expected_events_columns = ['id', 'name', 'new_user_id', 'event_type', 'created_at',
+                                     'updated_at', 'analytics_score']
+          expect(events_columns.map(&:name)).to match_array(expected_events_columns)
+
+          analytics_score_field = events_columns.find { |col| col.name == 'analytics_score' }
+          expect(analytics_score_field).not_to be_nil
+          expect(analytics_score_field.type).to eq(:float)
+        end
+      end
+    end
+
+    context 'when data_warehouse_fcms_enabled is false' do
+      before do
+        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(false)
+      end
+
+      it 'ignores add_columns and only processes include_columns' do
+        expect(redshift_schema_updater.table_exists?(users_table)).to eq(false)
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+        expect(redshift_schema_updater.table_exists?(users_table)).to eq(true)
+
+        users_columns = DataWarehouseApplicationRecord.connection.columns(users_table)
+        expected_include_only_columns = ['id', 'name', 'email']
+        expect(users_columns.map(&:name)).to match_array(expected_include_only_columns)
+
+        redshift_only_field = users_columns.find { |col| col.name == 'redshift_only_field' }
+        expect(redshift_only_field).to be_nil
+
+        created_at_field = users_columns.find { |col| col.name == 'created_at' }
+        expect(created_at_field).to be_nil
+      end
+
+      it 'handles events table correctly when feature flag is disabled' do
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+        events_columns = DataWarehouseApplicationRecord.connection.columns(events_table)
+        expected_include_only_columns = ['id', 'name', 'new_user_id', 'event_type']
+        expect(events_columns.map(&:name)).to match_array(expected_include_only_columns)
+
+        analytics_score_field = events_columns.find { |col| col.name == 'analytics_score' }
+        expect(analytics_score_field).to be_nil
+      end
+    end
+  end
+
   describe '.load_yaml' do
     context 'when YAML file exists' do
       it 'loads YAML file' do
@@ -307,6 +427,261 @@ RSpec.describe RedshiftSchemaUpdater do
       it 'returns the input datatype symbol' do
         expect(redshift_schema_updater.redshift_data_type('integer')).to eq('integer')
         expect(redshift_schema_updater.redshift_data_type('string')).to eq('string')
+      end
+    end
+  end
+
+  describe 'encrypted column functionality and permission management' do
+    let(:connection) { DataWarehouseApplicationRecord.connection }
+
+    before do
+      allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(true)
+      allow(redshift_schema_updater).to receive(:log_info)
+      allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_return(true)
+      allow(connection).to receive(:execute)
+    end
+
+    context 'when table has encrypted columns' do
+      it 'revokes table permissions and grants only to non-encrypted columns' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(name) ON #{users_table} TO GROUP lg_users"),
+        )
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(encrypted_ssn) ON #{users_table} TO GROUP lg_users"),
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
+
+      it 'grants column permissions for all non-encrypted columns' do
+        expected_granted_columns = ['id', 'name', 'email', 'created_at', 'updated_at',
+                                    'redshift_only_field']
+
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+
+        expected_granted_columns.each do |column|
+          expect(connection).to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(encrypted_ssn) ON #{users_table} TO GROUP lg_users"),
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
+    end
+
+    context 'when table has no encrypted columns' do
+      it 'does not revoke table permissions and does not grant column permissions' do
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+        ['id', 'name', 'email', 'created_at', 'updated_at'].each do |column|
+          expect(connection).not_to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        redshift_schema_updater.update_schema_from_yaml(file_path)
+      end
+    end
+
+    context 'when updating existing table with encrypted columns' do
+      let(:existing_columns) { [{ 'name' => 'id', 'datatype' => 'integer' }] }
+      let(:foreign_keys) { [] }
+
+      before do
+        redshift_schema_updater.
+          create_table(users_table, existing_columns, primary_key, foreign_keys)
+      end
+
+      it 'revokes table permissions and grants column permissions only for revoked tables' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+        expected_granted_columns = ['id', 'name', 'email', 'created_at', 'updated_at',
+                                    'redshift_only_field']
+        expected_granted_columns.each do |column|
+          expect(connection).to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(encrypted_ssn) ON #{users_table} TO GROUP lg_users"),
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
+    end
+
+    context 'when creating new table with encrypted columns' do
+      it 'revokes table permissions and grants column permissions for new table' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+        expected_granted_columns = ['id', 'name', 'email', 'created_at', 'updated_at',
+                                    'redshift_only_field']
+        expected_granted_columns.each do |column|
+          expect(connection).to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
+    end
+
+    context 'when table has encrypted columns across include_columns and add_columns' do
+      let(:mixed_encrypted_yaml) do
+        YAML.dump(
+          [{
+            'table' => 'mixed_table',
+            'schema' => 'public',
+            'primary_key' => 'id',
+            'include_columns' => [
+              { 'name' => 'id', 'datatype' => 'integer', 'not_null' => true },
+              { 'name' => 'public_field', 'datatype' => 'string' },
+              { 'name' => 'encrypted_field1', 'datatype' => 'string', 'encrypt' => true },
+            ],
+            'add_columns' => [
+              { 'name' => 'another_public_field', 'datatype' => 'string' },
+              { 'name' => 'encrypted_field2', 'datatype' => 'string', 'encrypt' => true },
+            ],
+          }],
+        )
+      end
+      let(:mixed_table) { 'idp.mixed_table' }
+
+      before do
+        allow(File).to receive(:read).and_return(mixed_encrypted_yaml)
+        allow(YAML).to receive(:load_file).and_return(YAML.load(mixed_encrypted_yaml))
+      end
+
+      it 'grants permissions only to non-encrypted columns from both sections' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{mixed_table} FROM GROUP lg_users"),
+        )
+        ['id', 'public_field', 'another_public_field'].each do |column|
+          expect(connection).to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{mixed_table} TO GROUP lg_users"),
+          )
+        end
+        ['encrypted_field1', 'encrypted_field2'].each do |column|
+          expect(connection).not_to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{mixed_table} TO GROUP lg_users"),
+          )
+        end
+
+        redshift_schema_updater.update_schema_from_yaml(file_path)
+      end
+    end
+
+    context 'when FCMS is disabled' do
+      before do
+        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(false)
+        allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_call_original
+        allow(connection).to receive(:execute).and_call_original
+      end
+
+      it 'excludes encrypted columns from add_columns and does not manage permissions' do
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+
+        users_columns = DataWarehouseApplicationRecord.connection.columns(users_table)
+        expect(users_columns.map(&:name)).not_to include('encrypted_ssn')
+      end
+    end
+
+    context 'when not using redshift adapter' do
+      before do
+        allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_return(false)
+      end
+
+      it 'skips all permission management commands' do
+        expect(connection).not_to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{users_table} FROM GROUP lg_users"),
+        )
+        ['id', 'name', 'email', 'created_at', 'updated_at', 'redshift_only_field'].each do |column|
+          expect(connection).not_to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{users_table} TO GROUP lg_users"),
+          )
+        end
+
+        redshift_schema_updater.update_schema_from_yaml(combined_columns_file_path)
+      end
+    end
+
+    context 'edge case: table with only encrypted columns' do
+      let(:encrypted_only_yaml) do
+        YAML.dump(
+          [{
+            'table' => 'encrypted_only_table',
+            'schema' => 'public',
+            'primary_key' => 'id',
+            'include_columns' => [
+              { 'name' => 'id', 'datatype' => 'integer', 'not_null' => true },
+            ],
+            'add_columns' => [
+              { 'name' => 'encrypted_field1', 'datatype' => 'string', 'encrypt' => true },
+              { 'name' => 'encrypted_field2', 'datatype' => 'string', 'encrypt' => true },
+            ],
+          }],
+        )
+      end
+      let(:encrypted_only_table) { 'idp.encrypted_only_table' }
+
+      before do
+        allow(File).to receive(:read).and_return(encrypted_only_yaml)
+        allow(YAML).to receive(:load_file).and_return(YAML.load(encrypted_only_yaml))
+      end
+
+      it 'revokes table permissions but only grants to non-encrypted columns' do
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("REVOKE SELECT ON #{encrypted_only_table} FROM GROUP lg_users"),
+        )
+        expect(connection).to receive(:execute).with(
+          DataWarehouseApplicationRecord.
+          sanitize_sql("GRANT SELECT(id) ON #{encrypted_only_table} TO GROUP lg_users"),
+        )
+        ['encrypted_field1', 'encrypted_field2'].each do |column|
+          expect(connection).not_to receive(:execute).with(
+            DataWarehouseApplicationRecord.
+            sanitize_sql("GRANT SELECT(#{column}) ON #{encrypted_only_table} TO GROUP lg_users"),
+          )
+        end
+
+        redshift_schema_updater.update_schema_from_yaml(file_path)
       end
     end
   end
