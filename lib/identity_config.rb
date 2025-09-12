@@ -76,19 +76,13 @@ class IdentityConfig
         config.add(:secret_key_base, type: :string)
       end
 
-    "#{Identity::Hostdata.env || 'local'}-fraud-ops-encryption-key".
-      then do |redshift_secrets_manager_key|
+    "#{Identity::Hostdata.env || 'local'}-analytics-fraud-ops-encryption-key".
+      then do |secrets_manager_key|
         config.add(
-          :redshift_password,
-          secrets_manager_name: redshift_secrets_manager_key,
+          :fraud_ops_encryption_key,
+          secrets_manager_name: secrets_manager_key,
           type: :string,
-        ) { |raw| JSON.parse(raw).fetch('password') }
-        config.add(
-          :redshift_username,
-          secrets_manager_name: redshift_secrets_manager_key,
-          type: :string,
-        ) { |raw| JSON.parse(raw).fetch('username') }
-        config.add(:secret_key_base, type: :string)
+        ) { |raw| JSON.parse(raw).fetch('plaintext_key') }
       end
   end.freeze
   # rubocop:enable Metrics/BlockLength
