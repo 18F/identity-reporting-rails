@@ -3,11 +3,11 @@ git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
 gem 'activerecord7-redshift-adapter-pennylane'
-gem 'rails', '~> 7.2.1'
+gem 'rails', '~> 7.2.2', '>= 7.2.2.2'
 gem 'bootsnap', '~> 1.0', require: false
 gem 'csv'
 gem 'faker'
-gem 'good_job', '~> 4.0'
+gem 'good_job', '~> 4.10', '>= 4.10.0'
 gem 'identity-hostdata', github: '18F/identity-hostdata', tag: 'v4.4.2'
 gem 'identity-logging', github: '18F/identity-logging', tag: 'v0.1.1'
 gem 'identity_validations', github: '18F/identity-validations', tag: 'v0.7.2'
