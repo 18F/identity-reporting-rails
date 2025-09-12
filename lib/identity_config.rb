@@ -82,7 +82,13 @@ class IdentityConfig
           :fraud_ops_encryption_key,
           secrets_manager_name: secrets_manager_key,
           type: :string,
-        ) { |raw| JSON.parse(raw).fetch('plaintext_key') }
+        ) do |raw|
+          if raw.nil? || raw.empty?
+            Rails.env.test? ? 'test-fraud-ops-encryption-key' : nil
+          else
+            JSON.parse(raw).fetch('plaintext_key')
+          end
+        end
       end
   end.freeze
   # rubocop:enable Metrics/BlockLength
