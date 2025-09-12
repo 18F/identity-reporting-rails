@@ -65,16 +65,16 @@ class FcmsPiiDecryptJob < ApplicationJob
     encrypted_events.each do |event|
       decrypted_message = decrypt_data(event['message'], private_key)
       unless decrypted_message
-        LogHelper.log_warning('Failed to decrypt event', event_id: event['id'])
+        LogHelper.log_warning('Failed to decrypt event', event_key: event['event_key'])
         next
       end
 
       decrypted_events << {
-        id: event['id'],
-        jti: decrypted_message['jti'],
+        event_key: event['event_key'],
         message: decrypted_message,
+        event_timestamp: event['event_timestamp'],
       }
-      successfully_processed_ids << event['id']
+      successfully_processed_ids << event['event_key']
     end
 
     insert_decrypted_events(decrypted_events) unless decrypted_events.empty?
@@ -86,9 +86,9 @@ class FcmsPiiDecryptJob < ApplicationJob
     return if values.empty?
 
     insert_query = <<~SQL.squish
-      INSERT INTO fcms.events (jti, message, import_timestamp)
+      INSERT INTO fcms.events (event_key, message, event_timestamp)
       VALUES #{values.join(', ')}
-      ON CONFLICT (jti) DO NOTHING;
+      ON CONFLICT (event_key) DO NOTHING;
     SQL
 
     connection.execute(insert_query)
@@ -101,8 +101,8 @@ class FcmsPiiDecryptJob < ApplicationJob
   def build_insert_values(decrypted_events)
     decrypted_events.map do |event|
       sanitized_message = connection.quote(event[:message].to_json)
-      sanitized_jti = connection.quote(event[:jti])
-      "(#{sanitized_jti}, #{sanitized_message}, CURRENT_TIMESTAMP)"
+      sanitized_event_key = connection.quote(event[:event_key])
+      "(#{sanitized_event_key}, #{sanitized_message}, '#{event[:event_timestamp]}')"
     end
   end
 
@@ -124,7 +124,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     query = <<~SQL
       UPDATE fcms.encrypted_events
       SET processed_timestamp = CURRENT_TIMESTAMP
-      WHERE id IN (#{ids_list})
+      WHERE event_key IN (#{ids_list})
     SQL
 
     connection.execute(query)
