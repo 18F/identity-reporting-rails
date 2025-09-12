@@ -75,6 +75,21 @@ class IdentityConfig
         ) { |raw| JSON.parse(raw).fetch('username') }
         config.add(:secret_key_base, type: :string)
       end
+
+    "#{Identity::Hostdata.env || 'local'}-analytics-fraud-ops-encryption-key".
+      then do |secrets_manager_key|
+        config.add(
+          :fraud_ops_encryption_key,
+          secrets_manager_name: secrets_manager_key,
+          type: :string,
+        ) do |raw|
+          if raw.nil? || raw.empty?
+            Rails.env.test? ? 'test-fraud-ops-encryption-key' : nil
+          else
+            JSON.parse(raw).fetch('plaintext_key')
+          end
+        end
+      end
   end.freeze
   # rubocop:enable Metrics/BlockLength
 
