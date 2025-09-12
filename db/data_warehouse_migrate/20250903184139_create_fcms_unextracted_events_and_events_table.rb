@@ -9,7 +9,7 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
           CREATE TABLE IF NOT EXISTS fcms.unextracted_events (
             key_hash VARCHAR(512),
             message TEXT,
-            import_timestamp TIMESTAMP
+            event_timestamp TIMESTAMP
           );
         SQL
 
