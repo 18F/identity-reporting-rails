@@ -1,8 +1,8 @@
 require 'rails_helper'
 require 'factory_bot'
 
-RSpec.describe AttemptsApiImportJob, type: :job do
-  let(:fcms_job) { AttemptsApiImportJob.new }
+RSpec.describe IDVRedisToRedshiftJob, type: :job do
+  let(:fcms_job) { IDVRedisToRedshiftJob.new }
 
   describe '#perform' do
     context 'when mock api returns an encrypted event' do
@@ -19,17 +19,17 @@ RSpec.describe AttemptsApiImportJob, type: :job do
 
       it 'imports the events into fcms.unextracted_events and triggers decryption job' do
         allow(Rails.logger).to receive(:info).and_call_original
-        msg = { job: 'AttemptsApiImportJob',
+        msg = { job: 'IDVRedisToRedshiftJob',
                 success: true,
-                message: 'AttemptsApiImportJob: Job started' }
+                message: 'IDVRedisToRedshiftJob: Job started' }
         expect(Rails.logger).to receive(:info).with(msg.to_json)
         expect(Rails.logger).to receive(:info).with(
-          '{"job":"AttemptsApiImportJob","success":true,"message":"AttemptsApiImportJob: Processing 1 events"}',
+          '{"job":"IDVRedisToRedshiftJob","success":true,"message":"IDVRedisToRedshiftJob: Processing 1 events"}',
         )
         expect(Rails.logger).to receive(:info).with(
-          '{"job":"AttemptsApiImportJob","success":true,"message":"AttemptsApiImportJob: Data import to Redshift succeeded","row_count":1}',
+          '{"job":"IDVRedisToRedshiftJob","success":true,"message":"IDVRedisToRedshiftJob: Data import to Redshift succeeded","row_count":1}',
         )
-        expect(Rails.logger).to receive(:info).with('{"job":"AttemptsApiImportJob","success":true,"message":"AttemptsApiImportJob: Job completed"}')
+        expect(Rails.logger).to receive(:info).with('{"job":"IDVRedisToRedshiftJob","success":true,"message":"IDVRedisToRedshiftJob: Job completed"}')
         fcms_job.perform
 
         result = DataWarehouseApplicationRecord.connection.execute(

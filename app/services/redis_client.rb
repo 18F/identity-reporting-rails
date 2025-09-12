@@ -32,6 +32,14 @@ module AttemptsApi
       total_deleted
     end
 
+    def write_event(event_key:, jwe:, timestamp:, issuer:)
+      key = key(timestamp, issuer)
+      @redis_pool.with do |client|
+        client.hset(key, event_key, jwe)
+        client.expire(key, event_ttl_seconds)
+      end
+    end
+
     private
 
     def event_ttl_seconds
