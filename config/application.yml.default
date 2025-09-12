@@ -13,6 +13,7 @@
 # if you're sharing your code publicly.
 
 # Make sure any new entries you add are enclosed in single quotes.
+redis_pool_size: 1
 data_warehouse_fcms_enabled: false
 database_pool_reporting: 5
 database_socket: ''
