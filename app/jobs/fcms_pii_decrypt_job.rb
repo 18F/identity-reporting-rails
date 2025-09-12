@@ -2,6 +2,10 @@ class FcmsPiiDecryptJob < ApplicationJob
   queue_as :default
 
   def perform(private_key_pem)
+    unless IdentityConfig.store.fraud_ops_tracker_enabled
+      Rails.logger.info("#{self.class.name}: Skipped because fraud_ops_tracker_enabled is false")
+      return
+    end
     # todo: this will be replaced by the secret manager key
     private_key = OpenSSL::PKey::RSA.new(private_key_pem)
 

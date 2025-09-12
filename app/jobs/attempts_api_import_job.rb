@@ -10,6 +10,10 @@ class AttemptsApiImportJob < ApplicationJob
   PUBLIC_KEY = JobHelpers::AttemptsApiKeypairHelper.public_key
 
   def perform
+    unless IdentityConfig.store.fraud_ops_tracker_enabled
+      Rails.logger.info("#{self.class.name}: Skipped because fraud_ops_tracker_enabled is false")
+      return
+    end
     log_info('AttemptsApiImportJob: Job started', true)
 
     begin
@@ -20,7 +24,7 @@ class AttemptsApiImportJob < ApplicationJob
       import_to_redshift(response_data[:sets])
 
       # todo: this is for testing purposes. Job will be handled in job_configurations.rb
-      FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
+      # FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
       raise
@@ -54,7 +58,7 @@ class AttemptsApiImportJob < ApplicationJob
     end
 
     sql = <<~SQL
-      INSERT INTO fcms.unextracted_events (key_hash, message, import_timestamp)
+      INSERT INTO fcms.unextracted_events (key_hash, message, event_timestamp)
       VALUES #{(['(?, ?, CURRENT_TIMESTAMP)'] * encrypted_payloads.size).join(', ')}
     SQL
 
