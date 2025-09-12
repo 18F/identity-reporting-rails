@@ -52,7 +52,7 @@ RSpec.configure do |config|
   end
 
   config.before(:each) do
-    REDIS_POOL_SIZE.with { |client| client.flushdb } if Identity::Hostdata.config
+     REDIS_POOL.with { |client| client.flushdb } if Identity::Hostdata.config
   end
 
   config.around(:each, freeze_time: true) do |example|

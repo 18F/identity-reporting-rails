@@ -61,6 +61,8 @@ class IdentityConfig
     config.add(:s3_report_bucket_prefix, type: :string)
     config.add(:redshift_sia_v3_enabled, type: :boolean)
     config.add(:redis_pool_size, type: :integer)
+    config.add(:redis_url, type: :string)
+    config.add(:redis_idv_event_ttl_seconds, type: :integer)
 
     "redshift/#{Identity::Hostdata.env || 'local'}-analytics-superuser".
       then do |redshift_secrets_manager_key|

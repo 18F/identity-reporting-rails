@@ -4,34 +4,26 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
 
     reversible do |dir|
       dir.up do
+        # TODO: Confirm length of message is sufficient 
         execute 'CREATE SCHEMA IF NOT EXISTS fcms'
         execute <<-SQL
-          CREATE TABLE IF NOT EXISTS fcms.unextracted_events (
-            key_hash VARCHAR(512),
-            message TEXT,
-            event_timestamp TIMESTAMP
-          );
-        SQL
-
-        execute <<-SQL
           CREATE TABLE IF NOT EXISTS fcms.encrypted_events (
-            message TEXT,
-            import_timestamp TIMESTAMP,
+            event_key VARCHAR(256) PRIMARY KEY,
+            message VARCHAR(256),
             processed_timestamp TIMESTAMP
           );
         SQL
 
         execute <<-"SQL"
           CREATE TABLE IF NOT EXISTS fcms.events (
-            jti VARCHAR(256) PRIMARY KEY,
+            event_key VARCHAR(256) PRIMARY KEY,
             message #{using_redshift_adapter ? 'SUPER' : 'JSONB'},
-            import_timestamp TIMESTAMP
+            event_timestamp TIMESTAMP
           );
         SQL
       end
 
       dir.down do
-        execute 'DROP TABLE IF EXISTS fcms.unextracted_events'
         execute 'DROP TABLE IF EXISTS fcms.encrypted_events'
         execute 'DROP TABLE IF EXISTS fcms.events'
         execute 'DROP SCHEMA IF EXISTS fcms'

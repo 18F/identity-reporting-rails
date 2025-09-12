@@ -329,6 +329,10 @@ GEM
     rdoc (6.12.0)
       psych (>= 4.0.0)
     redacted_struct (2.0.0)
+    redis (5.4.1)
+      redis-client (>= 0.22.0)
+    redis-client (0.25.3)
+      connection_pool
     regexp_parser (2.10.0)
     reline (0.6.0)
       io-console (~> 0.5)
@@ -440,6 +444,7 @@ DEPENDENCIES
   bullet (~> 8.0)
   bundler-audit
   caxlsx
+  connection_pool
   csv
   factory_bot_rails (>= 6.2.0)
   faker
@@ -465,6 +470,7 @@ DEPENDENCIES
   rack-test (>= 1.1.0)
   rails (~> 7.2.1)
   redacted_struct
+  redis (>= 3.2.0)
   rexml (>= 3.3.3)
   rspec (~> 3.13.0)
   rspec-rails (~> 7.0)
