@@ -83,7 +83,7 @@ class IdentityConfig
         secrets_manager_name: secrets_manager_key,
         type: :string,
       ) do |raw|
-        'nil'
+        raw
       end
     end
   end.freeze
