@@ -27,6 +27,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
   before do
     allow(job).to receive(:connection).and_return(mock_connection)
     allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
+    # Mock the default encryption key config to return a valid PEM string
+    allow(IdentityConfig.store).to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
     allow(JobHelpers::AttemptsApiKeypairHelper).to receive(:private_key).and_return(private_key)
   end
 
@@ -80,6 +82,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
       it 'uses default private key when none provided' do
         expect(job).to receive(:get_private_key).with(nil).and_call_original
+        # Ensure the config is called when no key is provided
+        expect(IdentityConfig.store).to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
 
         job.perform
       end
@@ -357,8 +361,9 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
     end
 
     context 'when private_key_pem is not provided' do
-      it 'uses the default keypair helper' do
-        expect(JobHelpers::AttemptsApiKeypairHelper).to receive(:private_key).and_return(private_key)
+      it 'uses the default encryption key from config' do
+        # Mock the config to return a valid PEM string
+        expect(IdentityConfig.store).to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
 
         result = job.send(:get_private_key, nil)
         expect(result.to_pem).to eq(private_key_pem)
