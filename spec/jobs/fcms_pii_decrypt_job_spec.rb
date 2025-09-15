@@ -1,351 +1,408 @@
 require 'rails_helper'
 
 RSpec.describe FcmsPiiDecryptJob, type: :job do
-  let(:private_key_pem) { OpenSSL::PKey::RSA.new(2048).to_pem }
-  let(:private_key) { OpenSSL::PKey::RSA.new(private_key_pem) }
   let(:job) { described_class.new }
-  let(:mock_connection) { double('connection') }
+  let(:private_key) { OpenSSL::PKey::RSA.generate(2048) }
+  let(:private_key_pem) { private_key.to_pem }
+  let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
+  let(:sample_event_data) { { user_id: 123, action: 'login' } }
+  let(:encrypted_message) { 'encrypted_data_string' }
+  let(:event_timestamp) { Time.current }
+
+  let(:encrypted_events) do
+    [
+      {
+        'event_key' => 'event_1',
+        'message' => encrypted_message,
+        'event_timestamp' => event_timestamp,
+      },
+      {
+        'event_key' => 'event_2',
+        'message' => encrypted_message,
+        'event_timestamp' => event_timestamp,
+      },
+    ]
+  end
 
   before do
-    allow(DataWarehouseApplicationRecord).to receive(:connection).and_return(mock_connection)
-    allow(Rails.logger).to receive(:info)
+    allow(job).to receive(:connection).and_return(mock_connection)
+    allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
+    allow(JobHelpers::AttemptsApiKeypairHelper).to receive(:private_key).and_return(private_key)
   end
 
   describe '#perform' do
-    context 'when fraud_ops_tracker_enabled is false' do
+    context 'when job is disabled' do
       before do
         allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(false)
       end
 
-      it 'skips processing and logs the reason' do
-        expect(Rails.logger).to receive(:info).with(
-          'FcmsPiiDecryptJob: Skipped because fraud_ops_tracker_enabled is false',
-        )
-        expect(job).not_to receive(:fetch_insert_delete_data_from_redshift)
-        expect(job).not_to receive(:insert_data_to_redshift_events)
+      it 'skips job execution and logs info' do
+        expect(JobHelpers::LogHelper).to receive(:log_info).
+          with('Skipped because fraud_ops_tracker_enabled is false')
 
-        job.perform(private_key_pem)
+        job.perform
       end
     end
 
-    context 'when fraud_ops_tracker_enabled is true' do
+    context 'when no encrypted events exist' do
       before do
-        allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
-        allow(job).to receive(:fetch_insert_delete_data_from_redshift)
-        allow(job).to receive(:insert_data_to_redshift_events)
+        allow(job).to receive(:fetch_encrypted_events).and_return([])
       end
 
-      it 'processes the job successfully' do
-        expect(job).to receive(:fetch_insert_delete_data_from_redshift)
-        expect(job).to receive(:insert_data_to_redshift_events).with(kind_of(OpenSSL::PKey::RSA))
-        expect(job).to receive(:log_info).with('FcmsPiiDecryptJob: Job completed', true)
+      it 'logs info and returns early' do
+        expect(JobHelpers::LogHelper).to receive(:log_info).
+          with('No encrypted events to process')
 
-        job.perform(private_key_pem)
-      end
-
-      it 'creates RSA private key from PEM string' do
-        expect(OpenSSL::PKey::RSA).to receive(:new).with(private_key_pem).and_call_original
-
-        job.perform(private_key_pem)
-      end
-
-      context 'when an error occurs' do
-        let(:error_message) { 'Database connection failed' }
-        let(:error) { StandardError.new(error_message) }
-
-        before do
-          allow(job).to receive(:fetch_insert_delete_data_from_redshift).and_raise(error)
-        end
-
-        it 'logs the error and re-raises it' do
-          expect(job).to receive(:log_info).with(
-            'FcmsPiiDecryptJob: Job failed',
-            false,
-            { error: error_message },
-          )
-
-          expect { job.perform(private_key_pem) }.to raise_error(StandardError, error_message)
-        end
+        job.perform
       end
     end
-    # end
 
-    # describe '#decrypt_jwt' do
-    #   let(:encrypted_jwt) { 'encrypted.jwt.token' }
-    #   let(:decrypted_data) { { 'jti' => '123', 'data' => 'test' } }
-    #   let(:decrypted_jwt_string) { decrypted_data.to_json }
+    context 'when encrypted events exist' do
+      before do
+        allow(job).to receive(:fetch_encrypted_events).and_return(encrypted_events)
+        allow(job).to receive(:decrypt_data).and_return(sample_event_data)
+        allow(job).to receive(:insert_decrypted_events)
+        allow(job).to receive(:mark_events_as_processed)
+      end
 
-    #   it 'decrypts JWT and returns parsed JSON' do
-    #     expect(JWE).to receive(:decrypt).with(
-    #       encrypted_jwt,
-    #       private_key,
-    #     ).and_return(decrypted_jwt_string)
-    #     expect(JSON).to receive(:parse).with(decrypted_jwt_string).and_return(decrypted_data)
+      it 'processes events successfully' do
+        expect(JobHelpers::LogHelper).to receive(:log_success).
+          with('Job completed', total_events: 2, successfully_processed: 2)
 
-    #     result = job.send(:decrypt_jwt, encrypted_jwt, private_key)
-    #     expect(result).to eq(decrypted_data)
-    #   end
-    # end
+        job.perform(private_key_pem)
+      end
 
-    # describe '#fetch_insert_delete_data_from_redshift' do
-    #   let(:expected_query) do
-    #     <<-SQL
-    #     WITH moved_records AS (
-    #       DELETE FROM fcms.unextracted_events
-    #       RETURNING message
-    #     )
-    #     INSERT INTO fcms.encrypted_events (message, import_timestamp)
-    #     SELECT message, CURRENT_TIMESTAMP FROM moved_records;
-    #     SQL
-    #   end
-    #   let(:query_result) { [{ 'message' => 'test_message' }] }
+      it 'uses provided private key' do
+        expect(job).to receive(:get_private_key).with(private_key_pem).and_call_original
 
-    #   context 'when query executes successfully' do
-    #     before do
-    #       allow(mock_connection).to receive(:exec_query).with(expected_query).and_return(
-    #         double('result', to_a: query_result),
-    #       )
-    #     end
+        job.perform(private_key_pem)
+      end
 
-    #     it 'executes the move query and logs success' do
-    #       expect(mock_connection).to receive(:exec_query).with(expected_query)
-    #       expect(job).to receive(:log_info).with(
-    #         'FcmsPiiDecryptJob: Data fetch from unextracted_events to encrypted_events succeeded',
-    #         true,
-    #       )
+      it 'uses default private key when none provided' do
+        expect(job).to receive(:get_private_key).with(nil).and_call_original
 
-    #       result = job.send(:fetch_insert_delete_data_from_redshift)
-    #       expect(result).to eq(query_result)
-    #     end
-    #   end
+        job.perform
+      end
+    end
 
-    #   context 'when query fails' do
-    #     let(:error) { ActiveRecord::StatementInvalid.new('SQL error') }
+    context 'when an error occurs' do
+      let(:error_message) { 'Database connection failed' }
 
-    #     before do
-    #       allow(mock_connection).to receive(:exec_query).and_raise(error)
-    #     end
+      before do
+        allow(job).to receive(:fetch_encrypted_events).and_raise(StandardError, error_message)
+      end
 
-    #     it 'logs the error and re-raises it' do
-    #       expect(job).to receive(:log_info).with(
-    #         'FcmsPiiDecryptJob: Data fetch from unextracted_events to encrypted_events failed',
-    #         false,
-    #         { error: 'SQL error' },
-    #       )
+      it 'logs error and re-raises exception' do
+        expect(JobHelpers::LogHelper).to receive(:log_error).
+          with('Job failed', error: error_message)
 
-    #       expect do
-    #         job.send(:fetch_insert_delete_data_from_redshift)
-    #       end.to raise_error(ActiveRecord::StatementInvalid)
-    #     end
-    #   end
-    # end
+        expect { job.perform }.to raise_error(StandardError, error_message)
+      end
+    end
+  end
 
-    # describe '#insert_data_to_redshift_events' do
-    #   let(:encrypted_events_query) do
-    #     'SELECT message FROM fcms.encrypted_events WHERE processed_timestamp IS NULL'
-    #   end
+  describe '#fetch_encrypted_events' do
+    let(:expected_query) do
+      'SELECT event_key, message, event_timestamp FROM fcms.encrypted_events WHERE processed_timestamp IS NULL'
+    end
+    let(:query_result) { instance_double(ActiveRecord::Result) }
 
-    #   context 'when there are no encrypted events' do
-    #     before do
-    #       allow(mock_connection).to receive(:exec_query).with(encrypted_events_query).and_return(
-    #         double('result', to_a: []),
-    #       )
-    #     end
+    before do
+      allow(query_result).to receive(:to_a).and_return(encrypted_events)
+    end
 
-    #     it 'returns early without processing' do
-    #       expect(job).not_to receive(:decrypt_jwt)
-    #       expect(mock_connection).not_to receive(:execute)
+    it 'executes the correct SQL query' do
+      expect(mock_connection).to receive(:execute).with(expected_query).and_return(query_result)
 
-    #       job.send(:insert_data_to_redshift_events, private_key)
-    #     end
-    #   end
+      result = job.send(:fetch_encrypted_events)
+      expect(result).to eq(encrypted_events)
+    end
+  end
 
-    #   context 'when there are encrypted events to process' do
-    #     let(:encrypted_events) do
-    #       [
-    #         { 'message' => 'encrypted_jwt_1' },
-    #         { 'message' => 'encrypted_jwt_2' },
-    #       ]
-    #     end
-    #     let(:decrypted_message_1) { { 'jti' => 'jti_1', 'data' => 'data_1' } }
-    #     let(:decrypted_message_2) { { 'jti' => 'jti_2', 'data' => 'data_2' } }
+  describe '#process_encrypted_events' do
+    context 'when decryption is successful' do
+      before do
+        allow(job).to receive(:decrypt_data).and_return(sample_event_data)
+        allow(job).to receive(:insert_decrypted_events)
+      end
 
-    #     before do
-    #       allow(mock_connection).to receive(:exec_query).with(encrypted_events_query).and_return(
-    #         double('result', to_a: encrypted_events),
-    #       )
-    #       allow(job).to receive(:decrypt_jwt).with(
-    #         'encrypted_jwt_1',
-    #         private_key,
-    #       ).and_return(decrypted_message_1)
-    #       allow(job).to receive(:decrypt_jwt).with(
-    #         'encrypted_jwt_2',
-    #         private_key,
-    #       ).and_return(decrypted_message_2)
-    #       allow(ActiveRecord::Base.connection).to receive(:quote).with('jti_1').and_return("'jti_1'")
-    #       allow(ActiveRecord::Base.connection).to receive(:quote).with('jti_2').and_return("'jti_2'")
-    #       allow(ActiveRecord::Base.connection).to receive(:quote).with(decrypted_message_1.to_json).and_return("'#{decrypted_message_1.to_json}'")
-    #       allow(ActiveRecord::Base.connection).to receive(:quote).with(decrypted_message_2.to_json).and_return("'#{decrypted_message_2.to_json}'")
-    #       allow(job).to receive(:update_encrypted_events_processed)
-    #     end
+      it 'returns successfully processed event IDs' do
+        result = job.send(:process_encrypted_events, encrypted_events, private_key)
+        expect(result).to eq(['event_1', 'event_2'])
+      end
 
-    #     context 'when insert succeeds' do
-    #       it 'decrypts messages and inserts them into events table' do
-    #         expect(mock_connection).to receive(:execute) do |query|
-    #           expect(query).to include('INSERT INTO fcms.events (jti, message, import_timestamp)')
-    #           expect(query).to include('ON CONFLICT (jti) DO NOTHING')
-    #           expect(query).to include("'jti_1'")
-    #           expect(query).to include("'jti_2'")
-    #         end
+      it 'calls insert_decrypted_events with correct data' do
+        expected_decrypted_events = [
+          {
+            event_key: 'event_1',
+            message: sample_event_data,
+            event_timestamp: event_timestamp,
+          },
+          {
+            event_key: 'event_2',
+            message: sample_event_data,
+            event_timestamp: event_timestamp,
+          },
+        ]
 
-    #         expect(job).to receive(:log_info).with(
-    #           'FcmsPiiDecryptJob: Data insert to Redshift events succeeded',
-    #           true,
-    #           { row_count: 2 },
-    #         )
-    #         expect(job).to receive(:update_encrypted_events_processed)
+        expect(job).to receive(:insert_decrypted_events).with(expected_decrypted_events)
 
-    #         job.send(:insert_data_to_redshift_events, private_key)
-    #       end
-    #     end
+        job.send(:process_encrypted_events, encrypted_events, private_key)
+      end
+    end
 
-    #     context 'when insert fails' do
-    #       let(:error) { ActiveRecord::StatementInvalid.new('Insert failed') }
+    context 'when decryption fails for some events' do
+      before do
+        allow(job).to receive(:decrypt_data).and_return(sample_event_data, nil)
+        allow(job).to receive(:insert_decrypted_events)
+      end
 
-    #       before do
-    #         allow(mock_connection).to receive(:execute).and_raise(error)
-    #       end
+      it 'logs failure and skips failed events' do
+        expect(JobHelpers::LogHelper).to receive(:log_info).
+          with('Failed to decrypt event', event_key: 'event_2')
 
-    #       it 'logs the error and re-raises it' do
-    #         expect(job).to receive(:log_info).with(
-    #           'FcmsPiiDecryptJob: Data insert to Redshift events failed',
-    #           false,
-    #           { error: 'Insert failed' },
-    #         )
+        result = job.send(:process_encrypted_events, encrypted_events, private_key)
+        expect(result).to eq(['event_1'])
+      end
 
-    #         expect do
-    #           job.send(
-    #             :insert_data_to_redshift_events,
-    #             private_key,
-    #           )
-    #         end.to raise_error(ActiveRecord::StatementInvalid)
-    #       end
-    #     end
+      it 'only inserts successfully decrypted events' do
+        expected_decrypted_events = [
+          {
+            event_key: 'event_1',
+            message: sample_event_data,
+            event_timestamp: event_timestamp,
+          },
+        ]
 
-    #     context 'when values array is empty after processing' do
-    #       before do
-    #         allow(job).to receive(:decrypt_jwt).and_return({ 'jti' => nil })
-    #         # This would cause the values array to be empty after filtering
-    #         encrypted_events_empty = []
-    #         allow_any_instance_of(Array).to receive(:map).and_return([])
-    #         allow_any_instance_of(Array).to receive(:join).and_return('')
-    #         allow_any_instance_of(String).to receive(:empty?).and_return(true)
-    #       end
+        expect(job).to receive(:insert_decrypted_events).with(expected_decrypted_events)
 
-    #       it 'logs no new events message and returns' do
-    #         # Override the stubbing to make values empty
-    #         allow_any_instance_of(described_class).to receive(:insert_data_to_redshift_events) do |instance, key|
-    #           # Simulate empty values scenario
-    #           instance.send(:log_info, 'FcmsPiiDecryptJob: No new encrypted events to process', true)
-    #           return
-    #         end
+        job.send(:process_encrypted_events, encrypted_events, private_key)
+      end
+    end
+  end
 
-    #         job.send(:insert_data_to_redshift_events, private_key)
-    #       end
-    #     end
-    #   end
-    # end
+  describe '#insert_decrypted_events' do
+    let(:decrypted_events) do
+      [
+        {
+          event_key: 'event_1',
+          message: sample_event_data,
+          event_timestamp: event_timestamp,
+        },
+      ]
+    end
 
-    # describe '#update_encrypted_events_processed' do
-    #   let(:update_query) do
-    #     <<~SQL
-    #       UPDATE fcms.encrypted_events
-    #       SET processed_timestamp = CURRENT_TIMESTAMP
-    #       WHERE processed_timestamp IS NULL
-    #     SQL
-    #   end
+    before do
+      allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
+      allow(mock_connection).to receive(:quote).with(sample_event_data.to_json).and_return("'#{sample_event_data.to_json}'")
+    end
 
-    #   context 'when update succeeds' do
-    #     it 'updates processed_timestamp and logs success' do
-    #       expect(mock_connection).to receive(:execute).with(update_query)
-    #       expect(job).to receive(:log_info).with(
-    #         'FcmsPiiDecryptJob: Updated processed_timestamp in encrypted_events',
-    #         true,
-    #       )
+    context 'when insertion is successful' do
+      it 'executes insert query and logs success' do
+        expected_query = /INSERT INTO fcms\.events \(event_key, message, event_timestamp\)/
 
-    #       job.send(:update_encrypted_events_processed)
-    #     end
-    #   end
+        expect(mock_connection).to receive(:execute).with(a_string_matching(expected_query))
+        expect(JobHelpers::LogHelper).to receive(:log_success).
+          with('Data inserted to events table', row_count: 1)
 
-    #   context 'when update fails' do
-    #     let(:error) { ActiveRecord::StatementInvalid.new('Update failed') }
+        job.send(:insert_decrypted_events, decrypted_events)
+      end
+    end
 
-    #     before do
-    #       allow(mock_connection).to receive(:execute).and_raise(error)
-    #     end
+    context 'when insertion fails' do
+      let(:db_error) { ActiveRecord::StatementInvalid.new('Unique constraint violation') }
 
-    #     it 'logs the error and re-raises it' do
-    #       expect(job).to receive(:log_info).with(
-    #         'FcmsPiiDecryptJob: Failed to update processed_timestamp in encrypted_events',
-    #         false,
-    #         { error: 'Update failed' },
-    #       )
+      before do
+        allow(mock_connection).to receive(:execute).and_raise(db_error)
+      end
 
-    #       expect do
-    #         job.send(:update_encrypted_events_processed)
-    #       end.to raise_error(ActiveRecord::StatementInvalid)
-    #     end
-    #   end
-    # end
+      it 'logs error and re-raises exception' do
+        expect(JobHelpers::LogHelper).to receive(:log_error).
+          with('Failed to insert data to events table', error: db_error.message)
 
-    # describe '#log_info' do
-    #   let(:message) { 'Test message' }
-    #   let(:success) { true }
-    #   let(:additional_info) { { row_count: 5 } }
-    #   let(:expected_log_data) do
-    #     {
-    #       job: 'FcmsPiiDecryptJob',
-    #       success: true,
-    #       message: 'Test message',
-    #       row_count: 5,
-    #     }
-    #   end
+        expect { job.send(:insert_decrypted_events, decrypted_events) }.
+          to raise_error(ActiveRecord::StatementInvalid)
+      end
+    end
 
-    #   it 'logs structured JSON data' do
-    #     expect(Rails.logger).to receive(:info).with(expected_log_data.to_json)
+    context 'when decrypted_events is empty' do
+      it 'returns early without executing query' do
+        expect(mock_connection).not_to receive(:execute)
 
-    #     job.send(:log_info, message, success, additional_info)
-    #   end
+        job.send(:insert_decrypted_events, [])
+      end
+    end
+  end
 
-    #   it 'works without additional_info' do
-    #     expected_log_data_minimal = {
-    #       job: 'FcmsPiiDecryptJob',
-    #       success: true,
-    #       message: 'Test message',
-    #     }
+  describe '#build_insert_values' do
+    let(:decrypted_events) do
+      [
+        {
+          event_key: 'event_1',
+          message: { user_id: 123 },
+          event_timestamp: '2024-01-01 10:00:00',
+        },
+      ]
+    end
 
-    #     expect(Rails.logger).to receive(:info).with(expected_log_data_minimal.to_json)
+    before do
+      allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
+      allow(mock_connection).to receive(:quote).with('{"user_id":123}').and_return("'{\"user_id\":123}'")
+    end
 
-    #     job.send(:log_info, message, success)
-    #   end
-    # end
+    it 'builds properly formatted SQL values' do
+      result = job.send(:build_insert_values, decrypted_events)
 
-    # # Integration-style test
-    # describe 'job queue configuration' do
-    #   it 'is queued on the default queue' do
-    #     expect(described_class.queue_name).to eq('default')
-    #   end
-    # end
+      expect(result).to eq(["('event_1', '{\"user_id\":123}', '2024-01-01 10:00:00')"])
+    end
+  end
 
-    # describe 'error handling integration' do
-    #   before do
-    #     allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
-    #   end
+  describe '#decrypt_data' do
+    let(:encrypted_data) { 'encrypted_jwe_token' }
+    let(:decrypted_json) { sample_event_data.to_json }
 
-    #   it 'handles OpenSSL::PKey::RSAError when creating private key' do
-    #     invalid_pem = 'invalid-pem-string'
+    context 'when decryption is successful' do
+      before do
+        allow(JWE).to receive(:decrypt).with(encrypted_data, private_key).and_return(decrypted_json)
+      end
 
-    #     expect { job.perform(invalid_pem) }.to raise_error(OpenSSL::PKey::RSAError)
-    #   end
+      it 'returns parsed JSON data' do
+        result = job.send(:decrypt_data, encrypted_data, private_key)
+        expect(result).to eq(sample_event_data)
+      end
+    end
+
+    context 'when decryption fails' do
+      let(:jwe_error) { StandardError.new('Invalid JWE token') }
+
+      before do
+        allow(JWE).to receive(:decrypt).and_raise(jwe_error)
+      end
+
+      it 'logs error and returns nil' do
+        expect(JobHelpers::LogHelper).to receive(:log_error).
+          with('Failed to decrypt data', error: jwe_error.message)
+
+        result = job.send(:decrypt_data, encrypted_data, private_key)
+        expect(result).to be_nil
+      end
+    end
+
+    context 'when JSON parsing fails' do
+      before do
+        allow(JWE).to receive(:decrypt).with(encrypted_data, private_key).and_return('invalid json')
+      end
+
+      it 'logs error and returns nil' do
+        expect(JobHelpers::LogHelper).to receive(:log_error).
+          with('Failed to decrypt data', error: anything)
+
+        result = job.send(:decrypt_data, encrypted_data, private_key)
+        expect(result).to be_nil
+      end
+    end
+  end
+
+  describe '#mark_events_as_processed' do
+    let(:event_ids) { ['event_1', 'event_2'] }
+
+    before do
+      allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
+      allow(mock_connection).to receive(:quote).with('event_2').and_return("'event_2'")
+    end
+
+    context 'when update is successful' do
+      it 'executes update query and logs success' do
+        expected_query = /UPDATE fcms\.encrypted_events\s+SET processed_timestamp = CURRENT_TIMESTAMP\s+WHERE event_key IN \('event_1', 'event_2'\)/
+
+        expect(mock_connection).to receive(:execute).with(a_string_matching(expected_query))
+        expect(JobHelpers::LogHelper).to receive(:log_success).
+          with('Updated processed_timestamp in encrypted_events', updated_count: 2)
+
+        job.send(:mark_events_as_processed, event_ids)
+      end
+    end
+
+    context 'when update fails' do
+      let(:db_error) { ActiveRecord::StatementInvalid.new('Table not found') }
+
+      before do
+        allow(mock_connection).to receive(:execute).and_raise(db_error)
+      end
+
+      it 'logs error and re-raises exception' do
+        expect(JobHelpers::LogHelper).to receive(:log_error).
+          with('Failed to update processed_timestamp', error: db_error.message)
+
+        expect { job.send(:mark_events_as_processed, event_ids) }.
+          to raise_error(ActiveRecord::StatementInvalid)
+      end
+    end
+
+    context 'when event_ids is empty' do
+      it 'returns early without executing query' do
+        expect(mock_connection).not_to receive(:execute)
+
+        job.send(:mark_events_as_processed, [])
+      end
+    end
+  end
+
+  describe '#get_private_key' do
+    context 'when private_key_pem is provided' do
+      it 'uses the provided key' do
+        result = job.send(:get_private_key, private_key_pem)
+        expect(result.to_pem).to eq(private_key_pem)
+      end
+    end
+
+    context 'when private_key_pem is not provided' do
+      it 'uses the default keypair helper' do
+        expect(JobHelpers::AttemptsApiKeypairHelper).to receive(:private_key).and_return(private_key)
+
+        result = job.send(:get_private_key, nil)
+        expect(result.to_pem).to eq(private_key_pem)
+      end
+    end
+  end
+
+  describe '#job_enabled?' do
+    it 'returns the fraud_ops_tracker_enabled config value' do
+      expect(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
+
+      expect(job.send(:job_enabled?)).to be true
+    end
+  end
+
+  describe '#skip_job_execution' do
+    it 'logs appropriate message' do
+      expect(JobHelpers::LogHelper).to receive(:log_info).
+        with('Skipped because fraud_ops_tracker_enabled is false')
+
+      job.send(:skip_job_execution)
+    end
+  end
+
+  describe '#connection' do
+    before do
+      # Reset the memoized connection
+      job.instance_variable_set(:@connection, nil)
+      allow(job).to receive(:connection).and_call_original
+    end
+
+    it 'returns DataWarehouseApplicationRecord connection' do
+      expect(DataWarehouseApplicationRecord).to receive(:connection).and_return(mock_connection)
+
+      result = job.send(:connection)
+      expect(result).to eq(mock_connection)
+    end
+
+    it 'memoizes the connection' do
+      expect(DataWarehouseApplicationRecord).to receive(:connection).once.and_return(mock_connection)
+
+      # Call twice to test memoization
+      job.send(:connection)
+      job.send(:connection)
+    end
   end
 end
