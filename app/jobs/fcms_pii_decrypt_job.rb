@@ -86,7 +86,7 @@ class FcmsPiiDecryptJob < ApplicationJob
   def decrypt_data(encrypted_data, private_key)
     # decoded_data = Base64.decode64(encrypted_data)
     decrypted_data = JWE.decrypt(encrypted_data, private_key)
-    JSON.parse(decrypted_data)
+    JSON.parse(decrypted_data).deep_symbolize_keys
   rescue => e
     LogHelper.log_error('Failed to decrypt data', error: e.message)
     nil
