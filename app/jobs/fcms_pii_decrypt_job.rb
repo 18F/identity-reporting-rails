@@ -31,7 +31,11 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def fetch_encrypted_events
-    query = 'SELECT event_key, message, event_timestamp FROM fcms.encrypted_events WHERE processed_timestamp IS NULL'
+    query = <<~SQL.squish
+      SELECT event_key, message, event_timestamp
+      FROM fcms.encrypted_events
+      WHERE processed_timestamp IS NULL
+    SQL
     connection.execute(query).to_a
   end
 

@@ -83,7 +83,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       it 'uses default private key when none provided' do
         expect(job).to receive(:get_private_key).with(nil).and_call_original
         # Ensure the config is called when no key is provided
-        expect(IdentityConfig.store).to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
+        expect(IdentityConfig.store).
+          to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
 
         job.perform
       end
@@ -107,7 +108,9 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
   describe '#fetch_encrypted_events' do
     let(:expected_query) do
-      'SELECT event_key, message, event_timestamp FROM fcms.encrypted_events WHERE processed_timestamp IS NULL'
+      'SELECT event_key, message, event_timestamp ' \
+        'FROM fcms.encrypted_events ' \
+        'WHERE processed_timestamp IS NULL'
     end
     let(:query_result) { instance_double(ActiveRecord::Result) }
 
@@ -198,7 +201,10 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
     before do
       allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
-      allow(mock_connection).to receive(:quote).with(sample_event_data.to_json).and_return("'#{sample_event_data.to_json}'")
+      allow(mock_connection).
+        to receive(:quote).
+        with(sample_event_data.to_json).
+        and_return("'#{sample_event_data.to_json}'")
     end
 
     context 'when insertion is successful' do
@@ -251,7 +257,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
     before do
       allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
-      allow(mock_connection).to receive(:quote).with('{"user_id":123}').and_return("'{\"user_id\":123}'")
+      allow(mock_connection).
+        to receive(:quote).with('{"user_id":123}').and_return("'{\"user_id\":123}'")
     end
 
     it 'builds properly formatted SQL values' do
@@ -317,7 +324,11 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
     context 'when update is successful' do
       it 'executes update query and logs success' do
-        expected_query = /UPDATE fcms\.encrypted_events\s+SET processed_timestamp = CURRENT_TIMESTAMP\s+WHERE event_key IN \('event_1', 'event_2'\)/
+        expected_query = %r{
+          UPDATE\ fcms\.encrypted_events\s+
+          SET\ processed_timestamp\ =\ CURRENT_TIMESTAMP\s+
+          WHERE\ event_key\ IN\ \('event_1',\ 'event_2'\)
+        }x
 
         expect(mock_connection).to receive(:execute).with(a_string_matching(expected_query))
         expect(JobHelpers::LogHelper).to receive(:log_success).
@@ -363,7 +374,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
     context 'when private_key_pem is not provided' do
       it 'uses the default encryption key from config' do
         # Mock the config to return a valid PEM string
-        expect(IdentityConfig.store).to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
+        expect(IdentityConfig.store).
+          to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
 
         result = job.send(:get_private_key, nil)
         expect(result.to_pem).to eq(private_key_pem)
@@ -403,7 +415,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
     end
 
     it 'memoizes the connection' do
-      expect(DataWarehouseApplicationRecord).to receive(:connection).once.and_return(mock_connection)
+      expect(DataWarehouseApplicationRecord).
+        to receive(:connection).once.and_return(mock_connection)
 
       # Call twice to test memoization
       job.send(:connection)
