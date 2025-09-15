@@ -17,14 +17,14 @@ class AttemptsApiImportJob < ApplicationJob
     log_info('AttemptsApiImportJob: Job started', true)
 
     begin
-      response_data = fetch_redis_data
+      data = fetch_redis_data
 
-      log_info("AttemptsApiImportJob: Processing #{response_data[:sets].size} events", true)
+      log_info("AttemptsApiImportJob: Processing #{data.size} events", true)
 
-      import_to_redshift(response_data[:sets])
+      import_to_redshift(data)
 
       # todo: this is for testing purposes. Job will be handled in job_configurations.rb
-      FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
+      # FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
       raise
@@ -48,20 +48,21 @@ class AttemptsApiImportJob < ApplicationJob
         encrypted_data: encrypted_payload,
         timestamp: Time.current,
       }
-    end.with_indifferent_access
+    end
   end
 
   def import_to_redshift(encrypted_payloads)
     return if encrypted_payloads.empty?
 
-    values = encrypted_payloads.flat_map do |payload_hash|
-      key_hash, encrypted_payload = payload_hash.first
-      [key_hash, encrypted_payload]
+    values = encrypted_payloads.flat_map do |payload|
+      [payload[:event_key], payload[:encrypted_data], payload[:timestamp]]
     end
+
+    placeholders = (['(?, ?, ?)'] * encrypted_payloads.size).join(', ')
 
     sql = <<~SQL
       INSERT INTO fcms.encrypted_events (event_key, message, event_timestamp)
-      VALUES #{(['(?, ?, CURRENT_TIMESTAMP)'] * encrypted_payloads.size).join(', ')}
+      VALUES #{placeholders}
     SQL
 
     DataWarehouseApplicationRecord.transaction do
