@@ -6,8 +6,6 @@ class FcmsPiiDecryptJob < ApplicationJob
   def perform(private_key_pem = nil)
     return skip_job_execution unless job_enabled?
 
-    move_unextracted_to_encrypted_events
-
     encrypted_events = fetch_encrypted_events
     return LogHelper.log_info('No encrypted events to process') if encrypted_events.empty?
 
@@ -29,32 +27,11 @@ class FcmsPiiDecryptJob < ApplicationJob
   private
 
   def get_private_key(private_key_pem = nil)
-    OpenSSL::PKey::RSA.new(private_key_pem || JobHelpers::AttemptsApiKeypairHelper.private_key.to_pem)
-  end
-
-  def move_unextracted_to_encrypted_events
-    query = <<~SQL
-      WITH moved_records AS (
-        DELETE FROM fcms.unextracted_events
-        RETURNING event_key, message, event_timestamp
-      )
-      INSERT INTO fcms.encrypted_events (event_key, message, event_timestamp)
-      SELECT event_key, message, event_timestamp
-      FROM moved_records;
-    SQL
-
-    connection.execute(query)
-    LogHelper.log_success('Data moved from unextracted_events to encrypted_events')
-  rescue ActiveRecord::StatementInvalid => e
-    LogHelper.log_error(
-      'Failed to move data from unextracted_events to encrypted_events',
-      error: e.message,
-    )
-    raise
+    OpenSSL::PKey::RSA.new(private_key_pem || IdentityConfig.store.fraud_ops_encryption_key)
   end
 
   def fetch_encrypted_events
-    query = 'SELECT event_key, message FROM fcms.encrypted_events WHERE processed_timestamp IS NULL'
+    query = 'SELECT event_key, message, event_timestamp FROM fcms.encrypted_events WHERE processed_timestamp IS NULL'
     connection.execute(query).to_a
   end
 
@@ -65,7 +42,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     encrypted_events.each do |event|
       decrypted_message = decrypt_data(event['message'], private_key)
       unless decrypted_message
-        LogHelper.log_warning('Failed to decrypt event', event_key: event['event_key'])
+        LogHelper.log_info('Failed to decrypt event', event_key: event['event_key'])
         next
       end
 
@@ -107,10 +84,10 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def decrypt_data(encrypted_data, private_key)
-    decoded_data = Base64.decode64(encrypted_data)
-    decrypted_data = private_key.private_decrypt(decoded_data)
-    JSON.parse(decrypted_data)
-  rescue StandardError => e
+    # decoded_data = Base64.decode64(encrypted_data)
+    decrypted_data = JWE.decrypt(encrypted_data, private_key)
+    JSON.parse(decrypted_data).deep_symbolize_keys
+  rescue => e
     LogHelper.log_error('Failed to decrypt data', error: e.message)
     nil
   end

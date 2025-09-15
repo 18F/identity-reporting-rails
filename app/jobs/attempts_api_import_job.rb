@@ -24,7 +24,7 @@ class AttemptsApiImportJob < ApplicationJob
       import_to_redshift(data)
 
       # todo: this is for testing purposes. Job will be handled in job_configurations.rb
-      # FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
+      FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
       raise
