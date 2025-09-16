@@ -63,16 +63,25 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def insert_decrypted_events(decrypted_events)
-    values = build_insert_values(decrypted_events)
-    return if values.empty?
+    # values = build_insert_values(decrypted_events)
+    return if decrypted_events.empty?
+
+    placeholders = (['(?, ?, ?)'] * decrypted_events.size).join(', ')
+    values = decrypted_events.flat_map do |event|
+      [event[:event_key], event[:message].to_json, event[:event_timestamp]]
+    end
 
     insert_query = <<~SQL.squish
       INSERT INTO fcms.events (event_key, message, event_timestamp)
-      VALUES #{values.join(', ')}
+      VALUES #{placeholders}
       ON CONFLICT (event_key) DO NOTHING;
     SQL
 
-    connection.execute(insert_query)
+    sanitized_sql = ActiveRecord::Base.send(:sanitize_sql_array, [insert_query, *values])
+
+    DataWarehouseApplicationRecord.transaction do
+      connection.execute(sanitized_sql)
+    end
     LogHelper.log_success('Data inserted to events table', row_count: decrypted_events.size)
   rescue ActiveRecord::StatementInvalid => e
     LogHelper.log_error('Failed to insert data to events table', error: e.message)
@@ -99,16 +108,24 @@ class FcmsPiiDecryptJob < ApplicationJob
   def mark_events_as_processed(event_ids)
     return if event_ids.empty?
 
+    # create placeholders for parameterized query
+    placeholders = (['?'] * event_ids.size).join(', ')
     # Convert array to SQL-safe format
-    ids_list = event_ids.map { |id| connection.quote(id) }.join(', ')
 
-    query = <<~SQL
-      UPDATE fcms.encrypted_events
-      SET processed_timestamp = CURRENT_TIMESTAMP
-      WHERE event_key IN (#{ids_list})
-    SQL
+    # ids_list = event_ids.map { |id| connection.quote(id) }.join(', ')
 
-    connection.execute(query)
+    query = ActiveRecord::Base.sanitize_sql_array(
+      [
+        "UPDATE fcms.encrypted_events SET processed_timestamp = CURRENT_TIMESTAMP WHERE event_key IN (#{placeholders})", # rubocop:disable Layout/LineLength
+        *event_ids,
+      ],
+    )
+
+    begin
+      DataWarehouseApplicationRecord.transaction do
+        connection.execute(query)
+      end
+    end
     LogHelper.log_success(
       'Updated processed_timestamp in encrypted_events',
       updated_count: event_ids.size,
