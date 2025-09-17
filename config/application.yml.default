@@ -54,7 +54,7 @@ development:
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
   fraud_ops_tracker_enabled: true
-  fraud_ops_encryption_key: dev_fraud_ops_encryption_key
+  fraud_ops_encryption_key: ''
 
 # These values serve as defaults for all production-like environments
 production:
@@ -99,4 +99,4 @@ test:
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
   fraud_ops_tracker_enabled: true
-  fraud_ops_encryption_key: test_fraud_ops_encryption_key
+  fraud_ops_encryption_key: ''
