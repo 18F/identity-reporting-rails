@@ -77,13 +77,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
         connection.quote_table_name("#{@target_table_name}_temp"),
       target_table_name: DataWarehouseApplicationRecord.
         connection.quote_table_name(@target_table_name),
-      merge_key: DataWarehouseApplicationRecord.
-        connection.quote_column_name(merge_key),
     }
-  end
-
-  def merge_key
-    'event_key'
   end
 
   def transaction_queries_to_run(event_payloads)
@@ -110,7 +104,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
   def load_batch_into_temp_table_query(event_payloads)
     values_list = event_payloads.map do |key, value|
       # Extract in the exact same order as your INSERT statement
-      cols = [key, value]
+      cols = [key, value[0], value[1]]
 
       # Quote each value for SQL
       quoted = cols.map { |val| DataWarehouseApplicationRecord.connection.quote(val) }
@@ -118,8 +112,9 @@ class IdvRedisToRedshiftJob < ApplicationJob
       "(#{quoted.join(', ')})"
     end.join(",\n")
 
+
     format(<<~SQL, build_params.merge(values_list: values_list))
-      INSERT INTO %{source_table_name_temp} (event_key, message)
+      INSERT INTO %{source_table_name_temp} (event_key, message, partition_dt)
       VALUES
       %{values_list};
     SQL
@@ -130,13 +125,14 @@ class IdvRedisToRedshiftJob < ApplicationJob
       format(<<~SQL, build_params)
         MERGE INTO %{schema_name}.%{target_table_name}
         USING %{source_table_name_temp}
-        ON %{schema_name}.%{target_table_name}.#{merge_key} = %{source_table_name_temp}.#{merge_key}
-        AND %{schema_name}.%{target_table_name}.processed_timestamp IS NULL
+        ON %{schema_name}.%{target_table_name}.event_key = %{source_table_name_temp}.event_key
+        AND %{schema_name}.%{target_table_name}.partition_dt = %{source_table_name_temp}.partition_dt
         WHEN NOT MATCHED THEN
-          INSERT (event_key, message)
+          INSERT (event_key, message, partition_dt)
           VALUES (
             %{source_table_name_temp}.event_key,
-            %{source_table_name_temp}.message
+            %{source_table_name_temp}.message,
+            %{source_table_name_temp}.partition_dt,
           )
         ;
       SQL

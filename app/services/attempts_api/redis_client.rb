@@ -14,7 +14,8 @@ module AttemptsApi
           client.hscan_each(hourly_key, count: batch_size) do |k, v|
             break if events.keys.count == batch_size
 
-            events[k] = v
+            # key is event_key, value is JWE, and we also capture partition_dt for Redshift
+            events[k] = [v, get_partition_dt(hourly_key)]
           end
         end
       end
@@ -44,6 +45,10 @@ module AttemptsApi
 
     def event_ttl_seconds
       IdentityConfig.store.redis_idv_event_ttl_seconds
+    end
+
+    def get_partition_dt(hourly_key)
+      hourly_key.split(':').second.to_time.in_time_zone('UTC').strftime('%Y-%m-%d')
     end
 
     def hourly_keys
