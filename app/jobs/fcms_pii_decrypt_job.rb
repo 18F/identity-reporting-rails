@@ -32,7 +32,7 @@ class FcmsPiiDecryptJob < ApplicationJob
 
   def fetch_encrypted_events
     query = <<~SQL.squish
-      SELECT event_key, message, event_timestamp
+      SELECT event_key, message
       FROM fcms.encrypted_events
       WHERE processed_timestamp IS NULL
     SQL
@@ -53,7 +53,6 @@ class FcmsPiiDecryptJob < ApplicationJob
       decrypted_events << {
         event_key: event['event_key'],
         message: decrypted_message,
-        event_timestamp: event['event_timestamp'],
       }
       successfully_processed_ids << event['event_key']
     end
@@ -66,13 +65,13 @@ class FcmsPiiDecryptJob < ApplicationJob
     # values = build_insert_values(decrypted_events)
     return if decrypted_events.empty?
 
-    placeholders = (['(?, ?, ?)'] * decrypted_events.size).join(', ')
+    placeholders = (['(?, ?)'] * decrypted_events.size).join(', ')
     values = decrypted_events.flat_map do |event|
-      [event[:event_key], event[:message].to_json, event[:event_timestamp]]
+      [event[:event_key], event[:message].to_json]
     end
 
     insert_query = <<~SQL.squish
-      INSERT INTO fcms.events (event_key, message, event_timestamp)
+      INSERT INTO fcms.events (event_key, message)
       VALUES #{placeholders};
     SQL
 
@@ -91,7 +90,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     decrypted_events.map do |event|
       sanitized_message = connection.quote(event[:message].to_json)
       sanitized_event_key = connection.quote(event[:event_key])
-      "(#{sanitized_event_key}, #{sanitized_message}, '#{event[:event_timestamp]}')"
+      "(#{sanitized_event_key}, #{sanitized_message})"
     end
   end
 

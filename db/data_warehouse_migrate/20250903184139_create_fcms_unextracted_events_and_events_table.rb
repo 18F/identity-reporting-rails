@@ -10,7 +10,6 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
           CREATE TABLE IF NOT EXISTS fcms.encrypted_events (
             event_key VARCHAR(256),
             message #{using_redshift_adapter ? 'VARCHAR(max)' : 'TEXT'},
-            event_timestamp TIMESTAMP,
             processed_timestamp TIMESTAMP
           );
         SQL
@@ -18,8 +17,7 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
         execute <<-"SQL"
           CREATE TABLE IF NOT EXISTS fcms.events (
             event_key VARCHAR(256) PRIMARY KEY,
-            message #{using_redshift_adapter ? 'SUPER' : 'JSONB'},
-            event_timestamp TIMESTAMP
+            message #{using_redshift_adapter ? 'SUPER' : 'JSONB'}
           );
         SQL
       end

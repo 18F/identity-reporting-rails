@@ -46,7 +46,6 @@ class AttemptsApiImportJob < ApplicationJob
       {
         event_key: SecureRandom.uuid,
         encrypted_data: encrypted_payload,
-        timestamp: Time.current,
       }
     end
   end
@@ -55,13 +54,13 @@ class AttemptsApiImportJob < ApplicationJob
     return if encrypted_payloads.empty?
 
     values = encrypted_payloads.flat_map do |payload|
-      [payload[:event_key], payload[:encrypted_data], payload[:timestamp]]
+      [payload[:event_key], payload[:encrypted_data]]
     end
 
-    placeholders = (['(?, ?, ?)'] * encrypted_payloads.size).join(', ')
+    placeholders = (['(?, ?)'] * encrypted_payloads.size).join(', ')
 
     sql = <<~SQL
-      INSERT INTO fcms.encrypted_events (event_key, message, event_timestamp)
+      INSERT INTO fcms.encrypted_events (event_key, message)
       VALUES #{placeholders}
     SQL
 

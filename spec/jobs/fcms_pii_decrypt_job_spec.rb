@@ -7,19 +7,16 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
   let(:sample_event_data) { { user_id: 123, action: 'login' } }
   let(:encrypted_message) { 'encrypted_data_string' }
-  let(:event_timestamp) { Time.current }
 
   let(:encrypted_events) do
     [
       {
         'event_key' => 'event_1',
         'message' => encrypted_message,
-        'event_timestamp' => event_timestamp,
       },
       {
         'event_key' => 'event_2',
         'message' => encrypted_message,
-        'event_timestamp' => event_timestamp,
       },
     ]
   end
@@ -108,7 +105,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
   describe '#fetch_encrypted_events' do
     let(:expected_query) do
-      'SELECT event_key, message, event_timestamp ' \
+      'SELECT event_key, message ' \
         'FROM fcms.encrypted_events ' \
         'WHERE processed_timestamp IS NULL'
     end
@@ -143,12 +140,10 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
           {
             event_key: 'event_1',
             message: sample_event_data,
-            event_timestamp: event_timestamp,
           },
           {
             event_key: 'event_2',
             message: sample_event_data,
-            event_timestamp: event_timestamp,
           },
         ]
 
@@ -177,7 +172,6 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
           {
             event_key: 'event_1',
             message: sample_event_data,
-            event_timestamp: event_timestamp,
           },
         ]
 
@@ -194,35 +188,29 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         {
           event_key: 'event_1',
           message: sample_event_data,
-          event_timestamp: event_timestamp,
         },
       ]
     end
 
-    # before do
-    #   allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
-    #   allow(mock_connection).
-    #     to receive(:quote).
-    #     with(sample_event_data.to_json).
-    #     and_return("'#{sample_event_data.to_json}'")
-    # end
+    before do
+      allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
+      allow(mock_connection).
+        to receive(:quote).
+        with(sample_event_data.to_json).
+        and_return("'#{sample_event_data.to_json}'")
+    end
 
     context 'when insertion is successful' do
-      # it 'executes insert query and logs success' do
-      #   expected_query = 'INSERT INTO fcms.events (event_key, message, event_timestamp)
-      #       VALUES (?, ?, ?) ON CONFLICT (event_key) DO NOTHING;'
-      #   expected_values = ['event_1', sample_event_data.to_json, event_timestamp]
+      it 'executes insert query and logs success' do
+        expected_sanitized_sql = "INSERT INTO fcms.events (event_key, message) VALUES " \
+                                  "('event_1', '{\"user_id\":123,\"action\":\"login\"}');"
 
-      #   expect(mock_connection).to receive(:exec_insert).with(
-      #     expected_query,
-      #     'SQL',
-      #     expected_values,
-      #   )
-      #   expect(JobHelpers::LogHelper).to receive(:log_success).
-      #     with('Data inserted to events table', row_count: 1)
+        expect(mock_connection).to receive(:execute).with(expected_sanitized_sql)
+        expect(JobHelpers::LogHelper).to receive(:log_success).
+          with('Data inserted to events table', row_count: 1)
 
-      #   job.send(:insert_decrypted_events, decrypted_events)
-      # end
+        job.send(:insert_decrypted_events, decrypted_events)
+      end
     end
 
     context 'when insertion fails' do
@@ -256,7 +244,6 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         {
           event_key: 'event_1',
           message: { user_id: 123 },
-          event_timestamp: '2024-01-01 10:00:00',
         },
       ]
     end
@@ -270,7 +257,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
     it 'builds properly formatted SQL values' do
       result = job.send(:build_insert_values, decrypted_events)
 
-      expect(result).to eq(["('event_1', '{\"user_id\":123}', '2024-01-01 10:00:00')"])
+      expect(result).to eq(["('event_1', '{\"user_id\":123}')"])
     end
   end
 
