@@ -94,7 +94,7 @@ class AttemptsApiImportJob < ApplicationJob
   end
 
   def encrypt_mock_payload(payload, public_key)
-    jwk = JWT::JWK.new(public_key)
+    jwk = JWT::JWK.new(OpenSSL::PKey::RSA.new(public_key))
     JWE.encrypt(
       payload.to_json,
       public_key,
