@@ -24,7 +24,7 @@ class AttemptsApiImportJob < ApplicationJob
       import_to_redshift(data)
 
       # todo: this is for testing purposes. Job will be handled in job_configurations.rb
-      FcmsPiiDecryptJob.perform_now(PRIVATE_KEY.to_pem)
+      FcmsPiiDecryptJob.perform_now(PRIVATE_KEY)
     rescue => e
       log_info('AttemptsApiImportJob: Error during API attempt', false, { error: e.message })
       raise
@@ -94,10 +94,11 @@ class AttemptsApiImportJob < ApplicationJob
   end
 
   def encrypt_mock_payload(payload, public_key)
-    jwk = JWT::JWK.new(OpenSSL::PKey::RSA.new(public_key))
+    openssl_key = OpenSSL::PKey::RSA.new(public_key)
+    jwk = JWT::JWK.new(openssl_key)
     JWE.encrypt(
       payload.to_json,
-      public_key,
+      openssl_key,
       typ: 'secevent+jwe',
       zip: 'DEF',
       alg: 'RSA-OAEP',

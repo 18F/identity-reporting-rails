@@ -73,8 +73,7 @@ class FcmsPiiDecryptJob < ApplicationJob
 
     insert_query = <<~SQL.squish
       INSERT INTO fcms.events (event_key, message, event_timestamp)
-      VALUES #{placeholders}
-      ON CONFLICT (event_key) DO NOTHING;
+      VALUES #{placeholders};
     SQL
 
     sanitized_sql = ActiveRecord::Base.send(:sanitize_sql_array, [insert_query, *values])
