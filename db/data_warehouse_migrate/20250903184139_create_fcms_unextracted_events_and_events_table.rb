@@ -9,7 +9,7 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
         execute <<-SQL
           CREATE TABLE IF NOT EXISTS fcms.encrypted_events (
             event_key VARCHAR(256),
-            message TEXT,
+            message #{using_redshift_adapter ? 'VARCHAR(max)' : 'TEXT'},
             event_timestamp TIMESTAMP,
             processed_timestamp TIMESTAMP
           );
@@ -25,7 +25,6 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
       end
 
       dir.down do
-        execute 'DROP TABLE IF EXISTS fcms.unextracted_events'
         execute 'DROP TABLE IF EXISTS fcms.encrypted_events'
         execute 'DROP TABLE IF EXISTS fcms.events'
         execute 'DROP SCHEMA IF EXISTS fcms'

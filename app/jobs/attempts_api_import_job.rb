@@ -6,8 +6,8 @@ require 'jwe'
 class AttemptsApiImportJob < ApplicationJob
   queue_as :default
 
-  PRIVATE_KEY = JobHelpers::AttemptsApiKeypairHelper.private_key
-  PUBLIC_KEY = JobHelpers::AttemptsApiKeypairHelper.public_key
+  PRIVATE_KEY = IdentityConfig.store.fraud_ops_encryption_key
+  PUBLIC_KEY = IdentityConfig.store.fraud_ops_public_key
 
   def perform
     unless IdentityConfig.store.fraud_ops_tracker_enabled
