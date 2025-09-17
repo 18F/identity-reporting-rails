@@ -77,30 +77,17 @@ class IdentityConfig
         config.add(:secret_key_base, type: :string)
       end
 
-    # "#{Identity::Hostdata.env || 'local'}-analytics-fraud-ops-encryption-key".
-    #   then do |secrets_manager_key|
-    #   config.add(
-    #     :fraud_ops_encryption_key,
-    #     secrets_manager_name: secrets_manager_key,
-    #     type: :string,
-    #   ) do |raw|
-    #     raw.nil? ? 'nil' : raw
-    #   end
-    # end
-
     if Rails.env.development? || Rails.env.test?
       config.add(:fraud_ops_encryption_key, type: :string) do
         'dummy-encryption-key-for-dev-and-test'
       end
     else
-      "#{Identity::Hostdata.env || 'local'}-analytics-fraud-ops-encryption-key".
-        then do |secrets_manager_key|
-        config.add(
-          :fraud_ops_encryption_key,
-          secrets_manager_name: secrets_manager_key,
-          type: :string,
-        ) { |raw| raw.nil? ? 'nil' : raw }
-      end
+      config.add(
+        :fraud_ops_encryption_key,
+        secrets_manager_name: "#{Identity::Hostdata.env || 'local'}/analytics/" \
+                              "fraud-ops-encryption-key",
+        type: :string,
+      )
     end
   end.freeze
   # rubocop:enable Metrics/BlockLength
