@@ -66,20 +66,13 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         expect(JobHelpers::LogHelper).to receive(:log_success).
           with('Job completed', total_events: 2, successfully_processed: 2)
 
-        job.perform(private_key_pem)
+        job.perform
       end
 
-      it 'uses provided private key' do
-        expect(job).to receive(:get_private_key).with(private_key_pem).and_call_original
-
-        job.perform(private_key_pem)
-      end
-
-      it 'uses default private key when none provided' do
-        expect(job).to receive(:get_private_key).with(nil).and_call_original
-        # Ensure the config is called when no key is provided
+      it 'uses the configured private key' do
         expect(IdentityConfig.store).
           to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
+        expect(OpenSSL::PKey::RSA).to receive(:new).with(private_key_pem)
 
         job.perform
       end
@@ -350,26 +343,6 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         expect(mock_connection).not_to receive(:execute)
 
         job.send(:mark_events_as_processed, [])
-      end
-    end
-  end
-
-  describe '#get_private_key' do
-    context 'when private_key_pem is provided' do
-      it 'uses the provided key' do
-        result = job.send(:get_private_key, private_key_pem)
-        expect(result.to_pem).to eq(private_key_pem)
-      end
-    end
-
-    context 'when private_key_pem is not provided' do
-      it 'uses the default encryption key from config' do
-        # Mock the config to return a valid PEM string
-        expect(IdentityConfig.store).
-          to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
-
-        result = job.send(:get_private_key, nil)
-        expect(result.to_pem).to eq(private_key_pem)
       end
     end
   end

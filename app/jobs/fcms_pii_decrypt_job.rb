@@ -3,14 +3,13 @@ class FcmsPiiDecryptJob < ApplicationJob
 
   LogHelper = JobHelpers::LogHelper
 
-  def perform(private_key_pem = nil)
+  def perform
     return skip_job_execution unless job_enabled?
 
     encrypted_events = fetch_encrypted_events
     return LogHelper.log_info('No encrypted events to process') if encrypted_events.empty?
 
-    # todo: this will be replaced by the secret manager key
-    private_key = get_private_key(private_key_pem)
+    private_key = OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_encryption_key)
     successfully_processed_ids = process_encrypted_events(encrypted_events, private_key)
     mark_events_as_processed(successfully_processed_ids)
 
@@ -25,10 +24,6 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   private
-
-  def get_private_key(private_key_pem = nil)
-    OpenSSL::PKey::RSA.new(private_key_pem || IdentityConfig.store.fraud_ops_encryption_key)
-  end
 
   def fetch_encrypted_events
     query = <<~SQL.squish
