@@ -8,9 +8,6 @@ class IdentityConfig
     user_sync_identity_devops: '/usersync/identity-devops',
   }
 
-  # PRIVATE_KEY = JobHelpers::AttemptsApiKeypairHelper.private_key
-  # PUBLIC_KEY = JobHelpers::AttemptsApiKeypairHelper.public_key
-
   # Shorthand to allow using old syntax to access configs, minimizes merge conflicts
   # while migrating to newer syntax
   def self.store
@@ -89,19 +86,6 @@ class IdentityConfig
         :fraud_ops_encryption_key,
         secrets_manager_name: "#{Identity::Hostdata.env || 'local'}/analytics/" \
                               "fraud-ops-encryption-key",
-        type: :string,
-      )
-    end
-
-    if Rails.env.development? || Rails.env.test?
-      config.add(:fraud_ops_public_key, type: :string) do
-        'dummy-encryption-key-for-dev-and-test'
-      end
-    else
-      config.add(
-        :fraud_ops_public_key,
-        secrets_manager_name: "#{Identity::Hostdata.env || 'local'}/analytics/" \
-                              "fraud-ops-public-key",
         type: :string,
       )
     end

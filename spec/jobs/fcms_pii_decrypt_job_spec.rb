@@ -24,9 +24,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
   before do
     allow(job).to receive(:connection).and_return(mock_connection)
     allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
-    # Mock the default encryption key config to return a valid PEM string
     allow(IdentityConfig.store).to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
-    allow(JobHelpers::AttemptsApiKeypairHelper).to receive(:private_key).and_return(private_key)
   end
 
   describe '#perform' do

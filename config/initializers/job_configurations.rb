@@ -53,16 +53,11 @@ else
         cron: cron_24h,
         args: -> { [Time.zone.today] },
       },
-      # Import Attempts API data into Redshift
-      attempts_api_import_job: {
-        class: 'AttemptsApiImportJob',
+      # # Import FCMS PII Decrypt Job
+      fcms_pii_decrypt_job: {
+        class: 'FcmsPiiDecryptJob',
         cron: cron_5m,
       },
-      # # Import FCMS PII Decrypt Job
-      # fcms_pii_decrypt_job: {
-      #   class: 'FcmsPiiDecryptJob',
-      #   cron: cron_5m,
-      # },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
   end

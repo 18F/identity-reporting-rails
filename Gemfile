@@ -18,7 +18,6 @@ gem 'redacted_struct'
 gem 'tzinfo-data', platforms: %i[ windows jruby ]
 gem 'caxlsx', require: false
 gem 'simple_xlsx_reader', require: false
-gem 'jwt'
 gem 'jwe'
 
 group :development do
