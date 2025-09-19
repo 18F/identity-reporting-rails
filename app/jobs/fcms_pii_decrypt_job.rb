@@ -59,8 +59,11 @@ class FcmsPiiDecryptJob < ApplicationJob
     return if decrypted_events.empty?
 
     placeholders = (['(?, ?)'] * decrypted_events.size).join(', ')
-    values = decrypted_events.flat_map do |event|
-      [event[:event_key], event[:message].to_json]
+    values = decrypted_events.flat_map do |ev|
+      [
+        ev[:event_key],
+        JSON.generate(ev[:message]), # Ensures valid JSON (no Ruby hash syntax, no double encoding)
+      ]
     end
 
     # todo: we need to confirm if/how we want to handle possible duplicates
@@ -69,8 +72,8 @@ class FcmsPiiDecryptJob < ApplicationJob
       VALUES #{placeholders};
     SQL
 
-    sanitized_sql = ActiveRecord::Base.send(:sanitize_sql_array, [insert_query, *values])
-
+    sanitized_sql = ActiveRecord::Base.sanitize_sql_array([insert_query, *values])
+    binding
     DataWarehouseApplicationRecord.transaction do
       connection.execute(sanitized_sql)
     end
@@ -81,8 +84,9 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def decrypt_data(encrypted_data, private_key)
-    decrypted_data = JWE.decrypt(encrypted_data, private_key)
-    JSON.parse(decrypted_data).deep_symbolize_keys
+    decrypted_json = JWE.decrypt(encrypted_data, private_key)
+    # Return a hash with STRING keys (important to preserve original JSON exactly)
+    JSON.parse(decrypted_json)
   rescue => e
     LogHelper.log_error('Failed to decrypt data', error: e.message)
     nil
