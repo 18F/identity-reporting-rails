@@ -36,7 +36,7 @@ group :development, :test do
   gem 'pry-doc', '>= 1.5.0'
   gem 'pry-rails'
   gem 'psych'
-  gem 'rexml', '>= 3.3.3'
+  gem 'rexml', '>= 3.4.2'
   gem 'rspec', '~> 3.13.0'
   gem 'rspec-support', '~> 3.13.1'
   gem 'rspec-rails', '~> 7.0'
@@ -49,13 +49,13 @@ end
 group :test do
   gem 'bundler-audit', require: false
   gem 'simplecov', '~> 0.22.0', require: false
-  gem 'simplecov-cobertura'
+  gem 'simplecov-cobertura', '>= 3.0.0'
   gem 'simplecov_json_formatter'
   gem 'factory_bot_rails', '>= 6.2.0'
   gem 'rack-test', '>= 1.1.0'
   gem 'rspec-retry'
   gem 'rspec_junit_formatter'
   gem 'shoulda-matchers', '~> 4.0', require: false
-  gem 'webmock'
+  gem 'webmock', '>= 3.25.1'
   gem 'zonebie'
 end
