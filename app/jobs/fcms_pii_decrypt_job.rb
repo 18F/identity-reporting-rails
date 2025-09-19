@@ -63,6 +63,7 @@ class FcmsPiiDecryptJob < ApplicationJob
       [event[:event_key], event[:message].to_json]
     end
 
+    # todo: we need to confirm if/how we want to handle possible duplicates
     insert_query = <<~SQL.squish
       INSERT INTO fcms.events (event_key, message)
       VALUES #{placeholders};
