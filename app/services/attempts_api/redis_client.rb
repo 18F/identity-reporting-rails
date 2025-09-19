@@ -53,7 +53,7 @@ module AttemptsApi
 
     def hourly_keys
       @redis_pool.with do |client|
-        client.keys("attempts-api-events:*")
+        client.keys('attempts-api-events:*')
       end.sort
     end
 

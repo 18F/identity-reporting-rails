@@ -9,7 +9,7 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
         execute <<-SQL
           CREATE TABLE IF NOT EXISTS fcms.encrypted_events (
             event_key VARCHAR(256) PRIMARY KEY,
-            message VARCHAR(256),
+            message VARCHAR(65535),
             partition_dt DATE,
             processed_timestamp TIMESTAMP
           ) #{using_redshift_adapter ? 'DISTKEY(partition_dt)' : ''};

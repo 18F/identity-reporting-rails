@@ -106,11 +106,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
   end
 
   def upsert_data
-    if DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
-      perform_merge_upsert
-    else
-      perform_insert_upsert
-    end
+    perform_merge_upsert
   end
 
   def perform_merge_upsert
@@ -155,28 +151,6 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     log_info("Merge query #{@source_table}", true, merge_query: merge_query)
     DataWarehouseApplicationRecord.connection.execute(merge_query)
     log_info("MERGE executed for #{@target_table_with_schema}", true)
-  end
-
-  def perform_insert_upsert
-    columns = fetch_source_columns.map { |col| col['column'] }
-    insert_columns = columns.join(', ')
-    insert_values = columns.map { |col| "source.#{col}" }.join(', ')
-
-    build_params = {
-      target_table_with_schema: @target_table_with_schema,
-      source_table: @source_table,
-      insert_columns: insert_columns,
-      insert_values: insert_values,
-    }
-
-    insert_query = format(<<~SQL.squish, build_params)
-      INSERT INTO %{target_table_with_schema} (%{insert_columns})
-      SELECT %{insert_values}
-      FROM %{source_table} AS source
-    SQL
-
-    DataWarehouseApplicationRecord.connection.execute(insert_query)
-    log_info("INSERT executed for #{@target_table}", true)
   end
 
   def fetch_last_sync_time

@@ -41,19 +41,6 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
         job.send(:upsert_data)
       end
     end
-
-    context 'when not using Redshift as the adapter' do
-      before do
-        connection = DataWarehouseApplicationRecord.connection
-        allow(connection).to receive(:adapter_name).and_return('postgresql')
-        allow(job).to receive(:perform_insert_upsert)
-      end
-
-      it 'calls #perform_insert_upsert' do
-        expect(job).to receive(:perform_insert_upsert)
-        job.send(:upsert_data)
-      end
-    end
   end
 
   describe '#perform_merge_upsert' do
@@ -85,27 +72,6 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
 
       expect(DataWarehouseApplicationRecord.connection).to receive(:execute).with(expected_query)
       job.send(:perform_merge_upsert)
-    end
-  end
-
-  describe '#perform_insert_upsert' do
-    before do
-      allow(DataWarehouseApplicationRecord.connection).to receive(:execute)
-      allow(Rails.logger).to receive(:info)
-    end
-
-    it 'executes a Insert statement' do
-      job.send(:create_target_table)
-
-      expected_query = <<-QUERY.squish
-        INSERT INTO system_tables.stl_query (userid, query, label, xid, pid, database, querytxt, starttime, endtime, aborted, insert_pristine, concurency_scalling_status)
-        SELECT source.userid, source.query, source.label, source.xid, source.pid, source.database, source.querytxt, source.starttime, source.endtime, source.aborted,
-        source.insert_pristine, source.concurency_scalling_status
-        FROM stl_query AS source
-      QUERY
-
-      expect(DataWarehouseApplicationRecord.connection).to receive(:execute).with(expected_query)
-      job.send(:perform_insert_upsert)
     end
   end
 
