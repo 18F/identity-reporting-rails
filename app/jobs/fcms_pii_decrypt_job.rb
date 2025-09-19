@@ -9,7 +9,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     encrypted_events = fetch_encrypted_events
     return LogHelper.log_info('No encrypted events to process') if encrypted_events.empty?
 
-    private_key = OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_encryption_key)
+    private_key = OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_private_key)
     successfully_processed_ids = process_encrypted_events(encrypted_events, private_key)
     mark_events_as_processed(successfully_processed_ids)
 

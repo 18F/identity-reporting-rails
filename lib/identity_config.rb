@@ -62,6 +62,12 @@ class IdentityConfig
     config.add(:redshift_sia_v3_enabled, type: :boolean)
     config.add(:fraud_ops_tracker_enabled, type: :boolean)
 
+    config.add(
+      :fraud_ops_private_key,
+      secrets_manager_name: "#{Identity::Hostdata.env || 'local'}/analytics/fraud-ops-private-key",
+      type: :string,
+    )
+
     "redshift/#{Identity::Hostdata.env || 'local'}-analytics-superuser".
       then do |redshift_secrets_manager_key|
         config.add(
@@ -76,19 +82,6 @@ class IdentityConfig
         ) { |raw| JSON.parse(raw).fetch('username') }
         config.add(:secret_key_base, type: :string)
       end
-
-    if Rails.env.development? || Rails.env.test?
-      config.add(:fraud_ops_encryption_key, type: :string) do
-        'dummy-encryption-key-for-dev-and-test'
-      end
-    else
-      config.add(
-        :fraud_ops_encryption_key,
-        secrets_manager_name: "#{Identity::Hostdata.env || 'local'}/analytics/" \
-                              "fraud-ops-encryption-key",
-        type: :string,
-      )
-    end
   end.freeze
   # rubocop:enable Metrics/BlockLength
 

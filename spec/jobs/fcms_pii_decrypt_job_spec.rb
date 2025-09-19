@@ -24,7 +24,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
   before do
     allow(job).to receive(:connection).and_return(mock_connection)
     allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
-    allow(IdentityConfig.store).to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
+    allow(IdentityConfig.store).to receive(:fraud_ops_private_key).and_return(private_key_pem)
   end
 
   describe '#perform' do
@@ -71,7 +71,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
       it 'uses the configured private key' do
         expect(IdentityConfig.store).
-          to receive(:fraud_ops_encryption_key).and_return(private_key_pem)
+          to receive(:fraud_ops_private_key).and_return(private_key_pem)
         expect(OpenSSL::PKey::RSA).to receive(:new).with(private_key_pem)
 
         job.perform
