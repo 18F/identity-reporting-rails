@@ -222,33 +222,10 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
     context 'when decrypted_events is empty' do
       it 'returns early without executing query' do
-        expect(mock_connection).not_to receive(:exec_insert)
+        expect(mock_connection).not_to receive(:execute)
 
         job.send(:insert_decrypted_events, [])
       end
-    end
-  end
-
-  describe '#build_insert_values' do
-    let(:decrypted_events) do
-      [
-        {
-          event_key: 'event_1',
-          message: { user_id: 123 },
-        },
-      ]
-    end
-
-    before do
-      allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
-      allow(mock_connection).
-        to receive(:quote).with('{"user_id":123}').and_return("'{\"user_id\":123}'")
-    end
-
-    it 'builds properly formatted SQL values' do
-      result = job.send(:build_insert_values, decrypted_events)
-
-      expect(result).to eq(["('event_1', '{\"user_id\":123}')"])
     end
   end
 
@@ -361,6 +338,16 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         with('Skipped because fraud_ops_tracker_enabled is false')
 
       job.send(:skip_job_execution)
+    end
+  end
+
+  describe '#private_key' do
+    it 'returns an OpenSSL::PKey::RSA instance from the config' do
+      expect(IdentityConfig.store).to receive(:fraud_ops_private_key).and_return(private_key_pem)
+      expect(OpenSSL::PKey::RSA).to receive(:new).with(private_key_pem).and_return(private_key)
+
+      result = job.send(:private_key)
+      expect(result).to eq(private_key)
     end
   end
 

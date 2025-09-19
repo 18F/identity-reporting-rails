@@ -9,7 +9,6 @@ class FcmsPiiDecryptJob < ApplicationJob
     encrypted_events = fetch_encrypted_events
     return LogHelper.log_info('No encrypted events to process') if encrypted_events.empty?
 
-    private_key = OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_private_key)
     successfully_processed_ids = process_encrypted_events(encrypted_events, private_key)
     mark_events_as_processed(successfully_processed_ids)
 
@@ -57,7 +56,6 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def insert_decrypted_events(decrypted_events)
-    # values = build_insert_values(decrypted_events)
     return if decrypted_events.empty?
 
     placeholders = (['(?, ?)'] * decrypted_events.size).join(', ')
@@ -81,16 +79,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     raise
   end
 
-  def build_insert_values(decrypted_events)
-    decrypted_events.map do |event|
-      sanitized_message = connection.quote(event[:message].to_json)
-      sanitized_event_key = connection.quote(event[:event_key])
-      "(#{sanitized_event_key}, #{sanitized_message})"
-    end
-  end
-
   def decrypt_data(encrypted_data, private_key)
-    # decoded_data = Base64.decode64(encrypted_data)
     decrypted_data = JWE.decrypt(encrypted_data, private_key)
     JSON.parse(decrypted_data).deep_symbolize_keys
   rescue => e
@@ -101,15 +90,10 @@ class FcmsPiiDecryptJob < ApplicationJob
   def mark_events_as_processed(event_ids)
     return if event_ids.empty?
 
-    # create placeholders for parameterized query
-    placeholders = (['?'] * event_ids.size).join(', ')
-    # Convert array to SQL-safe format
-
-    # ids_list = event_ids.map { |id| connection.quote(id) }.join(', ')
-
     query = ActiveRecord::Base.sanitize_sql_array(
       [
-        "UPDATE fcms.encrypted_events SET processed_timestamp = CURRENT_TIMESTAMP WHERE event_key IN (#{placeholders})", # rubocop:disable Layout/LineLength
+        "UPDATE fcms.encrypted_events SET processed_timestamp = CURRENT_TIMESTAMP " \
+        "WHERE event_key IN (#{(['?'] * event_ids.size).join(', ')})",
         *event_ids,
       ],
     )
@@ -134,6 +118,10 @@ class FcmsPiiDecryptJob < ApplicationJob
 
   def skip_job_execution
     LogHelper.log_info('Skipped because fraud_ops_tracker_enabled is false')
+  end
+
+  def private_key
+    OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_private_key)
   end
 
   def connection
