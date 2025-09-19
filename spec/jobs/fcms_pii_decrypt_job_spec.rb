@@ -240,7 +240,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
       it 'returns parsed JSON data' do
         result = job.send(:decrypt_data, encrypted_data, private_key)
-        expect(result).to eq(sample_event_data.stringify_keys)
+        expect(result).to eq(sample_event_data)
       end
     end
 
