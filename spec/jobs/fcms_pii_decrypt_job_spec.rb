@@ -194,7 +194,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
     context 'when insertion is successful' do
       it 'executes insert query and logs success' do
         expected_sanitized_sql = "INSERT INTO fcms.events (event_key, message) VALUES " \
-                                  "('event_1', '{\"user_id\":123,\"action\":\"login\"}');"
+                                  "('event_1', JSON_PARSE('{\"user_id\":123," \
+                                  "\"action\":\"login\"}'));"
 
         expect(mock_connection).to receive(:execute).with(expected_sanitized_sql)
         expect(JobHelpers::LogHelper).to receive(:log_success).

@@ -58,7 +58,7 @@ class FcmsPiiDecryptJob < ApplicationJob
   def insert_decrypted_events(decrypted_events)
     return if decrypted_events.empty?
 
-    placeholders = (['(?, ?)'] * decrypted_events.size).join(', ')
+    placeholders = (['(?, JSON_PARSE(?))'] * decrypted_events.size).join(', ')
     values = decrypted_events.flat_map do |event|
       [event[:event_key], event[:message].to_json]
     end
