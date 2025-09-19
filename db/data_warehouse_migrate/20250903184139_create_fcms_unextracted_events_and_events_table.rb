@@ -4,7 +4,6 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
 
     reversible do |dir|
       dir.up do
-        # TODO: Confirm length of message is sufficient 
         execute 'CREATE SCHEMA IF NOT EXISTS fcms'
         execute <<-SQL
           CREATE TABLE IF NOT EXISTS fcms.encrypted_events (
