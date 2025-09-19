@@ -40,7 +40,7 @@
 
   services.postgres = {
     enable = true;
-    package = pkgs.postgresql_16;
+    package = pkgs.postgresql_16_jit;
     listen_addresses = "127.0.0.1";
   };
 }
