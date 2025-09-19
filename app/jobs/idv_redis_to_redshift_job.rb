@@ -9,7 +9,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
   def perform
     @schema_name = 'fcms'
     @target_table_name = 'encrypted_events'
-    @redis_client = AttemptsApi::RedisClient.new
+    @redis_client = FraudOps::RedisClient.new
     log_info('IdvRedisToRedshiftJob: Job started.', true)
 
     begin

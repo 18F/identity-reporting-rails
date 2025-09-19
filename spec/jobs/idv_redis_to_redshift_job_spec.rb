@@ -3,7 +3,7 @@ require 'factory_bot'
 
 RSpec.describe IdvRedisToRedshiftJob, type: :job do
   let(:fcms_job) { IdvRedisToRedshiftJob.new }
-  let(:redis_client) { AttemptsApi::RedisClient.new }
+  let(:redis_client) { FraudOps::RedisClient.new }
   let(:test_timestamp) { Time.current }
 
   def write_events_to_redis(event_size, start_index = 0)

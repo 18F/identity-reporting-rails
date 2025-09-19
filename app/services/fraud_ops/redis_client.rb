@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module AttemptsApi
+module FraudOps
   class RedisClient
     attr_reader :redis_pool
     def initialize
@@ -53,13 +53,13 @@ module AttemptsApi
 
     def hourly_keys
       @redis_pool.with do |client|
-        client.keys('attempts-api-events:*')
+        client.keys('fraud-ops-events:*')
       end.sort
     end
 
     def key(timestamp)
       formatted_time = timestamp.in_time_zone('UTC').change(min: 0, sec: 0).iso8601
-      "attempts-api-events:#{formatted_time}"
+      "fraud-ops-events:#{formatted_time}"
     end
   end
 end
