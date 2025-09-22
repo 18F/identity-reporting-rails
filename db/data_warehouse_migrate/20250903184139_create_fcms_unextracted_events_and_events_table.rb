@@ -17,8 +17,7 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
         execute <<-SQL
           CREATE TABLE IF NOT EXISTS fcms.fraud_ops_events (
             event_key VARCHAR(256) PRIMARY KEY,
-            message #{using_redshift_adapter ? 'SUPER' : 'JSONB'},
-            event_timestamp TIMESTAMP
+            message #{using_redshift_adapter ? 'SUPER' : 'JSONB'}
           );
         SQL
       end
