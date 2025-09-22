@@ -54,7 +54,7 @@ else
         cron: cron_24h,
         args: -> { [Time.zone.today] },
       },
-      # # Import FCMS PII Decrypt Job
+      # Import FCMS PII Decrypt Job
       fcms_pii_decrypt_job: {
         class: 'FcmsPiiDecryptJob',
         cron: cron_10m,

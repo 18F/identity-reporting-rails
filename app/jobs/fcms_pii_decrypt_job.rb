@@ -1,24 +1,22 @@
 class FcmsPiiDecryptJob < ApplicationJob
   queue_as :default
 
-  LogHelper = JobHelpers::LogHelper
-
   def perform
     return skip_job_execution unless job_enabled?
 
     encrypted_events = fetch_encrypted_events
-    return LogHelper.log_info('No encrypted events to process') if encrypted_events.empty?
+    return log_info('No encrypted events to process') if encrypted_events.empty?
 
     successfully_processed_ids = process_encrypted_events(encrypted_events, private_key)
     mark_events_as_processed(successfully_processed_ids)
 
-    LogHelper.log_success(
+    log_info(
       'Job completed',
       total_events: encrypted_events.size,
       successfully_processed: successfully_processed_ids.size,
     )
   rescue => e
-    LogHelper.log_error('Job failed', error: e.message)
+    log_error('Job failed', e.message)
     raise
   end
 
@@ -40,7 +38,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     encrypted_events.each do |event|
       decrypted_message = decrypt_data(event['message'], private_key)
       unless decrypted_message
-        LogHelper.log_info('Failed to decrypt event', event_key: event['event_key'])
+        log_info('Failed to decrypt event', event_key: event['event_key'])
         next
       end
 
@@ -74,12 +72,12 @@ class FcmsPiiDecryptJob < ApplicationJob
     DataWarehouseApplicationRecord.transaction do
       connection.execute(sanitized_sql)
     end
-    LogHelper.log_success(
+    log_info(
       'Data inserted to fraud_ops_events table',
       row_count: decrypted_events.size,
     )
   rescue ActiveRecord::StatementInvalid => e
-    LogHelper.log_error('Failed to insert data to fraud_ops_events table', error: e.message)
+    log_error('Failed to insert data to fraud_ops_events table', e.message)
     raise
   end
 
@@ -87,7 +85,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     decrypted_data = JWE.decrypt(encrypted_data, private_key)
     JSON.parse(decrypted_data).deep_symbolize_keys
   rescue => e
-    LogHelper.log_error('Failed to decrypt data', error: e.message)
+    log_error('Failed to decrypt data', e.message)
     nil
   end
 
@@ -107,12 +105,12 @@ class FcmsPiiDecryptJob < ApplicationJob
         connection.execute(query)
       end
     end
-    LogHelper.log_success(
+    log_info(
       'Updated processed_timestamp in encrypted_events',
       updated_count: event_ids.size,
     )
   rescue ActiveRecord::StatementInvalid => e
-    LogHelper.log_error('Failed to update processed_timestamp', error: e.message)
+    log_error('Failed to update processed_timestamp', e.message)
     raise
   end
 
@@ -121,14 +119,37 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def skip_job_execution
-    LogHelper.log_info('Skipped because fraud_ops_tracker_enabled is false')
+    log_info('Skipped because fraud_ops_tracker_enabled is false')
+  end
+
+  def log_error(message, error)
+    logger.error(
+      {
+        job: self.class.name,
+        message: message,
+        error: error,
+      }.to_json,
+    )
+  end
+
+  def log_info(message, **additional_info)
+    logger.info(
+      {
+        job: self.class.name,
+        message: message,
+      }.merge(additional_info).to_json,
+    )
   end
 
   def private_key
-    OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_private_key)
+    @private_key ||= OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_private_key)
   end
 
   def connection
     @connection ||= DataWarehouseApplicationRecord.connection
+  end
+
+  def logger
+    @logger ||= IdentityJobLogSubscriber.new.logger
   end
 end

@@ -34,7 +34,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'skips job execution and logs info' do
-        expect(JobHelpers::LogHelper).to receive(:log_info).
+        expect(job).to receive(:log_info).
           with('Skipped because fraud_ops_tracker_enabled is false')
 
         job.perform
@@ -47,7 +47,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs info and returns early' do
-        expect(JobHelpers::LogHelper).to receive(:log_info).
+        expect(job).to receive(:log_info).
           with('No encrypted events to process')
 
         job.perform
@@ -63,7 +63,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'processes events successfully' do
-        expect(JobHelpers::LogHelper).to receive(:log_success).
+        expect(job).to receive(:log_info).
           with('Job completed', total_events: 2, successfully_processed: 2)
 
         job.perform
@@ -86,8 +86,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error and re-raises exception' do
-        expect(JobHelpers::LogHelper).to receive(:log_error).
-          with('Job failed', error: error_message)
+        expect(job).to receive(:log_error).
+          with('Job failed', error_message)
 
         expect { job.perform }.to raise_error(StandardError, error_message)
       end
@@ -151,7 +151,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs failure and skips failed events' do
-        expect(JobHelpers::LogHelper).to receive(:log_info).
+        expect(job).to receive(:log_info).
           with('Failed to decrypt event', event_key: 'event_2')
 
         result = job.send(:process_encrypted_events, encrypted_events, private_key)
@@ -198,7 +198,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
                                   "\"action\":\"login\"}'));"
 
         expect(mock_connection).to receive(:execute).with(expected_sanitized_sql)
-        expect(JobHelpers::LogHelper).to receive(:log_success).
+        expect(job).to receive(:log_info).
           with('Data inserted to fraud_ops_events table', row_count: 1)
 
         job.send(:insert_decrypted_events, decrypted_events)
@@ -213,8 +213,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error and re-raises exception' do
-        expect(JobHelpers::LogHelper).to receive(:log_error).
-          with('Failed to insert data to fraud_ops_events table', error: db_error.message)
+        expect(job).to receive(:log_error).
+          with('Failed to insert data to fraud_ops_events table', db_error.message)
 
         expect { job.send(:insert_decrypted_events, decrypted_events) }.
           to raise_error(ActiveRecord::StatementInvalid)
@@ -253,8 +253,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error and returns nil' do
-        expect(JobHelpers::LogHelper).to receive(:log_error).
-          with('Failed to decrypt data', error: jwe_error.message)
+        expect(job).to receive(:log_error).
+          with('Failed to decrypt data', jwe_error.message)
 
         result = job.send(:decrypt_data, encrypted_data, private_key)
         expect(result).to be_nil
@@ -267,8 +267,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error and returns nil' do
-        expect(JobHelpers::LogHelper).to receive(:log_error).
-          with('Failed to decrypt data', error: anything)
+        expect(job).to receive(:log_error).
+          with('Failed to decrypt data', anything)
 
         result = job.send(:decrypt_data, encrypted_data, private_key)
         expect(result).to be_nil
@@ -293,7 +293,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         }x
 
         expect(mock_connection).to receive(:execute).with(a_string_matching(expected_query))
-        expect(JobHelpers::LogHelper).to receive(:log_success).
+        expect(job).to receive(:log_info).
           with('Updated processed_timestamp in encrypted_events', updated_count: 2)
 
         job.send(:mark_events_as_processed, event_ids)
@@ -308,8 +308,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error and re-raises exception' do
-        expect(JobHelpers::LogHelper).to receive(:log_error).
-          with('Failed to update processed_timestamp', error: db_error.message)
+        expect(job).to receive(:log_error).
+          with('Failed to update processed_timestamp', db_error.message)
 
         expect { job.send(:mark_events_as_processed, event_ids) }.
           to raise_error(ActiveRecord::StatementInvalid)
@@ -335,7 +335,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
   describe '#skip_job_execution' do
     it 'logs appropriate message' do
-      expect(JobHelpers::LogHelper).to receive(:log_info).
+      expect(job).to receive(:log_info).
         with('Skipped because fraud_ops_tracker_enabled is false')
 
       job.send(:skip_job_execution)
