@@ -4,10 +4,12 @@ require 'factory_bot'
 RSpec.describe IdvRedisToRedshiftJob, type: :job do
   let(:fcms_job) { IdvRedisToRedshiftJob.new }
   let(:redis_client) { FraudOps::RedisClient.new }
-  let(:test_timestamp) { Time.current }
 
   def write_event(event_key:, jwe:, timestamp:)
-    formatted_time = timestamp.in_time_zone('UTC').change(min: 0, sec: 0).iso8601
+    formatted_time = timestamp.
+      in_time_zone('UTC').
+      change(min: (timestamp.min / 5) * 5).
+      iso8601
     key = "fraud-ops-events:#{formatted_time}"
     redis_client.redis_pool.with do |client|
       client.hset(key, event_key, jwe)
@@ -15,23 +17,23 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
     end
   end
 
-  def write_events_to_redis(event_size, start_index = 0)
+  def write_events_to_redis(event_size, timestamp)
     event_size.times do |i|
       write_event(
-        event_key: "event-1234-#{start_index + i}",
+        event_key: "event-1234-#{i}",
         jwe: 'eyJhbGciOiJSU0EtT0FFUCIsImVuYy',
-        timestamp: test_timestamp,
+        timestamp: timestamp,
       )
     end
   end
 
-  def perform_job_with_logging(exp_event_count)
-    write_events_to_redis(exp_event_count)
+  def perform_job_with_logging(expected_count, actual_count, event_timestamp)
+    write_events_to_redis(expected_count, event_timestamp)
     allow(Rails.logger).to receive(:info).and_call_original
     msg = {
       job: 'IdvRedisToRedshiftJob',
       success: true,
-      message: "IdvRedisToRedshiftJob: Read #{exp_event_count} event(s) from Redis for processing.",
+      message: "IdvRedisToRedshiftJob: Read #{actual_count} event(s) from Redis for processing.",
     }
     expect(Rails.logger).to receive(:info).with(msg.to_json)
     fcms_job.perform
@@ -45,7 +47,7 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
 
       it 'imports the events into fcms.encrypted_events' do
         event_size = 50
-        perform_job_with_logging(event_size)
+        perform_job_with_logging(event_size, event_size, Time.current - 1.hour)
 
         result = DataWarehouseApplicationRecord.connection.execute(
           'SELECT count(*) FROM fcms.encrypted_events',
@@ -56,8 +58,13 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
 
       it 'Reruns the full load without duplicating records' do
         # First, load 50 records and run the job
+        current_timestamp_minus_hour = Time.current - 1.hour
         initial_event_size = 50
-        perform_job_with_logging(initial_event_size)
+        perform_job_with_logging(
+          initial_event_size,
+          initial_event_size,
+          current_timestamp_minus_hour,
+        )
 
         # Get event_keys after first run
         first_run_events = DataWarehouseApplicationRecord.connection.execute(
@@ -71,7 +78,11 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
         incremental_event_size = 5
         additional_event_size = initial_event_size + incremental_event_size
         # Run the job again - should only process the 5 new records
-        perform_job_with_logging(additional_event_size)
+        perform_job_with_logging(
+          additional_event_size,
+          additional_event_size,
+          current_timestamp_minus_hour,
+        )
 
         # Get event_keys after second run
         total_events_in_db = DataWarehouseApplicationRecord.connection.execute(
@@ -84,6 +95,16 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
         # Verify total is now 55 records (50 original + 5 new)
         expect(total_events_in_db.length).to eq(additional_event_size)
         expect(newly_added_events.length).to eq(incremental_event_size)
+      end
+
+      it 'does not process data from current 5 minute bucket' do
+        perform_job_with_logging(50, 0, Time.current)
+
+        result = DataWarehouseApplicationRecord.connection.execute(
+          'SELECT count(*) FROM fcms.encrypted_events',
+        ).to_a
+        expect(result.length).to eq(1)
+        expect(result.first['count']).to eq(0)
       end
     end
   end
