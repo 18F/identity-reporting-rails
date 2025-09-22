@@ -54,7 +54,7 @@ development:
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
   fraud_ops_tracker_enabled: true
-  fraud_ops_private_key: ''
+  local/analytics/fraud-ops-private-key: ''
 
 # These values serve as defaults for all production-like environments
 production:
@@ -77,6 +77,7 @@ production:
   redshift_sia_v3_enabled: false
   fraud_ops_tracker_enabled: true
 
+
 test:
   database_host: ''
   database_name: ''
@@ -98,4 +99,4 @@ test:
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
   fraud_ops_tracker_enabled: true
-  fraud_ops_private_key: ''
+  local/analytics/fraud-ops-private-key: ''
