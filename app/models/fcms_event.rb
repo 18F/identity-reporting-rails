@@ -1,3 +1,3 @@
-class FcmsEvent < DataWarehouseApplicationRecord
+class FcmsEvent
   self.table_name = 'fcms.events'
 end
