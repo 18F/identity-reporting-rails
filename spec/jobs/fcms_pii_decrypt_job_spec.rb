@@ -193,13 +193,13 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
     context 'when insertion is successful' do
       it 'executes insert query and logs success' do
-        expected_sanitized_sql = "INSERT INTO fcms.events (event_key, message) VALUES " \
+        expected_sanitized_sql = "INSERT INTO fcms.fraud_ops_events (event_key, message) VALUES " \
                                   "('event_1', JSON_PARSE('{\"user_id\":123," \
                                   "\"action\":\"login\"}'));"
 
         expect(mock_connection).to receive(:execute).with(expected_sanitized_sql)
         expect(JobHelpers::LogHelper).to receive(:log_success).
-          with('Data inserted to events table', row_count: 1)
+          with('Data inserted to fraud_ops_events table', row_count: 1)
 
         job.send(:insert_decrypted_events, decrypted_events)
       end
@@ -214,7 +214,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
       it 'logs error and re-raises exception' do
         expect(JobHelpers::LogHelper).to receive(:log_error).
-          with('Failed to insert data to events table', error: db_error.message)
+          with('Failed to insert data to fraud_ops_events table', error: db_error.message)
 
         expect { job.send(:insert_decrypted_events, decrypted_events) }.
           to raise_error(ActiveRecord::StatementInvalid)

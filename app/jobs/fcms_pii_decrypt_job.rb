@@ -65,7 +65,7 @@ class FcmsPiiDecryptJob < ApplicationJob
 
     # todo: we need to confirm if/how we want to handle possible duplicates
     insert_query = <<~SQL.squish
-      INSERT INTO fcms.events (event_key, message)
+      INSERT INTO fcms.fraud_ops_events (event_key, message)
       VALUES #{placeholders};
     SQL
 
@@ -74,9 +74,12 @@ class FcmsPiiDecryptJob < ApplicationJob
     DataWarehouseApplicationRecord.transaction do
       connection.execute(sanitized_sql)
     end
-    LogHelper.log_success('Data inserted to events table', row_count: decrypted_events.size)
+    LogHelper.log_success(
+      'Data inserted to fraud_ops_events table',
+      row_count: decrypted_events.size,
+    )
   rescue ActiveRecord::StatementInvalid => e
-    LogHelper.log_error('Failed to insert data to events table', error: e.message)
+    LogHelper.log_error('Failed to insert data to fraud_ops_events table', error: e.message)
     raise
   end
 
