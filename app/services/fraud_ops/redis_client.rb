@@ -33,19 +33,7 @@ module FraudOps
       total_deleted
     end
 
-    def write_event(event_key:, jwe:, timestamp:)
-      key = key(timestamp)
-      @redis_pool.with do |client|
-        client.hset(key, event_key, jwe)
-        client.expire(key, event_ttl_seconds)
-      end
-    end
-
     private
-
-    def event_ttl_seconds
-      IdentityConfig.store.redis_idv_event_ttl_seconds
-    end
 
     def get_partition_dt(hourly_key)
       hourly_key.split(':').second.to_time.in_time_zone('UTC').strftime('%Y-%m-%d')
@@ -55,11 +43,6 @@ module FraudOps
       @redis_pool.with do |client|
         client.keys('fraud-ops-events:*')
       end.sort
-    end
-
-    def key(timestamp)
-      formatted_time = timestamp.in_time_zone('UTC').change(min: 0, sec: 0).iso8601
-      "fraud-ops-events:#{formatted_time}"
     end
   end
 end

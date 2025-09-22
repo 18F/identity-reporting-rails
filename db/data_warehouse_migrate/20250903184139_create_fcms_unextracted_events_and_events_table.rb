@@ -14,8 +14,8 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
           ) #{using_redshift_adapter ? 'DISTKEY(partition_dt)' : ''};
         SQL
 
-        execute <<-"SQL"
-          CREATE TABLE IF NOT EXISTS fcms.events (
+        execute <<-SQL
+          CREATE TABLE IF NOT EXISTS fcms.fraud_ops_events (
             event_key VARCHAR(256) PRIMARY KEY,
             message #{using_redshift_adapter ? 'SUPER' : 'JSONB'},
             event_timestamp TIMESTAMP
@@ -25,7 +25,7 @@ class CreateFcmsUnextractedEventsAndEventsTable < ActiveRecord::Migration[7.2]
 
       dir.down do
         execute 'DROP TABLE IF EXISTS fcms.encrypted_events'
-        execute 'DROP TABLE IF EXISTS fcms.events'
+        execute 'DROP TABLE IF EXISTS fcms.fraud_ops_events'
         execute 'DROP SCHEMA IF EXISTS fcms'
       end
     end

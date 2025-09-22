@@ -6,9 +6,18 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
   let(:redis_client) { FraudOps::RedisClient.new }
   let(:test_timestamp) { Time.current }
 
+  def write_event(event_key:, jwe:, timestamp:)
+    formatted_time = timestamp.in_time_zone('UTC').change(min: 0, sec: 0).iso8601
+    key = "fraud-ops-events:#{formatted_time}"
+    redis_client.redis_pool.with do |client|
+      client.hset(key, event_key, jwe)
+      client.expire(key, 604800)
+    end
+  end
+
   def write_events_to_redis(event_size, start_index = 0)
     event_size.times do |i|
-      redis_client.write_event(
+      write_event(
         event_key: "event-1234-#{start_index + i}",
         jwe: 'eyJhbGciOiJSU0EtT0FFUCIsImVuYy',
         timestamp: test_timestamp,
