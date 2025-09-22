@@ -61,12 +61,7 @@ class IdentityConfig
     config.add(:s3_report_bucket_prefix, type: :string)
     config.add(:redshift_sia_v3_enabled, type: :boolean)
     config.add(:fraud_ops_tracker_enabled, type: :boolean)
-
-    config.add(
-      :fraud_ops_private_key,
-      secrets_manager_name: "#{Identity::Hostdata.env || 'local'}/analytics/fraud-ops-private-key",
-      type: :string,
-    )
+    config.add(:fraud_ops_private_key, type: :string)
 
     "redshift/#{Identity::Hostdata.env || 'local'}-analytics-superuser".
       then do |redshift_secrets_manager_key|
