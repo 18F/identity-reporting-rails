@@ -123,7 +123,7 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def log_error(message, error)
-    logger.error(
+    Rails.logger.error(
       {
         job: self.class.name,
         message: message,
@@ -133,7 +133,7 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def log_info(message, **additional_info)
-    logger.info(
+    Rails.logger.info(
       {
         job: self.class.name,
         message: message,
@@ -147,9 +147,5 @@ class FcmsPiiDecryptJob < ApplicationJob
 
   def connection
     @connection ||= DataWarehouseApplicationRecord.connection
-  end
-
-  def logger
-    @logger ||= IdentityJobLogSubscriber.new.logger
   end
 end
