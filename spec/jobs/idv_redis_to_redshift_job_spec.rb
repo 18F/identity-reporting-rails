@@ -42,7 +42,7 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
   describe '#perform' do
     context 'when idv records are present in redis' do
       before do
-        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(true)
+        allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
       end
 
       it 'imports the events into fcms.encrypted_events' do

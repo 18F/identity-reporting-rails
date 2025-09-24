@@ -7,6 +7,8 @@ class IdvRedisToRedshiftJob < ApplicationJob
   )
 
   def perform
+    return unless IdentityConfig.store.fraud_ops_tracker_enabled
+
     @schema_name = 'fcms'
     @target_table_name = 'encrypted_events'
     @redis_client = FraudOps::RedisClient.new
@@ -33,7 +35,6 @@ class IdvRedisToRedshiftJob < ApplicationJob
 
   def fetch_redis_idv_batches(batch_size: 1000)
     # Fetch data from Redis for IDV
-    return unless IdentityConfig.store.data_warehouse_fcms_enabled
 
     loop do
       events = @redis_client.read_events(batch_size: batch_size)
@@ -113,6 +114,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
   def load_batch_into_temp_table_query
     values_list = @events_payload.map do |key, value|
       # Extract in the exact same order as your INSERT statement
+      # key: event_key, value[0]: message, value[1]: partition_dt
       cols = [key, value[0], value[1]]
 
       # Quote each value for SQL
