@@ -28,9 +28,7 @@ class IdentityConfig
     #    ./  / /\ \   | \ \  \ \
     #       / /  \ \  | |\ \  \7
     #        "     "    "  "
-    config.add(:aws_http_timeout, type: :integer)
-    config.add(:aws_http_retry_limit, type: :integer)
-    config.add(:aws_http_retry_max_delay, type: :integer)
+
     config.add(:domain_name, type: :string)
     config.add(:database_host, type: :string)
     config.add(:database_name, type: :string)
