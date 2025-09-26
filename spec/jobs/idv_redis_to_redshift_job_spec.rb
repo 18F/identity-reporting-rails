@@ -97,8 +97,31 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
         expect(newly_added_events.length).to eq(incremental_event_size)
       end
 
-      it 'does not process data from current 5 minute bucket' do
+      it 'do not process data from current 5 minute bucket' do
         perform_job_with_logging(50, 0, Time.current)
+
+        result = DataWarehouseApplicationRecord.connection.execute(
+          'SELECT count(*) FROM fcms.encrypted_events',
+        ).to_a
+        expect(result.length).to eq(1)
+        expect(result.first['count']).to eq(0)
+      end
+    end
+    context 'when fraud_ops_tracker_enabled flag is false' do
+      before do
+        allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(false)
+      end
+
+      it 'does not run the job' do
+        write_events_to_redis(50, Time.current - 1.hour)
+        allow(Rails.logger).to receive(:info).and_call_original
+        msg = {
+          job: 'IdvRedisToRedshiftJob',
+          success: false,
+          message: 'IdvRedisToRedshiftJob: fraud_ops_tracker_enabled is false, skipping job.',
+        }
+        expect(Rails.logger).to receive(:info).with(msg.to_json)
+        fcms_job.perform
 
         result = DataWarehouseApplicationRecord.connection.execute(
           'SELECT count(*) FROM fcms.encrypted_events',

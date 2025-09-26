@@ -7,7 +7,14 @@ class IdvRedisToRedshiftJob < ApplicationJob
   )
 
   def perform
-    return unless IdentityConfig.store.fraud_ops_tracker_enabled
+    enabled = IdentityConfig.store.fraud_ops_tracker_enabled
+    unless enabled
+      log_info(
+        "IdvRedisToRedshiftJob: fraud_ops_tracker_enabled is #{enabled}, skipping job.",
+        false,
+      )
+      return
+    end
 
     @schema_name = 'fcms'
     @target_table_name = 'encrypted_events'
@@ -136,6 +143,8 @@ class IdvRedisToRedshiftJob < ApplicationJob
       USING %{source_table_name_temp} source
       ON %{schema_name}.%{target_table_name}.event_key = source.event_key
       AND %{schema_name}.%{target_table_name}.partition_dt = source.partition_dt
+      WHEN MATCHED THEN
+        UPDATE SET message = source.message
       WHEN NOT MATCHED THEN
         INSERT (event_key, message, partition_dt)
         VALUES (source.event_key, source.message, source.partition_dt)
