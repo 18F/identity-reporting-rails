@@ -32,6 +32,7 @@ report_timeout: 0
 s3_reports_enabled: false
 s3_report_bucket_prefix: login-gov.reports
 fraud_ops_tracker_enabled: false
+fraud_ops_private_key: ''
 
 development:
   database_host: ''
@@ -54,7 +55,8 @@ development:
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
   fraud_ops_tracker_enabled: true
-  local/analytics/fraud-ops-private-key: ''
+  # local/analytics/fraud-ops-private-key: ''
+  fraud_ops_private_key: 'local/analytics/fraud-ops-private-key'
 
 # These values serve as defaults for all production-like environments
 production:
@@ -76,6 +78,7 @@ production:
   s3_reports_enabled: false
   redshift_sia_v3_enabled: false
   fraud_ops_tracker_enabled: true
+  fraud_ops_private_key: ''
 
 
 test:
@@ -99,4 +102,5 @@ test:
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
   fraud_ops_tracker_enabled: true
-  local/analytics/fraud-ops-private-key: ''
+  # local/analytics/fraud-ops-private-key: ''
+  fraud_ops_private_key: 'local/analytics/fraud-ops-private-key'
