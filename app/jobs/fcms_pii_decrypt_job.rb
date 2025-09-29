@@ -91,7 +91,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     value_fragment = using_redshift_adapter? ? '(?, JSON_PARSE(?))' : '(?, ?::jsonb)'
     placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
 
-    values = decrypted_events.flat_map do |ev|
+    values = decrypted_events.flat_map do |event|
       [event[:event_key], JSON.generate(event[:message])]
     end
 
