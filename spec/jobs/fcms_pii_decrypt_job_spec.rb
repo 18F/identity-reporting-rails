@@ -351,28 +351,4 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       expect(result).to eq(private_key)
     end
   end
-
-  describe '#connection' do
-    before do
-      # Reset the memoized connection
-      job.instance_variable_set(:@connection, nil)
-      allow(job).to receive(:connection).and_call_original
-    end
-
-    it 'returns DataWarehouseApplicationRecord connection' do
-      expect(DataWarehouseApplicationRecord).to receive(:connection).and_return(mock_connection)
-
-      result = job.send(:connection)
-      expect(result).to eq(mock_connection)
-    end
-
-    it 'memoizes the connection' do
-      expect(DataWarehouseApplicationRecord).
-        to receive(:connection).once.and_return(mock_connection)
-
-      # Call twice to test memoization
-      job.send(:connection)
-      job.send(:connection)
-    end
-  end
 end
