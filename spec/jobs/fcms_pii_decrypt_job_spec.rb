@@ -7,6 +7,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
   let(:sample_event_data) { { user_id: 123, action: 'login' } }
   let(:encrypted_message) { 'encrypted_data_string' }
+  let(:batch_size) { 1000 }
 
   let(:encrypted_events) do
     [
@@ -25,6 +26,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
     allow(job).to receive(:connection).and_return(mock_connection)
     allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
     allow(IdentityConfig.store).to receive(:fraud_ops_private_key).and_return(private_key_pem)
+    allow(DataWarehouseApplicationRecord).to receive(:transaction).and_yield
+    allow(DataWarehouseApplicationRecord).to receive(:connection).and_return(mock_connection)
   end
 
   describe '#perform' do
@@ -46,9 +49,9 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         allow(job).to receive(:fetch_encrypted_events).and_return([])
       end
 
-      it 'logs info and returns early' do
+      it 'logs completion with zero processed' do
         expect(job).to receive(:log_info).
-          with('No encrypted events to process')
+          with('Job completed', successfully_processed: 0, batch_size: batch_size)
 
         job.perform
       end
@@ -56,23 +59,52 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
     context 'when encrypted events exist' do
       before do
-        allow(job).to receive(:fetch_encrypted_events).and_return(encrypted_events)
-        allow(job).to receive(:decrypt_data).and_return(sample_event_data)
-        allow(job).to receive(:insert_decrypted_events)
-        allow(job).to receive(:mark_events_as_processed)
+        allow(job).to receive(:process_encrypted_events_bulk).and_return(2)
       end
 
       it 'processes events successfully' do
+        allow(job).to receive(:fetch_encrypted_events).and_return(encrypted_events, [])
         expect(job).to receive(:log_info).
-          with('Job completed', total_events: 2, successfully_processed: 2)
+          with('Job completed', successfully_processed: 2, batch_size: batch_size)
 
         job.perform
       end
 
-      it 'uses the configured private key' do
-        expect(IdentityConfig.store).
-          to receive(:fraud_ops_private_key).and_return(private_key_pem)
-        expect(OpenSSL::PKey::RSA).to receive(:new).with(private_key_pem)
+      it 'processes in batches until no events remain' do
+        # The loop breaks after first batch because encrypted_events.size (2) < batch_size (1000)
+        expect(job).to receive(:fetch_encrypted_events).with(limit: batch_size).and_return(
+          encrypted_events,
+        )
+        expect(job).to receive(:process_encrypted_events_bulk).once
+
+        job.perform
+      end
+
+      it 'accepts custom batch_size parameter' do
+        custom_batch_size = 500
+        expect(job).to receive(:fetch_encrypted_events).
+          with(limit: custom_batch_size).and_return([])
+
+        job.perform(batch_size: custom_batch_size)
+      end
+    end
+
+    context 'when processing multiple batches' do
+      let(:full_batch) { Array.new(batch_size) { encrypted_events.first } }
+      let(:partial_batch) { [encrypted_events.first] }
+
+      before do
+        allow(job).to receive(:process_encrypted_events_bulk).
+          and_return(batch_size, 1)
+      end
+
+      it 'continues processing until batch is incomplete' do
+        # The loop breaks after partial_batch because partial_batch.size (1) < batch_size (1000)
+        expect(job).to receive(:fetch_encrypted_events).with(limit: batch_size).
+          and_return(full_batch, partial_batch)
+        expect(job).to receive(:process_encrypted_events_bulk).twice
+        expect(job).to receive(:log_info).
+          with('Job completed', successfully_processed: batch_size + 1, batch_size: batch_size)
 
         job.perform
       end
@@ -87,7 +119,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
       it 'logs error and re-raises exception' do
         expect(job).to receive(:log_error).
-          with('Job failed', error_message)
+          with('Job failed', hash_including(error: error_message))
 
         expect { job.perform }.to raise_error(StandardError, error_message)
       end
@@ -95,129 +127,215 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
   end
 
   describe '#fetch_encrypted_events' do
-    let(:expected_query) do
-      'SELECT event_key, message ' \
-        'FROM fcms.encrypted_events ' \
-        'WHERE processed_timestamp IS NULL'
+    let(:limit) { 1000 }
+    let(:expected_query_pattern) do
+      %r{SELECT\ event_key,\ message\ FROM\ fcms\.encrypted_events
+         \s+WHERE\ processed_timestamp\ IS\ NULL
+         \s+ORDER\ BY\ event_key\ LIMIT}x
     end
     let(:query_result) { instance_double(ActiveRecord::Result) }
 
     before do
       allow(query_result).to receive(:to_a).and_return(encrypted_events)
+      allow(ActiveRecord::Base).to receive(:send).
+        with(:sanitize_sql_array, anything).and_call_original
     end
 
-    it 'executes the correct SQL query' do
-      expect(mock_connection).to receive(:execute).with(expected_query).and_return(query_result)
+    it 'executes the correct SQL query with limit' do
+      expect(mock_connection).to receive(:execute).
+        with(a_string_matching(expected_query_pattern)).
+        and_return(query_result)
 
-      result = job.send(:fetch_encrypted_events)
+      result = job.send(:fetch_encrypted_events, limit: limit)
       expect(result).to eq(encrypted_events)
     end
-  end
 
-  describe '#process_encrypted_events' do
-    context 'when decryption is successful' do
-      before do
-        allow(job).to receive(:decrypt_data).and_return(sample_event_data)
-        allow(job).to receive(:insert_decrypted_events)
-      end
+    it 'sanitizes SQL with proper limit parameter' do
+      expect(ActiveRecord::Base).to receive(:send).
+        with(:sanitize_sql_array, array_including(limit))
 
-      it 'returns successfully processed event IDs' do
-        result = job.send(:process_encrypted_events, encrypted_events, private_key)
-        expect(result).to eq(['event_1', 'event_2'])
-      end
-
-      it 'calls insert_decrypted_events with correct data' do
-        expected_decrypted_events = [
-          {
-            event_key: 'event_1',
-            message: sample_event_data,
-          },
-          {
-            event_key: 'event_2',
-            message: sample_event_data,
-          },
-        ]
-
-        expect(job).to receive(:insert_decrypted_events).with(expected_decrypted_events)
-
-        job.send(:process_encrypted_events, encrypted_events, private_key)
-      end
-    end
-
-    context 'when decryption fails for some events' do
-      before do
-        allow(job).to receive(:decrypt_data).and_return(sample_event_data, nil)
-        allow(job).to receive(:insert_decrypted_events)
-      end
-
-      it 'logs failure and skips failed events' do
-        expect(job).to receive(:log_info).
-          with('Failed to decrypt event', event_key: 'event_2')
-
-        result = job.send(:process_encrypted_events, encrypted_events, private_key)
-        expect(result).to eq(['event_1'])
-      end
-
-      it 'only inserts successfully decrypted events' do
-        expected_decrypted_events = [
-          {
-            event_key: 'event_1',
-            message: sample_event_data,
-          },
-        ]
-
-        expect(job).to receive(:insert_decrypted_events).with(expected_decrypted_events)
-
-        job.send(:process_encrypted_events, encrypted_events, private_key)
-      end
+      allow(mock_connection).to receive(:execute).and_return(query_result)
+      job.send(:fetch_encrypted_events, limit: limit)
     end
   end
 
-  describe '#insert_decrypted_events' do
+  describe '#process_encrypted_events_bulk' do
     let(:decrypted_events) do
       [
-        {
-          event_key: 'event_1',
-          message: sample_event_data,
-        },
+        { event_key: 'event_1', message: sample_event_data },
+        { event_key: 'event_2', message: sample_event_data },
       ]
     end
+    let(:successful_ids) { ['event_1', 'event_2'] }
 
     before do
-      allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
-      allow(mock_connection).
-        to receive(:quote).
-        with(sample_event_data.to_json).
-        and_return("'#{sample_event_data.to_json}'")
+      allow(job).to receive(:decrypt_events).and_return([decrypted_events, successful_ids])
+      allow(job).to receive(:bulk_insert_decrypted_events)
+      allow(job).to receive(:bulk_update_processed_timestamp)
     end
 
-    context 'when insertion is successful' do
-      it 'executes insert query and logs success' do
-        expected_sanitized_sql = "INSERT INTO fcms.fraud_ops_events (event_key, message) VALUES " \
-                                  "('event_1', JSON_PARSE('{\"user_id\":123," \
-                                  "\"action\":\"login\"}'));"
-
-        expect(mock_connection).to receive(:execute).with(expected_sanitized_sql)
-        expect(job).to receive(:log_info).
-          with('Data inserted to fraud_ops_events table', row_count: 1)
-
-        job.send(:insert_decrypted_events, decrypted_events)
+    context 'when events are empty' do
+      it 'returns 0 without processing' do
+        result = job.send(:process_encrypted_events_bulk, [])
+        expect(result).to eq(0)
       end
     end
 
-    context 'when insertion fails' do
-      let(:db_error) { ActiveRecord::StatementInvalid.new('Unique constraint violation') }
+    context 'when no events decrypt successfully' do
+      before do
+        allow(job).to receive(:decrypt_events).and_return([[], []])
+      end
+
+      it 'logs info and returns 0' do
+        expect(job).to receive(:log_info).
+          with('No successfully decrypted events in batch')
+
+        result = job.send(:process_encrypted_events_bulk, encrypted_events)
+        expect(result).to eq(0)
+      end
+    end
+
+    context 'when decryption is successful' do
+      it 'performs bulk operations in a transaction' do
+        expect(DataWarehouseApplicationRecord).to receive(:transaction).and_yield
+        expect(job).to receive(:bulk_insert_decrypted_events).with(decrypted_events)
+        expect(job).to receive(:bulk_update_processed_timestamp).with(successful_ids)
+
+        job.send(:process_encrypted_events_bulk, encrypted_events)
+      end
+
+      it 'instruments the batch persistence' do
+        expect(ActiveSupport::Notifications).to receive(:instrument).
+          with('fcms_pii_decrypt_job.persist_batch')
+
+        job.send(:process_encrypted_events_bulk, encrypted_events)
+      end
+
+      it 'logs completion with counts' do
+        expect(job).to receive(:log_info).
+          with('Bulk operations completed', inserted_count: 2, updated_count: 2)
+
+        job.send(:process_encrypted_events_bulk, encrypted_events)
+      end
+
+      it 'returns the count of successfully processed events' do
+        result = job.send(:process_encrypted_events_bulk, encrypted_events)
+        expect(result).to eq(2)
+      end
+    end
+
+    context 'when bulk processing fails' do
+      let(:db_error) { ActiveRecord::StatementInvalid.new('Constraint violation') }
 
       before do
-        allow(mock_connection).to receive(:execute).and_raise(db_error)
+        allow(job).to receive(:bulk_insert_decrypted_events).and_raise(db_error)
       end
 
       it 'logs error and re-raises exception' do
         expect(job).to receive(:log_error).
-          with('Failed to insert data to fraud_ops_events table', db_error.message)
+          with('Bulk processing failed', hash_including(error: db_error.message))
 
-        expect { job.send(:insert_decrypted_events, decrypted_events) }.
+        expect { job.send(:process_encrypted_events_bulk, encrypted_events) }.
           to raise_error(ActiveRecord::StatementInvalid)
+      end
+    end
+  end
+
+  describe '#decrypt_events' do
+    before do
+      allow(job).to receive(:private_key).and_return(private_key)
+    end
+
+    context 'when all events decrypt successfully' do
+      before do
+        allow(job).to receive(:decrypt_data).and_return(sample_event_data)
+      end
+
+      it 'returns decrypted events and successful IDs' do
+        decrypted, ids = job.send(:decrypt_events, encrypted_events)
+
+        expect(decrypted).to eq(
+          [
+            { event_key: 'event_1', message: sample_event_data },
+            { event_key: 'event_2', message: sample_event_data },
+          ],
+        )
+        expect(ids).to eq(['event_1', 'event_2'])
+      end
+    end
+
+    context 'when some events fail to decrypt' do
+      before do
+        allow(job).to receive(:decrypt_data).and_return(sample_event_data, nil)
+      end
+
+      it 'only includes successfully decrypted events' do
+        decrypted, ids = job.send(:decrypt_events, encrypted_events)
+
+        expect(decrypted).to eq(
+          [
+            { event_key: 'event_1', message: sample_event_data },
+          ],
+        )
+        expect(ids).to eq(['event_1'])
+      end
+    end
+  end
+
+  describe '#bulk_insert_decrypted_events' do
+    let(:decrypted_events) do
+      [
+        { event_key: 'event_1', message: sample_event_data },
+        { event_key: 'event_2', message: sample_event_data },
+      ]
+    end
+
+    before do
+      allow(ActiveRecord::Base).to receive(:send).
+        with(:sanitize_sql_array, anything).and_call_original
+      allow(JSON).to receive(:generate).and_call_original
+    end
+
+    context 'when using PostgreSQL adapter' do
+      before do
+        allow(job).to receive(:using_redshift_adapter?).and_return(false)
+        allow(mock_connection).to receive(:execute)
+      end
+
+      it 'uses jsonb cast in insert statement' do
+        expected_pattern = %r{INSERT\ INTO\ fcms\.fraud_ops_events
+                      \s*\(event_key,\ message\)
+                      \s*VALUES.*::jsonb}x
+
+        expect(mock_connection).to receive(:execute).
+          with(a_string_matching(expected_pattern))
+
+        job.send(:bulk_insert_decrypted_events, decrypted_events)
+      end
+
+      it 'logs successful insertion' do
+        expect(job).to receive(:log_info).
+          with('Bulk insert completed', row_count: 2)
+
+        job.send(:bulk_insert_decrypted_events, decrypted_events)
+      end
+    end
+
+    context 'when using Redshift adapter' do
+      before do
+        allow(job).to receive(:using_redshift_adapter?).and_return(true)
+        allow(mock_connection).to receive(:execute)
+      end
+
+      it 'uses JSON_PARSE in insert statement' do
+        expected_pattern = %r{INSERT\ INTO\ fcms\.fraud_ops_events
+                      \s*\(event_key,\ message\)
+                      \s*VALUES.*JSON_PARSE}x
+
+        expect(mock_connection).to receive(:execute).
+          with(a_string_matching(expected_pattern))
+
+        job.send(:bulk_insert_decrypted_events, decrypted_events)
       end
     end
 
@@ -225,7 +343,45 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       it 'returns early without executing query' do
         expect(mock_connection).not_to receive(:execute)
 
-        job.send(:insert_decrypted_events, [])
+        job.send(:bulk_insert_decrypted_events, [])
+      end
+    end
+  end
+
+  describe '#bulk_update_processed_timestamp' do
+    let(:event_ids) { ['event_1', 'event_2'] }
+
+    before do
+      allow(ActiveRecord::Base).to receive(:send).
+        with(:sanitize_sql_array, anything).and_call_original
+    end
+
+    context 'when update is successful' do
+      it 'executes update query with all event IDs' do
+        expected_pattern = %r{UPDATE\ fcms\.encrypted_events
+                      \s+SET\ processed_timestamp\ =\ CURRENT_TIMESTAMP
+                      \s+WHERE\ event_key\ IN}x
+
+        expect(mock_connection).to receive(:execute).
+          with(a_string_matching(expected_pattern))
+
+        job.send(:bulk_update_processed_timestamp, event_ids)
+      end
+
+      it 'logs successful update' do
+        allow(mock_connection).to receive(:execute)
+        expect(job).to receive(:log_info).
+          with('Bulk update completed', updated_count: 2)
+
+        job.send(:bulk_update_processed_timestamp, event_ids)
+      end
+    end
+
+    context 'when event_ids is empty' do
+      it 'returns early without executing query' do
+        expect(mock_connection).not_to receive(:execute)
+
+        job.send(:bulk_update_processed_timestamp, [])
       end
     end
   end
@@ -233,14 +389,15 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
   describe '#decrypt_data' do
     let(:encrypted_data) { 'encrypted_jwe_token' }
     let(:decrypted_json) { sample_event_data.to_json }
+    let(:event_key) { 'event_123' }
 
     context 'when decryption is successful' do
       before do
         allow(JWE).to receive(:decrypt).with(encrypted_data, private_key).and_return(decrypted_json)
       end
 
-      it 'returns parsed JSON data' do
-        result = job.send(:decrypt_data, encrypted_data, private_key)
+      it 'returns parsed JSON data with symbolized keys' do
+        result = job.send(:decrypt_data, encrypted_data, private_key, event_key)
         expect(result).to eq(sample_event_data)
       end
     end
@@ -252,103 +409,44 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         allow(JWE).to receive(:decrypt).and_raise(jwe_error)
       end
 
-      it 'logs error and returns nil' do
+      it 'logs error with event_key and returns nil' do
         expect(job).to receive(:log_error).
-          with('Failed to decrypt data', jwe_error.message)
+          with('Failed to decrypt and parse data', event_key: event_key, error: jwe_error.message)
 
-        result = job.send(:decrypt_data, encrypted_data, private_key)
+        result = job.send(:decrypt_data, encrypted_data, private_key, event_key)
         expect(result).to be_nil
       end
     end
 
     context 'when JSON parsing fails' do
       before do
-        allow(JWE).to receive(:decrypt).with(encrypted_data, private_key).and_return('invalid json')
+        allow(JWE).to receive(:decrypt).and_return('invalid json')
       end
 
-      it 'logs error and returns nil' do
+      it 'logs error with event_key and returns nil' do
         expect(job).to receive(:log_error).
-          with('Failed to decrypt data', anything)
+          with('Failed to decrypt and parse data', event_key: event_key, error: anything)
 
-        result = job.send(:decrypt_data, encrypted_data, private_key)
+        result = job.send(:decrypt_data, encrypted_data, private_key, event_key)
         expect(result).to be_nil
       end
-    end
-  end
-
-  describe '#mark_events_as_processed' do
-    let(:event_ids) { ['event_1', 'event_2'] }
-
-    before do
-      allow(mock_connection).to receive(:quote).with('event_1').and_return("'event_1'")
-      allow(mock_connection).to receive(:quote).with('event_2').and_return("'event_2'")
-    end
-
-    context 'when update is successful' do
-      it 'executes update query and logs success' do
-        expected_query = %r{
-          UPDATE\ fcms\.encrypted_events\s+
-          SET\ processed_timestamp\ =\ CURRENT_TIMESTAMP\s+
-          WHERE\ event_key\ IN\ \('event_1',\ 'event_2'\)
-        }x
-
-        expect(mock_connection).to receive(:execute).with(a_string_matching(expected_query))
-        expect(job).to receive(:log_info).
-          with('Updated processed_timestamp in encrypted_events', updated_count: 2)
-
-        job.send(:mark_events_as_processed, event_ids)
-      end
-    end
-
-    context 'when update fails' do
-      let(:db_error) { ActiveRecord::StatementInvalid.new('Table not found') }
-
-      before do
-        allow(mock_connection).to receive(:execute).and_raise(db_error)
-      end
-
-      it 'logs error and re-raises exception' do
-        expect(job).to receive(:log_error).
-          with('Failed to update processed_timestamp', db_error.message)
-
-        expect { job.send(:mark_events_as_processed, event_ids) }.
-          to raise_error(ActiveRecord::StatementInvalid)
-      end
-    end
-
-    context 'when event_ids is empty' do
-      it 'returns early without executing query' do
-        expect(mock_connection).not_to receive(:execute)
-
-        job.send(:mark_events_as_processed, [])
-      end
-    end
-  end
-
-  describe '#job_enabled?' do
-    it 'returns the fraud_ops_tracker_enabled config value' do
-      expect(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
-
-      expect(job.send(:job_enabled?)).to be true
-    end
-  end
-
-  describe '#skip_job_execution' do
-    it 'logs appropriate message' do
-      expect(job).to receive(:log_info).
-        with('Skipped because fraud_ops_tracker_enabled is false')
-
-      job.send(:skip_job_execution)
     end
   end
 
   describe '#private_key' do
     it 'returns an OpenSSL::PKey::RSA instance from the config' do
       expect(IdentityConfig.store).to receive(:fraud_ops_private_key).and_return(private_key_pem)
-      expect(OpenSSL::PKey::RSA).to receive(:new).with(private_key_pem).and_return(private_key)
+      expect(OpenSSL::PKey::RSA).to receive(:new).with(private_key_pem).and_call_original
 
       result = job.send(:private_key)
-      expect(result).to eq(private_key)
+      expect(result).to be_a(OpenSSL::PKey::RSA)
+    end
+
+    it 'memoizes the private key' do
+      expect(OpenSSL::PKey::RSA).to receive(:new).once.and_call_original
+
+      job.send(:private_key)
+      job.send(:private_key)
     end
   end
 end

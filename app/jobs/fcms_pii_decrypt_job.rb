@@ -155,11 +155,6 @@ class FcmsPiiDecryptJob < ApplicationJob
     Rails.logger.info(payload.to_json)
   end
 
-  def log_warning(message, **data)
-    payload = log_message(message, 'warning').merge(data)
-    Rails.logger.warning(payload.to_json)
-  end
-
   def log_error(message, **data)
     payload = log_message(message, 'error').merge(data)
     Rails.logger.error(payload.to_json)
