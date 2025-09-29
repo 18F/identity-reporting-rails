@@ -1,151 +1,180 @@
 class FcmsPiiDecryptJob < ApplicationJob
   queue_as :default
 
-  def perform
-    return skip_job_execution unless job_enabled?
+  BATCH_SIZE = 1_000
+  FETCH_SQL = <<~SQL.squish
+    SELECT event_key, message
+    FROM fcms.encrypted_events
+    WHERE processed_timestamp IS NULL
+    ORDER BY event_key
+    LIMIT ?
+  SQL
 
-    encrypted_events = fetch_encrypted_events
-    return log_info('No encrypted events to process') if encrypted_events.empty?
+  def perform(batch_size: BATCH_SIZE)
+    return log_info('Skipped because fraud_ops_tracker_enabled is false') unless job_enabled?
 
-    successfully_processed_ids = process_encrypted_events(encrypted_events, private_key)
-    mark_events_as_processed(successfully_processed_ids)
+    total_processed = 0
+    loop do
+      encrypted_events = fetch_encrypted_events(limit: batch_size)
+      break if encrypted_events.empty?
+
+      processed_this_batch = process_encrypted_events_bulk(encrypted_events)
+      total_processed += processed_this_batch
+      break if encrypted_events.size < batch_size # no more remaining
+    end
 
     log_info(
       'Job completed',
-      total_events: encrypted_events.size,
-      successfully_processed: successfully_processed_ids.size,
+      successfully_processed: total_processed,
+      batch_size: batch_size,
     )
+    nil
   rescue => e
-    log_error('Job failed', e.message)
+    log_error('Job failed', error: e.message, backtrace: trimmed_backtrace(e))
     raise
   end
 
   private
 
-  def fetch_encrypted_events
-    query = <<~SQL.squish
-      SELECT event_key, message
-      FROM fcms.encrypted_events
-      WHERE processed_timestamp IS NULL
-    SQL
-    connection.execute(query).to_a
+  def fetch_encrypted_events(limit:)
+    sql = ActiveRecord::Base.send(:sanitize_sql_array, [FETCH_SQL, limit])
+    connection.execute(sql).to_a
   end
 
-  def process_encrypted_events(encrypted_events, private_key)
-    successfully_processed_ids = []
-    decrypted_events = []
+  def process_encrypted_events_bulk(encrypted_events)
+    return 0 if encrypted_events.empty?
 
-    encrypted_events.each do |event|
-      decrypted_message = decrypt_data(event['message'], private_key)
-      unless decrypted_message
-        log_info('Failed to decrypt event', event_key: event['event_key'])
+    decrypted_events, successful_ids = decrypt_events(encrypted_events)
+
+    if decrypted_events.empty?
+      log_info('No successfully decrypted events in batch')
+      return 0
+    end
+
+    ActiveSupport::Notifications.instrument('fcms_pii_decrypt_job.persist_batch') do
+      DataWarehouseApplicationRecord.transaction do
+        bulk_insert_decrypted_events(decrypted_events)
+        bulk_update_processed_timestamp(successful_ids)
+      end
+    end
+
+    log_info(
+      'Bulk operations completed',
+      inserted_count: decrypted_events.size,
+      updated_count: successful_ids.size,
+    )
+    successful_ids.size
+  rescue ActiveRecord::StatementInvalid => e
+    log_error('Bulk processing failed', error: e.message, backtrace: trimmed_backtrace(e))
+    raise
+  end
+
+  # Splits decryption so it is testable and isolated
+  def decrypt_events(encrypted_events)
+    decrypted_events = []
+    successful_ids   = []
+
+    encrypted_events.each do |row|
+      decrypted = decrypt_data(row['message'], private_key)
+      unless decrypted
+        log_info('Failed to decrypt event', event_key: row['event_key'])
         next
       end
 
       decrypted_events << {
-        event_key: event['event_key'],
-        message: decrypted_message,
+        event_key: row['event_key'],
+        message: decrypted, # hash (symbolized keys)
       }
-      successfully_processed_ids << event['event_key']
+      successful_ids << row['event_key']
     end
 
-    insert_decrypted_events(decrypted_events) unless decrypted_events.empty?
-    successfully_processed_ids
+    [decrypted_events, successful_ids]
   end
 
-  def insert_decrypted_events(decrypted_events)
+  def bulk_insert_decrypted_events(decrypted_events)
     return if decrypted_events.empty?
 
-    placeholders = (['(?, JSON_PARSE(?))'] * decrypted_events.size).join(', ')
-    values = decrypted_events.flat_map do |event|
-      [event[:event_key], event[:message].to_json]
+    adapter = connection.adapter_name.downcase
+    redshift = adapter.include?('redshift')
+
+    # For Redshift SUPER use JSON_PARSE(?), for Postgres jsonb use ?::jsonb
+    value_fragment = redshift ? '(?, JSON_PARSE(?))' : '(?, ?::jsonb)'
+    placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
+
+    values = decrypted_events.flat_map do |ev|
+      json_payload = ev[:message].is_a?(String) ? ev[:message] : JSON.generate(ev[:message])
+      [ev[:event_key], json_payload]
     end
 
-    # todo: we need to confirm if/how we want to handle possible duplicates
-    insert_query = <<~SQL.squish
+    insert_sql = <<~SQL.squish
       INSERT INTO fcms.fraud_ops_events (event_key, message)
-      VALUES #{placeholders};
+      VALUES #{placeholders}
     SQL
 
-    sanitized_sql = ActiveRecord::Base.send(:sanitize_sql_array, [insert_query, *values])
+    sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [insert_sql, *values])
+    connection.execute(sanitized)
 
-    DataWarehouseApplicationRecord.transaction do
-      connection.execute(sanitized_sql)
-    end
-    log_info(
-      'Data inserted to fraud_ops_events table',
-      row_count: decrypted_events.size,
-    )
-  rescue ActiveRecord::StatementInvalid => e
-    log_error('Failed to insert data to fraud_ops_events table', e.message)
-    raise
+    log_info('Bulk insert completed', row_count: decrypted_events.size)
   end
 
-  def decrypt_data(encrypted_data, private_key)
-    decrypted_data = JWE.decrypt(encrypted_data, private_key)
-    JSON.parse(decrypted_data).deep_symbolize_keys
-  rescue => e
-    log_error('Failed to decrypt data', e.message)
-    nil
-  end
-
-  def mark_events_as_processed(event_ids)
+  def bulk_update_processed_timestamp(event_ids)
     return if event_ids.empty?
 
-    query = ActiveRecord::Base.sanitize_sql_array(
-      [
-        "UPDATE fcms.encrypted_events SET processed_timestamp = CURRENT_TIMESTAMP " \
-        "WHERE event_key IN (#{(['?'] * event_ids.size).join(', ')})",
-        *event_ids,
-      ],
-    )
+    placeholders = (['?'] * event_ids.size).join(', ')
+    update_sql = <<~SQL.squish
+      UPDATE fcms.encrypted_events
+      SET processed_timestamp = CURRENT_TIMESTAMP
+      WHERE event_key IN (#{placeholders})
+    SQL
 
-    begin
-      DataWarehouseApplicationRecord.transaction do
-        connection.execute(query)
-      end
-    end
-    log_info(
-      'Updated processed_timestamp in encrypted_events',
-      updated_count: event_ids.size,
-    )
-  rescue ActiveRecord::StatementInvalid => e
-    log_error('Failed to update processed_timestamp', e.message)
-    raise
+    sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [update_sql, *event_ids])
+    connection.execute(sanitized)
+
+    log_info('Bulk update completed', updated_count: event_ids.size)
+  end
+
+  def decrypt_data(encrypted_data, key)
+    json = JWE.decrypt(encrypted_data, key)
+    JSON.parse(json).deep_symbolize_keys
+  rescue => e
+    log_error('Failed to decrypt data', error: e.message)
+    nil
   end
 
   def job_enabled?
     IdentityConfig.store.fraud_ops_tracker_enabled
   end
 
-  def skip_job_execution
-    log_info('Skipped because fraud_ops_tracker_enabled is false')
-  end
-
-  def log_error(message, error)
-    Rails.logger.error(
-      {
-        job: self.class.name,
-        message: message,
-        error: error,
-      }.to_json,
-    )
-  end
-
-  def log_info(message, **additional_info)
-    Rails.logger.info(
-      {
-        job: self.class.name,
-        message: message,
-      }.merge(additional_info).to_json,
-    )
-  end
-
   def private_key
-    @private_key ||= OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_private_key)
+    @private_key ||= begin
+      raw = IdentityConfig.store.fraud_ops_private_key
+      raw.is_a?(OpenSSL::PKey::RSA) ? raw : OpenSSL::PKey::RSA.new(raw)
+    end
   end
 
   def connection
     @connection ||= DataWarehouseApplicationRecord.connection
+  end
+
+  def log_info(message, **data)
+    payload = base_log_payload(message).merge(data)
+    Rails.logger.info(payload.to_json)
+  end
+
+  def log_error(message, **data)
+    payload = base_log_payload(message).merge(level: 'error').merge(data)
+    Rails.logger.error(payload.to_json)
+  end
+
+  def base_log_payload(message)
+    {
+      job: self.class.name,
+      message: message,
+      timestamp: Time.zone.now.utc.iso8601,
+    }
+  end
+
+  def trimmed_backtrace(exception, lines: 5)
+    Array(exception.backtrace).first(lines)
   end
 end
