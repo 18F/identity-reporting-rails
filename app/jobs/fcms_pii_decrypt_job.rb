@@ -1,16 +1,7 @@
 class FcmsPiiDecryptJob < ApplicationJob
   queue_as :default
 
-  BATCH_SIZE = 1_000
-  FETCH_SQL = <<~SQL.squish
-    SELECT event_key, message
-    FROM fcms.encrypted_events
-    WHERE processed_timestamp IS NULL
-    ORDER BY event_key
-    LIMIT ?
-  SQL
-
-  def perform(batch_size: BATCH_SIZE)
+  def perform(batch_size: 1000)
     return log_info('Skipped because fraud_ops_tracker_enabled is false') unless job_enabled?
 
     total_processed = 0
@@ -30,15 +21,22 @@ class FcmsPiiDecryptJob < ApplicationJob
     )
     nil
   rescue => e
-    log_error('Job failed', error: e.message, backtrace: trimmed_backtrace(e))
+    log_error('Job failed', error: e.message, backtrace: e)
     raise
   end
 
   private
 
   def fetch_encrypted_events(limit:)
-    sql = ActiveRecord::Base.send(:sanitize_sql_array, [FETCH_SQL, limit])
-    connection.execute(sql).to_a
+    query = <<~SQL.squish
+      SELECT event_key, message
+      FROM fcms.encrypted_events
+      WHERE processed_timestamp IS NULL
+      ORDER BY event_key
+      LIMIT ?
+    SQL
+    sanitized_query = ActiveRecord::Base.send(:sanitize_sql_array, [query, limit])
+    connection.execute(sanitized_query).to_a
   end
 
   def process_encrypted_events_bulk(encrypted_events)
@@ -65,25 +63,21 @@ class FcmsPiiDecryptJob < ApplicationJob
     )
     successful_ids.size
   rescue ActiveRecord::StatementInvalid => e
-    log_error('Bulk processing failed', error: e.message, backtrace: trimmed_backtrace(e))
+    log_error('Bulk processing failed', error: e.message, backtrace: e)
     raise
   end
 
-  # Splits decryption so it is testable and isolated
   def decrypt_events(encrypted_events)
     decrypted_events = []
     successful_ids   = []
 
     encrypted_events.each do |row|
-      decrypted = decrypt_data(row['message'], private_key)
-      unless decrypted
-        log_info('Failed to decrypt event', event_key: row['event_key'])
-        next
-      end
+      decrypted = decrypt_data(row['message'], private_key, row['event_key'])
+      next unless decrypted
 
       decrypted_events << {
         event_key: row['event_key'],
-        message: decrypted, # hash (symbolized keys)
+        message: decrypted,
       }
       successful_ids << row['event_key']
     end
@@ -94,16 +88,11 @@ class FcmsPiiDecryptJob < ApplicationJob
   def bulk_insert_decrypted_events(decrypted_events)
     return if decrypted_events.empty?
 
-    adapter = connection.adapter_name.downcase
-    redshift = adapter.include?('redshift')
-
-    # For Redshift SUPER use JSON_PARSE(?), for Postgres jsonb use ?::jsonb
-    value_fragment = redshift ? '(?, JSON_PARSE(?))' : '(?, ?::jsonb)'
+    value_fragment = using_redshift_adapter? ? '(?, JSON_PARSE(?))' : '(?, ?::jsonb)'
     placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
 
     values = decrypted_events.flat_map do |ev|
-      json_payload = ev[:message].is_a?(String) ? ev[:message] : JSON.generate(ev[:message])
-      [ev[:event_key], json_payload]
+      [event[:event_key], JSON.generate(event[:message])]
     end
 
     insert_sql = <<~SQL.squish
@@ -133,11 +122,11 @@ class FcmsPiiDecryptJob < ApplicationJob
     log_info('Bulk update completed', updated_count: event_ids.size)
   end
 
-  def decrypt_data(encrypted_data, key)
+  def decrypt_data(encrypted_data, key, event_key)
     json = JWE.decrypt(encrypted_data, key)
     JSON.parse(json).deep_symbolize_keys
   rescue => e
-    log_error('Failed to decrypt data', error: e.message)
+    log_error('Failed to decrypt and parse data', event_key: event_key, error: e.message)
     nil
   end
 
@@ -145,11 +134,16 @@ class FcmsPiiDecryptJob < ApplicationJob
     IdentityConfig.store.fraud_ops_tracker_enabled
   end
 
+  def using_redshift_adapter?
+    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
+  end
+
+  def skip_job_execution
+    log_info('Skipped because fraud_ops_tracker_enabled is false')
+  end
+
   def private_key
-    @private_key ||= begin
-      raw = IdentityConfig.store.fraud_ops_private_key
-      raw.is_a?(OpenSSL::PKey::RSA) ? raw : OpenSSL::PKey::RSA.new(raw)
-    end
+    @private_key ||= OpenSSL::PKey::RSA.new(IdentityConfig.store.fraud_ops_private_key)
   end
 
   def connection
@@ -157,24 +151,25 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def log_info(message, **data)
-    payload = base_log_payload(message).merge(data)
+    payload = log_message(message, 'info').merge(data)
     Rails.logger.info(payload.to_json)
   end
 
+  def log_warning(message, **data)
+    payload = log_message(message, 'warning').merge(data)
+    Rails.logger.warning(payload.to_json)
+  end
+
   def log_error(message, **data)
-    payload = base_log_payload(message).merge(level: 'error').merge(data)
+    payload = log_message(message, 'error').merge(data)
     Rails.logger.error(payload.to_json)
   end
 
-  def base_log_payload(message)
+  def log_message(message, level)
     {
       job: self.class.name,
+      level: level,
       message: message,
-      timestamp: Time.zone.now.utc.iso8601,
     }
-  end
-
-  def trimmed_backtrace(exception, lines: 5)
-    Array(exception.backtrace).first(lines)
   end
 end
