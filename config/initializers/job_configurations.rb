@@ -1,5 +1,4 @@
 cron_30m = '*/30 * * * *'
-cron_10m = '0/10 * * * *'
 cron_5m = '0/5 * * * *'
 cron_1d = '0 6 * * *' # 6:00am UTC or 2:00am EST
 cron_24h = '0 0 * * *'
@@ -57,7 +56,7 @@ else
       # Import FCMS PII Decrypt Job
       fcms_pii_decrypt_job: {
         class: 'FcmsPiiDecryptJob',
-        cron: cron_10m,
+        cron: '5/10 * * * *', # every 10 minutes starting at 5 minutes past the hour
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
