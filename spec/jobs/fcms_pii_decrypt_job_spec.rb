@@ -50,8 +50,9 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs completion with zero processed' do
+        expect(job).to receive(:log_info).with('Job started', batch_size: batch_size).ordered
         expect(job).to receive(:log_info).
-          with('Job completed', successfully_processed: 0, batch_size: batch_size)
+          with('Job completed', successfully_processed: 0, batch_size: batch_size).ordered
 
         job.perform
       end
@@ -64,8 +65,9 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
       it 'processes events successfully' do
         allow(job).to receive(:fetch_encrypted_events).and_return(encrypted_events, [])
+        expect(job).to receive(:log_info).with('Job started', batch_size: batch_size).ordered
         expect(job).to receive(:log_info).
-          with('Job completed', successfully_processed: 2, batch_size: batch_size)
+          with('Job completed', successfully_processed: 2, batch_size: batch_size).ordered
 
         job.perform
       end
@@ -103,6 +105,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         expect(job).to receive(:fetch_encrypted_events).with(limit: batch_size).
           and_return(full_batch, partial_batch)
         expect(job).to receive(:process_encrypted_events_bulk).twice
+        expect(job).to receive(:log_info).with('Job started', batch_size: batch_size).ordered
         expect(job).to receive(:log_info).
           with('Job completed', successfully_processed: batch_size + 1, batch_size: batch_size)
 
