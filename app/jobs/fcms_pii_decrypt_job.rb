@@ -4,6 +4,8 @@ class FcmsPiiDecryptJob < ApplicationJob
   def perform(batch_size: 1000)
     return log_info('Skipped because fraud_ops_tracker_enabled is false') unless job_enabled?
 
+    log_info('Job started', batch_size: batch_size)
+
     total_processed = 0
     loop do
       encrypted_events = fetch_encrypted_events(limit: batch_size)
