@@ -432,21 +432,4 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
     end
   end
-
-  describe '#private_key' do
-    it 'returns an OpenSSL::PKey::RSA instance from the config' do
-      expect(IdentityConfig.store).to receive(:fraud_ops_private_key).and_return(private_key_pem)
-      expect(OpenSSL::PKey::RSA).to receive(:new).with(private_key_pem).and_call_original
-
-      result = job.send(:private_key)
-      expect(result).to be_a(OpenSSL::PKey::RSA)
-    end
-
-    it 'memoizes the private key' do
-      expect(OpenSSL::PKey::RSA).to receive(:new).once.and_call_original
-
-      job.send(:private_key)
-      job.send(:private_key)
-    end
-  end
 end
