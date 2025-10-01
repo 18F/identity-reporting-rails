@@ -223,8 +223,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         allow(job).to receive(:bulk_insert_decrypted_events).and_raise(db_error)
       end
 
-      it 'logs error and re-raises exception' do
-        expect(Rails.logger).to receive(:error)
+      it 're-raises exception' do
         expect { job.send(:process_encrypted_events_bulk, encrypted_events) }.
           to raise_error(ActiveRecord::StatementInvalid)
       end

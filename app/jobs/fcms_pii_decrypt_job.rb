@@ -70,9 +70,6 @@ class FcmsPiiDecryptJob < ApplicationJob
       ),
     )
     successful_ids.size
-  rescue ActiveRecord::StatementInvalid => e
-    Rails.logger.error(log_format('Bulk processing failed', error: e.message, backtrace: e))
-    raise
   end
 
   def decrypt_events(encrypted_events)
@@ -148,11 +145,7 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def using_redshift_adapter?
-    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
-  end
-
-  def skip_job_execution
-    Rails.logger.info(log_format('Skipped because fraud_ops_tracker_enabled is false'))
+    connection.adapter_name.downcase.include?('redshift')
   end
 
   def private_key
