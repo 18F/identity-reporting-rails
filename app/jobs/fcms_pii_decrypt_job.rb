@@ -2,9 +2,11 @@ class FcmsPiiDecryptJob < ApplicationJob
   queue_as :default
 
   def perform(batch_size: 1000)
-    return log_info('Skipped because fraud_ops_tracker_enabled is false') unless job_enabled?
+    unless job_enabled?
+      return Rails.logger.info(log_format('Skipped because fraud_ops_tracker_enabled is false'))
+    end
 
-    log_info('Job started', batch_size: batch_size)
+    Rails.logger.info(log_format('Job started', batch_size: batch_size))
 
     total_processed = 0
     loop do
@@ -16,14 +18,16 @@ class FcmsPiiDecryptJob < ApplicationJob
       break if encrypted_events.size < batch_size # no more remaining
     end
 
-    log_info(
-      'Job completed',
-      successfully_processed: total_processed,
-      batch_size: batch_size,
+    Rails.logger.info(
+      log_format(
+        'Job completed',
+        successfully_processed: total_processed,
+        batch_size: batch_size,
+      ),
     )
     nil
   rescue => e
-    log_error('Job failed', error: e.message, backtrace: e)
+    Rails.logger.error(log_format('Job failed', error: e.message, backtrace: e))
     raise
   end
 
@@ -47,7 +51,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     decrypted_events, successful_ids = decrypt_events(encrypted_events)
 
     if decrypted_events.empty?
-      log_info('No successfully decrypted events in batch')
+      Rails.logger.info(log_format('No successfully decrypted events in batch'))
       return 0
     end
 
@@ -58,14 +62,16 @@ class FcmsPiiDecryptJob < ApplicationJob
       end
     end
 
-    log_info(
-      'Bulk operations completed',
-      inserted_count: decrypted_events.size,
-      updated_count: successful_ids.size,
+    Rails.logger.info(
+      log_format(
+        'Bulk operations completed',
+        inserted_count: decrypted_events.size,
+        updated_count: successful_ids.size,
+      ),
     )
     successful_ids.size
   rescue ActiveRecord::StatementInvalid => e
-    log_error('Bulk processing failed', error: e.message, backtrace: e)
+    Rails.logger.error(log_format('Bulk processing failed', error: e.message, backtrace: e))
     raise
   end
 
@@ -105,7 +111,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [insert_sql, *values])
     connection.execute(sanitized)
 
-    log_info('Bulk insert completed', row_count: decrypted_events.size)
+    Rails.logger.info(log_format('Bulk insert completed', row_count: decrypted_events.size))
   end
 
   def bulk_update_processed_timestamp(event_ids)
@@ -121,14 +127,19 @@ class FcmsPiiDecryptJob < ApplicationJob
     sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [update_sql, *event_ids])
     connection.execute(sanitized)
 
-    log_info('Bulk update completed', updated_count: event_ids.size)
+    Rails.logger.info(log_format('Bulk update completed', updated_count: event_ids.size))
   end
 
   def decrypt_data(encrypted_data, key, event_key)
     json = JWE.decrypt(encrypted_data, key)
     JSON.parse(json).deep_symbolize_keys
   rescue => e
-    log_error('Failed to decrypt and parse data', event_key: event_key, error: e.message)
+    Rails.logger.error(
+      log_format(
+        'Failed to decrypt and parse data', event_key: event_key,
+                                            error: e.message
+      ),
+    )
     nil
   end
 
@@ -141,7 +152,7 @@ class FcmsPiiDecryptJob < ApplicationJob
   end
 
   def skip_job_execution
-    log_info('Skipped because fraud_ops_tracker_enabled is false')
+    Rails.logger.info(log_format('Skipped because fraud_ops_tracker_enabled is false'))
   end
 
   def private_key
@@ -152,21 +163,10 @@ class FcmsPiiDecryptJob < ApplicationJob
     @connection ||= DataWarehouseApplicationRecord.connection
   end
 
-  def log_info(message, **data)
-    payload = log_message(message, 'info').merge(data)
-    Rails.logger.info(payload.to_json)
-  end
-
-  def log_error(message, **data)
-    payload = log_message(message, 'error').merge(data)
-    Rails.logger.error(payload.to_json)
-  end
-
-  def log_message(message, level)
+  def log_format(message, **data)
     {
       job: self.class.name,
-      level: level,
-      message: message,
-    }
+      message:,
+    }.merge(data).to_json
   end
 end

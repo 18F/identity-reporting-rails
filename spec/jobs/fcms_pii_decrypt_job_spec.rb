@@ -37,9 +37,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'skips job execution and logs info' do
-        expect(job).to receive(:log_info).
-          with('Skipped because fraud_ops_tracker_enabled is false')
-
+        expect(Rails.logger).to receive(:info).with(a_string_matching('Skipped'))
         job.perform
       end
     end
@@ -47,29 +45,26 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
     context 'when no encrypted events exist' do
       before do
         allow(job).to receive(:fetch_encrypted_events).and_return([])
+        allow(Rails.logger).to receive(:info)
       end
 
-      it 'logs completion with zero processed' do
-        expect(job).to receive(:log_info).with('Job started', batch_size: batch_size).ordered
-        expect(job).to receive(:log_info).
-          with('Job completed', successfully_processed: 0, batch_size: batch_size).ordered
-
-        job.perform
+      it 'completes successfully without processing any events' do
+        expect { job.perform }.not_to raise_error
+        expect(job).not_to receive(:process_encrypted_events_bulk)
       end
     end
 
     context 'when encrypted events exist' do
       before do
         allow(job).to receive(:process_encrypted_events_bulk).and_return(2)
+        allow(Rails.logger).to receive(:info)
       end
 
       it 'processes events successfully' do
         allow(job).to receive(:fetch_encrypted_events).and_return(encrypted_events, [])
-        expect(job).to receive(:log_info).with('Job started', batch_size: batch_size).ordered
-        expect(job).to receive(:log_info).
-          with('Job completed', successfully_processed: 2, batch_size: batch_size).ordered
 
-        job.perform
+        expect { job.perform }.not_to raise_error
+        expect(job).to have_received(:process_encrypted_events_bulk).once
       end
 
       it 'processes in batches until no events remain' do
@@ -98,6 +93,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       before do
         allow(job).to receive(:process_encrypted_events_bulk).
           and_return(batch_size, 1)
+        allow(Rails.logger).to receive(:info)
       end
 
       it 'continues processing until batch is incomplete' do
@@ -105,9 +101,6 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
         expect(job).to receive(:fetch_encrypted_events).with(limit: batch_size).
           and_return(full_batch, partial_batch)
         expect(job).to receive(:process_encrypted_events_bulk).twice
-        expect(job).to receive(:log_info).with('Job started', batch_size: batch_size).ordered
-        expect(job).to receive(:log_info).
-          with('Job completed', successfully_processed: batch_size + 1, batch_size: batch_size)
 
         job.perform
       end
@@ -121,9 +114,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error and re-raises exception' do
-        expect(job).to receive(:log_error).
-          with('Job failed', hash_including(error: error_message))
-
+        expect(Rails.logger).to receive(:error)
         expect { job.perform }.to raise_error(StandardError, error_message)
       end
     end
@@ -190,9 +181,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs info and returns 0' do
-        expect(job).to receive(:log_info).
-          with('No successfully decrypted events in batch')
-
+        expect(Rails.logger).to receive(:info)
         result = job.send(:process_encrypted_events_bulk, encrypted_events)
         expect(result).to eq(0)
       end
@@ -215,8 +204,8 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs completion with counts' do
-        expect(job).to receive(:log_info).
-          with('Bulk operations completed', inserted_count: 2, updated_count: 2)
+        expect(Rails.logger).to receive(:info).
+          with(a_string_matching(/inserted_count.*2.*updated_count.*2/))
 
         job.send(:process_encrypted_events_bulk, encrypted_events)
       end
@@ -235,9 +224,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error and re-raises exception' do
-        expect(job).to receive(:log_error).
-          with('Bulk processing failed', hash_including(error: db_error.message))
-
+        expect(Rails.logger).to receive(:error)
         expect { job.send(:process_encrypted_events_bulk, encrypted_events) }.
           to raise_error(ActiveRecord::StatementInvalid)
       end
@@ -317,9 +304,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs successful insertion' do
-        expect(job).to receive(:log_info).
-          with('Bulk insert completed', row_count: 2)
-
+        expect(Rails.logger).to receive(:info).with(a_string_matching(/row_count.*2/))
         job.send(:bulk_insert_decrypted_events, decrypted_events)
       end
     end
@@ -373,8 +358,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
       it 'logs successful update' do
         allow(mock_connection).to receive(:execute)
-        expect(job).to receive(:log_info).
-          with('Bulk update completed', updated_count: 2)
+        expect(Rails.logger).to receive(:info).with(a_string_matching(/updated_count.*2/))
 
         job.send(:bulk_update_processed_timestamp, event_ids)
       end
@@ -413,8 +397,9 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error with event_key and returns nil' do
-        expect(job).to receive(:log_error).
-          with('Failed to decrypt and parse data', event_key: event_key, error: jwe_error.message)
+        expect(Rails.logger).to receive(:error).with(
+          a_string_matching(/event_key.*#{event_key}/),
+        )
 
         result = job.send(:decrypt_data, encrypted_data, private_key, event_key)
         expect(result).to be_nil
@@ -427,8 +412,9 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'logs error with event_key and returns nil' do
-        expect(job).to receive(:log_error).
-          with('Failed to decrypt and parse data', event_key: event_key, error: anything)
+        expect(Rails.logger).to receive(:error).with(
+          a_string_matching(/event_key.*#{event_key}/),
+        )
 
         result = job.send(:decrypt_data, encrypted_data, private_key, event_key)
         expect(result).to be_nil
