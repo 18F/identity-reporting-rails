@@ -59,6 +59,11 @@ else
         class: 'IdvRedisToRedshiftJob',
         cron: cron_10m,
       },
+      # Import FCMS PII Decrypt Job
+      fcms_pii_decrypt_job: {
+        class: 'FcmsPiiDecryptJob',
+        cron: '5/10 * * * *', # every 10 minutes starting at 5 minutes past the hour
+      },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
   end

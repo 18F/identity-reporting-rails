@@ -20,6 +20,7 @@ gem 'caxlsx', require: false
 gem 'simple_xlsx_reader', require: false
 gem 'connection_pool'
 gem 'redis', '>= 3.2.0'
+gem 'jwe'
 
 group :development do
   gem 'better_errors', '>= 2.5.1'

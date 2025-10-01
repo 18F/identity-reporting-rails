@@ -63,6 +63,7 @@ class IdentityConfig
     config.add(:redis_pool_size, type: :integer)
     config.add(:redis_url, type: :string)
     config.add(:fraud_ops_tracker_enabled, type: :boolean)
+    config.add(:fraud_ops_private_key, type: :string)
 
     "redshift/#{Identity::Hostdata.env || 'local'}-analytics-superuser".
       then do |redshift_secrets_manager_key|
