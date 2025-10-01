@@ -206,6 +206,8 @@ GEM
       reline (>= 0.4.2)
     jmespath (1.6.2)
     json (2.10.2)
+    jwe (1.1.1)
+      base64
     knapsack (4.0.0)
       rake
     language_server-protocol (3.17.0.4)
@@ -445,6 +447,7 @@ DEPENDENCIES
   identity-logging!
   identity_validations!
   irb
+  jwe
   knapsack
   listen
   nokogiri (~> 1.18.0)
