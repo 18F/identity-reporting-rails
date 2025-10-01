@@ -57,12 +57,12 @@ else
       # Queue IDV Redis to Redshift job to GoodJob
       idv_redis_to_redshift_job: {
         class: 'IdvRedisToRedshiftJob',
-        cron: cron_10m,
+        cron: '0/2 * * * *',
       },
       # Import FCMS PII Decrypt Job
       fcms_pii_decrypt_job: {
         class: 'FcmsPiiDecryptJob',
-        cron: '5/10 * * * *', # every 10 minutes starting at 5 minutes past the hour
+        cron: '1/2 * * * *', # every 10 minutes starting at 5 minutes past the hour
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
