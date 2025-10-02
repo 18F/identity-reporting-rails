@@ -210,31 +210,18 @@ class LogsColumnExtractorJob < ApplicationJob
     @source_table_name_temp = "#{@source_table_name}_temp"
     vars = build_merge_variables(@source_table_name_temp, @column_map)
 
-    if DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
-      format(<<~SQL, build_params)
-        MERGE INTO %{schema_name}.%{target_table_name}
-        USING %{source_table_name_temp}
-        ON %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
-        WHEN MATCHED THEN
-          UPDATE SET
-            #{vars[:update_set]}
-        WHEN NOT MATCHED THEN
-          INSERT (#{vars[:insert_columns]})
-          VALUES (#{vars[:insert_values]} )
-          ;
-      SQL
-    else
-      # Local Postgres DB does not support REMOVE DUPLICATES clause
-      # MERGE is not supported in Postges@14; use INSERT ON CONFLICT instead
-      format(<<~SQL, build_params)
-        INSERT INTO %{schema_name}.%{target_table_name} (
-            message ,cloudwatch_timestamp ,#{@column_map.map { |c| c[:column] }.join(' ,')}
-        )
-        SELECT *
-        FROM %{source_table_name_temp}
+    format(<<~SQL, build_params)
+      MERGE INTO %{schema_name}.%{target_table_name}
+      USING %{source_table_name_temp}
+      ON %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
+      WHEN MATCHED THEN
+        UPDATE SET
+          #{vars[:update_set]}
+      WHEN NOT MATCHED THEN
+        INSERT (#{vars[:insert_columns]})
+        VALUES (#{vars[:insert_values]} )
         ;
-      SQL
-    end
+    SQL
   end
 
   def drop_merged_records_from_source_table_query

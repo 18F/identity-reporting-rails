@@ -14,10 +14,18 @@ ActiveRecord::Schema[7.2].define(version: 2025_09_03_184139) do
   create_schema "fcms"
   create_schema "idp"
   create_schema "logs"
+  create_schema "marts"
+  create_schema "qa_marts"
   create_schema "system_tables"
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
+
+  create_table "encrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
+    t.string "message", limit: 65535
+    t.date "partition_dt"
+    t.datetime "processed_timestamp", precision: nil
+  end
 
   create_table "events", id: false, force: :cascade do |t|
     t.jsonb "message"
@@ -50,6 +58,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_09_03_184139) do
     t.boolean "success"
   end
 
+  create_table "fraud_ops_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
+    t.jsonb "message"
+    t.datetime "event_timestamp", precision: nil
+  end
+
   create_table "production", id: false, force: :cascade do |t|
     t.jsonb "message"
     t.datetime "cloudwatch_timestamp", precision: nil
@@ -60,7 +73,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_09_03_184139) do
     t.string "controller"
     t.string "action"
     t.integer "status"
-    t.decimal "duration", precision: 10, scale: 6
+    t.decimal "duration", precision: 15, scale: 4
     t.string "git_sha"
     t.string "git_branch"
     t.datetime "timestamp", precision: nil

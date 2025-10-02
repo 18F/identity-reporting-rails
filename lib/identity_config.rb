@@ -60,6 +60,8 @@ class IdentityConfig
     config.add(:s3_reports_enabled, type: :boolean)
     config.add(:s3_report_bucket_prefix, type: :string)
     config.add(:redshift_sia_v3_enabled, type: :boolean)
+    config.add(:redis_pool_size, type: :integer)
+    config.add(:redis_url, type: :string)
     config.add(:fraud_ops_tracker_enabled, type: :boolean)
     config.add(:fraud_ops_private_key, type: :string)
 

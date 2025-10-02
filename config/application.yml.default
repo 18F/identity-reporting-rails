@@ -13,7 +13,10 @@
 # if you're sharing your code publicly.
 
 # Make sure any new entries you add are enclosed in single quotes.
+redis_url: redis://localhost:6379/0
+redis_pool_size: 1
 data_warehouse_fcms_enabled: false
+fraud_ops_tracker_enabled: false
 database_pool_reporting: 5
 database_socket: ''
 database_sslmode: 'verify-full'

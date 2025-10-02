@@ -18,6 +18,8 @@ gem 'redacted_struct'
 gem 'tzinfo-data', platforms: %i[ windows jruby ]
 gem 'caxlsx', require: false
 gem 'simple_xlsx_reader', require: false
+gem 'connection_pool'
+gem 'redis', '>= 3.2.0'
 gem 'jwe'
 
 group :development do
@@ -37,7 +39,7 @@ group :development, :test do
   gem 'pry-doc', '>= 1.5.0'
   gem 'pry-rails'
   gem 'psych'
-  gem 'rexml', '>= 3.3.3'
+  gem 'rexml', '>= 3.4.2'
   gem 'rspec', '~> 3.13.0'
   gem 'rspec-support', '~> 3.13.1'
   gem 'rspec-rails', '~> 7.0'

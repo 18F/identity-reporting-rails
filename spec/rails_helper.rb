@@ -51,6 +51,10 @@ RSpec.configure do |config|
     Rails.cache.clear
   end
 
+  config.before(:each) do
+    REDIS_POOL.with { |client| client.flushdb } if Identity::Hostdata.config
+  end
+
   config.around(:each, freeze_time: true) do |example|
     freeze_time { example.run }
   end
