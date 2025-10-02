@@ -33,7 +33,7 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
     msg = {
       job: 'IdvRedisToRedshiftJob',
       success: true,
-      message: "IdvRedisToRedshiftJob: Read #{actual_count} event(s) from Redis for processing.",
+      message: "Read #{actual_count} event(s) from Redis for processing.",
     }
     expect(Rails.logger).to receive(:info).with(msg.to_json)
     fcms_job.perform
@@ -118,7 +118,7 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
         msg = {
           job: 'IdvRedisToRedshiftJob',
           success: false,
-          message: 'IdvRedisToRedshiftJob: fraud_ops_tracker_enabled is false, skipping job.',
+          message: 'fraud_ops_tracker_enabled is false, skipping job.',
         }
         expect(Rails.logger).to receive(:info).with(msg.to_json)
         fcms_job.perform

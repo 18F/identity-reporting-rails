@@ -9,8 +9,9 @@ class IdvRedisToRedshiftJob < ApplicationJob
   def perform
     enabled = IdentityConfig.store.fraud_ops_tracker_enabled
     unless enabled
-      log_info(
-        "IdvRedisToRedshiftJob: fraud_ops_tracker_enabled is #{enabled}, skipping job.",
+      log_message(
+        :info,
+        "fraud_ops_tracker_enabled is #{enabled}, skipping job.",
         false,
       )
       return
@@ -19,23 +20,24 @@ class IdvRedisToRedshiftJob < ApplicationJob
     @schema_name = 'fcms'
     @target_table_name = 'encrypted_events'
     @redis_client = FraudOps::RedisClient.new
-    log_info('IdvRedisToRedshiftJob: Job started.', true)
+    log_message(:info, 'Job started.', true)
 
     begin
       # poll Redis for IDV events and process them in batches
       fetch_redis_idv_batches do |response_data|
-        log_info(
-          "IdvRedisToRedshiftJob: Processing #{response_data.size} events into Redshift.",
+        log_message(
+          :info,
+          "Processing #{response_data.size} events into Redshift.",
           true,
         )
         @events_payload = response_data
         import_to_redshift
       end
     rescue => e
-      log_info('IdvRedisToRedshiftJob: Error occurred.', false, { error: e.message })
+      log_message(:error, 'Error occurred.', false, { error: e.message })
       raise
     end
-    log_info('IdvRedisToRedshiftJob: Job completed.', true)
+    log_message(:info, 'Job completed.', true)
   end
 
   private
@@ -45,8 +47,10 @@ class IdvRedisToRedshiftJob < ApplicationJob
 
     loop do
       events = @redis_client.read_events(batch_size: batch_size)
-      log_info(
-        "IdvRedisToRedshiftJob: Read #{events.size} event(s) from Redis for processing.", true
+      log_message(
+        :info,
+        "Read #{events.size} event(s) from Redis for processing.",
+        true,
       )
       break if events.empty?
       yield events
@@ -64,26 +68,20 @@ class IdvRedisToRedshiftJob < ApplicationJob
       end
     end
 
-    log_info(
-      'IdvRedisToRedshiftJob: Data import to Redshift succeeded.', true,
-      { row_count: @events_payload.size }
+    log_message(
+      :info,
+      'Data import to Redshift succeeded.',
+      true,
+      { row_count: @events_payload.size },
     )
 
     records_deleted = @redis_client.delete_events(keys: @events_payload.keys)
 
-    log_info(
-      'IdvRedisToRedshiftJob: Deleted events from Redis.', true,
-      { records_deleted: records_deleted }
-    )
-  end
-
-  def log_info(message, success, additional_info = {})
-    Rails.logger.info(
-      {
-        job: self.class.name,
-        success: success,
-        message: message,
-      }.merge(additional_info).to_json,
+    log_message(
+      :info,
+      'Deleted events from Redis.',
+      true,
+      { records_deleted: records_deleted },
     )
   end
 
