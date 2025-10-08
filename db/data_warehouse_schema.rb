@@ -10,8 +10,8 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_09_03_184139) do
-  create_schema "fcms"
+ActiveRecord::Schema[7.2].define(version: 2025_10_08_203348) do
+  create_schema "fraudops"
   create_schema "idp"
   create_schema "logs"
   create_schema "marts"
