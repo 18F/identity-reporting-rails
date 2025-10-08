@@ -35,7 +35,7 @@ class RedshiftSchemaUpdater
     yaml_data.each do |table_data|
       table_name = "#{@schema_name}.#{table_data['table']}"
       include_columns = table_data['include_columns'] || []
-      add_columns = fraudops_enabled? ? (table_data['add_columns'] || []) : []
+      add_columns = data_warehouse_fcms_enabled? ? (table_data['add_columns'] || []) : []
       columns = include_columns + add_columns
       primary_key_column = table_data['primary_key']
       foreign_key_columns = table_data['foreign_keys'] || []
@@ -459,7 +459,7 @@ class RedshiftSchemaUpdater
 
   private
 
-  def fraudops_enabled?
+  def data_warehouse_fcms_enabled?
     IdentityConfig.store.data_warehouse_fcms_enabled
   end
 

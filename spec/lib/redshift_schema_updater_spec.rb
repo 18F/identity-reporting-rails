@@ -600,7 +600,7 @@ RSpec.describe RedshiftSchemaUpdater do
       end
     end
 
-    context 'when FCMS is disabled' do
+    context 'when data_warehouse_fcms_enabled is false' do
       before do
         allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(false)
         allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_call_original
