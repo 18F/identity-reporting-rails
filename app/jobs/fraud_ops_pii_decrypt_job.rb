@@ -101,7 +101,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     end
 
     insert_sql = <<~SQL.squish
-      INSERT INTO fraudops.fraud_ops_events (event_key, message)
+      INSERT INTO fraudops.decrypted_events (event_key, message)
       VALUES #{placeholders}
     SQL
 

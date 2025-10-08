@@ -21,6 +21,10 @@ ActiveRecord::Schema[7.2].define(version: 2025_10_08_203348) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
+  create_table "decrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
+    t.jsonb "message"
+  end
+
   create_table "encrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
     t.string "message", limit: 65535
     t.date "partition_dt"
@@ -56,11 +60,6 @@ ActiveRecord::Schema[7.2].define(version: 2025_10_08_203348) do
     t.boolean "browser_mobile"
     t.boolean "browser_bot"
     t.boolean "success"
-  end
-
-  create_table "fraud_ops_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
-    t.jsonb "message"
-    t.datetime "event_timestamp", precision: nil
   end
 
   create_table "production", id: false, force: :cascade do |t|

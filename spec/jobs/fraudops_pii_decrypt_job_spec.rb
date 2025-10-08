@@ -292,7 +292,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
       end
 
       it 'uses jsonb cast in insert statement' do
-        expected_pattern = %r{INSERT\ INTO\ fraudops\.fraud_ops_events
+        expected_pattern = %r{INSERT\ INTO\ fraudops\.decrypted_events
                       \s*\(event_key,\ message\)
                       \s*VALUES.*::jsonb}x
 
@@ -315,7 +315,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
       end
 
       it 'uses JSON_PARSE in insert statement' do
-        expected_pattern = %r{INSERT\ INTO\ fraudops\.fraud_ops_events
+        expected_pattern = %r{INSERT\ INTO\ fraudops\.decrypted_events
                       \s*\(event_key,\ message\)
                       \s*VALUES.*JSON_PARSE}x
 
