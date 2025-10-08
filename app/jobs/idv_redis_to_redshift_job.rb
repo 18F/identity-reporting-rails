@@ -17,7 +17,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
       return
     end
 
-    @schema_name = 'fcms'
+    @schema_name = 'fraudops'
     @target_table_name = 'encrypted_events'
     @redis_client = FraudOps::RedisClient.new
     log_message(:info, 'Job started.', true)

@@ -1,4 +1,4 @@
-class FcmsPiiDecryptJob < ApplicationJob
+class FraudOpsPiiDecryptJob < ApplicationJob
   queue_as :default
 
   def perform(batch_size: 1000)
@@ -36,7 +36,7 @@ class FcmsPiiDecryptJob < ApplicationJob
   def fetch_encrypted_events(limit:)
     query = <<~SQL.squish
       SELECT event_key, message
-      FROM fcms.encrypted_events
+      FROM fraudops.encrypted_events
       WHERE processed_timestamp IS NULL
       ORDER BY event_key
       LIMIT ?
@@ -55,7 +55,7 @@ class FcmsPiiDecryptJob < ApplicationJob
       return 0
     end
 
-    ActiveSupport::Notifications.instrument('fcms_pii_decrypt_job.persist_batch') do
+    ActiveSupport::Notifications.instrument('fraudops_pii_decrypt_job.persist_batch') do
       DataWarehouseApplicationRecord.transaction do
         bulk_insert_decrypted_events(decrypted_events)
         bulk_update_processed_timestamp(successful_ids)
@@ -101,7 +101,7 @@ class FcmsPiiDecryptJob < ApplicationJob
     end
 
     insert_sql = <<~SQL.squish
-      INSERT INTO fcms.fraud_ops_events (event_key, message)
+      INSERT INTO fraudops.fraud_ops_events (event_key, message)
       VALUES #{placeholders}
     SQL
 
@@ -116,7 +116,7 @@ class FcmsPiiDecryptJob < ApplicationJob
 
     placeholders = (['?'] * event_ids.size).join(', ')
     update_sql = <<~SQL.squish
-      UPDATE fcms.encrypted_events
+      UPDATE fraudops.encrypted_events
       SET processed_timestamp = CURRENT_TIMESTAMP
       WHERE event_key IN (#{placeholders})
     SQL

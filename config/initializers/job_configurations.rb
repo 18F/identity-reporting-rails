@@ -59,9 +59,9 @@ else
         class: 'IdvRedisToRedshiftJob',
         cron: cron_10m,
       },
-      # Import FCMS PII Decrypt Job
-      fcms_pii_decrypt_job: {
-        class: 'FcmsPiiDecryptJob',
+      # Import FraudOps PII Decrypt Job
+      fraudops_pii_decrypt_job: {
+        class: 'FraudOpsPiiDecryptJob',
         cron: '5/10 * * * *', # every 10 minutes starting at 5 minutes past the hour
       },
     }
