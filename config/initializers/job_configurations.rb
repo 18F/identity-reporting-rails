@@ -60,7 +60,7 @@ else
         cron: cron_10m,
       },
       # Import FraudOps PII Decrypt Job
-      fraudops_pii_decrypt_job: {
+      fraud_ops_pii_decrypt_job: {
         class: 'FraudOpsPiiDecryptJob',
         cron: '5/10 * * * *', # every 10 minutes starting at 5 minutes past the hour
       },

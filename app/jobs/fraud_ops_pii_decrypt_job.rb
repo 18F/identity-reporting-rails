@@ -55,7 +55,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
       return 0
     end
 
-    ActiveSupport::Notifications.instrument('fraudops_pii_decrypt_job.persist_batch') do
+    ActiveSupport::Notifications.instrument('fraud_ops_pii_decrypt_job.persist_batch') do
       DataWarehouseApplicationRecord.transaction do
         bulk_insert_decrypted_events(decrypted_events)
         bulk_update_processed_timestamp(successful_ids)

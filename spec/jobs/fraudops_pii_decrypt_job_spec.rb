@@ -198,7 +198,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'instruments the batch persistence' do
         expect(ActiveSupport::Notifications).to receive(:instrument).
-          with('fraudops_pii_decrypt_job.persist_batch')
+          with('fraud_ops_pii_decrypt_job.persist_batch')
 
         job.send(:process_encrypted_events_bulk, encrypted_events)
       end
