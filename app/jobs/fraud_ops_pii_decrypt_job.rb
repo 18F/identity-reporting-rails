@@ -93,7 +93,9 @@ class FraudOpsPiiDecryptJob < ApplicationJob
   def bulk_insert_decrypted_events(decrypted_events)
     return if decrypted_events.empty?
 
-    value_fragment = using_redshift_adapter? ? '(?, JSON_PARSE(?))' : '(?, ?::jsonb)'
+    value_fragment = using_redshift_adapter? ?
+      '(?, JSON_PARSE(?), CURRENT_TIMESTAMP)' :
+      '(?, ?::jsonb, CURRENT_TIMESTAMP)'
     placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
 
     values = decrypted_events.flat_map do |event|

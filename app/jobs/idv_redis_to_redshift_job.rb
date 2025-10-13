@@ -144,8 +144,8 @@ class IdvRedisToRedshiftJob < ApplicationJob
       WHEN MATCHED THEN
         UPDATE SET message = source.message
       WHEN NOT MATCHED THEN
-        INSERT (event_key, message, partition_dt)
-        VALUES (source.event_key, source.message, source.partition_dt)
+        INSERT (event_key, message, partition_dt, import_timestamp)
+        VALUES (source.event_key, source.message, source.partition_dt, CURRENT_TIMESTAMP)
       ;
     SQL
   end
