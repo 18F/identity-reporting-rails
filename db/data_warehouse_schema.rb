@@ -23,11 +23,13 @@ ActiveRecord::Schema[7.2].define(version: 2025_10_08_203348) do
 
   create_table "decrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
     t.jsonb "message"
+    t.datetime "import_timestamp", precision: nil
   end
 
   create_table "encrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
     t.string "message", limit: 65535
     t.date "partition_dt"
+    t.datetime "import_timestamp", precision: nil
     t.datetime "processed_timestamp", precision: nil
   end
 
