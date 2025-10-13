@@ -377,18 +377,18 @@ class RedshiftSchemaUpdater
     )
   end
 
-  def revoke_table_select_permissions(table_name)
+  def revoke_table_select_permissions(group, table_name)
     if using_redshift_adapter?
-      revoke_sql = "REVOKE SELECT ON #{table_name} FROM GROUP lg_users"
+      revoke_sql = "REVOKE SELECT ON #{table_name} FROM GROUP #{group}"
       DataWarehouseApplicationRecord.connection.execute(
         DataWarehouseApplicationRecord.sanitize_sql(revoke_sql),
       )
     end
   end
 
-  def grant_select_column_permissions(table_name, column_name)
+  def grant_select_column_permissions(group, table_name, column_name)
     if using_redshift_adapter?
-      grant_sql = "GRANT SELECT(#{column_name}) ON #{table_name} TO GROUP lg_users"
+      grant_sql = "GRANT SELECT(#{column_name}) ON #{table_name} TO GROUP #{group}"
       DataWarehouseApplicationRecord.connection.execute(
         DataWarehouseApplicationRecord.sanitize_sql(grant_sql),
       )
@@ -396,11 +396,13 @@ class RedshiftSchemaUpdater
   end
 
   def grant_select_permissions_for_columns(table_name, columns)
-    revoke_table_select_permissions(table_name)
+    ['lg_users', 'lg_powerusers'].each do |group|
+      revoke_table_select_permissions(group, table_name)
 
-    columns.each do |column_info|
-      next if column_info['encrypt']
-      grant_select_column_permissions(table_name, column_info['name'])
+      columns.each do |column_info|
+        next if column_info['encrypt']
+        grant_select_column_permissions(group, table_name, column_info['name'])
+      end
     end
   end
 
