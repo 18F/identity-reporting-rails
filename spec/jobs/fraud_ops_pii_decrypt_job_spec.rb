@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe FcmsPiiDecryptJob, type: :job do
+RSpec.describe FraudOpsPiiDecryptJob, type: :job do
   let(:job) { described_class.new }
   let(:private_key) { OpenSSL::PKey::RSA.generate(2048) }
   let(:private_key_pem) { private_key.to_pem }
@@ -123,7 +123,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
   describe '#fetch_encrypted_events' do
     let(:limit) { 1000 }
     let(:expected_query_pattern) do
-      %r{SELECT\ event_key,\ message\ FROM\ fcms\.encrypted_events
+      %r{SELECT\ event_key,\ message\ FROM\ fraudops\.encrypted_events
          \s+WHERE\ processed_timestamp\ IS\ NULL
          \s+ORDER\ BY\ event_key\ LIMIT}x
     end
@@ -198,7 +198,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
       it 'instruments the batch persistence' do
         expect(ActiveSupport::Notifications).to receive(:instrument).
-          with('fcms_pii_decrypt_job.persist_batch')
+          with('fraud_ops_pii_decrypt_job.persist_batch')
 
         job.send(:process_encrypted_events_bulk, encrypted_events)
       end
@@ -292,7 +292,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'uses jsonb cast in insert statement' do
-        expected_pattern = %r{INSERT\ INTO\ fcms\.fraud_ops_events
+        expected_pattern = %r{INSERT\ INTO\ fraudops\.decrypted_events
                       \s*\(event_key,\ message\)
                       \s*VALUES.*::jsonb}x
 
@@ -315,7 +315,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
       end
 
       it 'uses JSON_PARSE in insert statement' do
-        expected_pattern = %r{INSERT\ INTO\ fcms\.fraud_ops_events
+        expected_pattern = %r{INSERT\ INTO\ fraudops\.decrypted_events
                       \s*\(event_key,\ message\)
                       \s*VALUES.*JSON_PARSE}x
 
@@ -345,7 +345,7 @@ RSpec.describe FcmsPiiDecryptJob, type: :job do
 
     context 'when update is successful' do
       it 'executes update query with all event IDs' do
-        expected_pattern = %r{UPDATE\ fcms\.encrypted_events
+        expected_pattern = %r{UPDATE\ fraudops\.encrypted_events
                       \s+SET\ processed_timestamp\ =\ CURRENT_TIMESTAMP
                       \s+WHERE\ event_key\ IN}x
 

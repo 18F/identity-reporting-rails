@@ -36,7 +36,7 @@ development:
   data_warehouse:
     <<: *defaults
     database: identity_reporting_rails_data_warehouse_<%= Rails.env %>
-    schema_search_path: 'logs,public,system_tables,fcms,marts,qa_marts'
+    schema_search_path: 'logs,public,system_tables,fraudops,marts,qa_marts'
     migrations_paths: db/data_warehouse_migrate
 
 test:
@@ -60,7 +60,7 @@ test:
   data_warehouse:
     <<: *test
     database: <%= "identity_reporting_rails_test#{ENV['TEST_ENV_NUMBER']}" %>
-    schema_search_path: 'public,test_pg_catalog,idp,logs,system_tables,fcms,marts,qa_marts'
+    schema_search_path: 'public,test_pg_catalog,idp,logs,system_tables,fraudops,marts,qa_marts'
     migrations_paths:
       - db/data_warehouse_migrate
       - db/data_warehouse_test_migrate

@@ -2,7 +2,7 @@ require 'rails_helper'
 require 'factory_bot'
 
 RSpec.describe IdvRedisToRedshiftJob, type: :job do
-  let(:fcms_job) { IdvRedisToRedshiftJob.new }
+  let(:fraudops_job) { IdvRedisToRedshiftJob.new }
   let(:redis_client) { FraudOps::RedisClient.new }
 
   def write_event(event_key:, jwe:, timestamp:)
@@ -36,7 +36,7 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
       message: "Read #{actual_count} event(s) from Redis for processing.",
     }
     expect(Rails.logger).to receive(:info).with(msg.to_json)
-    fcms_job.perform
+    fraudops_job.perform
   end
 
   describe '#perform' do
@@ -45,12 +45,12 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
         allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
       end
 
-      it 'imports the events into fcms.encrypted_events' do
+      it 'imports the events into fraudops.encrypted_events' do
         event_size = 50
         perform_job_with_logging(event_size, event_size, Time.current - 1.hour)
 
         result = DataWarehouseApplicationRecord.connection.execute(
-          'SELECT count(*) FROM fcms.encrypted_events',
+          'SELECT count(*) FROM fraudops.encrypted_events',
         ).to_a
         expect(result.length).to eq(1)
         expect(result.first['count']).to eq(event_size)
@@ -68,7 +68,7 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
 
         # Get event_keys after first run
         first_run_events = DataWarehouseApplicationRecord.connection.execute(
-          'SELECT event_key FROM fcms.encrypted_events',
+          'SELECT event_key FROM fraudops.encrypted_events',
         ).to_a.map { |row| row['event_key'] }
 
         # Verify the first run loaded 50 records
@@ -86,7 +86,7 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
 
         # Get event_keys after second run
         total_events_in_db = DataWarehouseApplicationRecord.connection.execute(
-          'SELECT event_key FROM fcms.encrypted_events',
+          'SELECT event_key FROM fraudops.encrypted_events',
         ).to_a.map { |row| row['event_key'] }
 
         # Calculate the difference (newly added event_keys)
@@ -101,7 +101,7 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
         perform_job_with_logging(50, 0, Time.current)
 
         result = DataWarehouseApplicationRecord.connection.execute(
-          'SELECT count(*) FROM fcms.encrypted_events',
+          'SELECT count(*) FROM fraudops.encrypted_events',
         ).to_a
         expect(result.length).to eq(1)
         expect(result.first['count']).to eq(0)
@@ -121,10 +121,10 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
           message: 'fraud_ops_tracker_enabled is false, skipping job.',
         }
         expect(Rails.logger).to receive(:info).with(msg.to_json)
-        fcms_job.perform
+        fraudops_job.perform
 
         result = DataWarehouseApplicationRecord.connection.execute(
-          'SELECT count(*) FROM fcms.encrypted_events',
+          'SELECT count(*) FROM fraudops.encrypted_events',
         ).to_a
         expect(result.length).to eq(1)
         expect(result.first['count']).to eq(0)
