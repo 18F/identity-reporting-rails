@@ -3,10 +3,10 @@
     "devenv": {
       "locked": {
         "dir": "src/modules",
-        "lastModified": 1758469077,
+        "lastModified": 1760462815,
         "owner": "cachix",
         "repo": "devenv",
-        "rev": "0a84e6e5cd0ab128a9336f77a86a2d3f4a5b5dee",
+        "rev": "195d11a74c4fa82d3a891b5f8c5af6b3e890111a",
         "type": "github"
       },
       "original": {
@@ -72,10 +72,10 @@
         ]
       },
       "locked": {
-        "lastModified": 1758108966,
+        "lastModified": 1760392170,
         "owner": "cachix",
         "repo": "git-hooks.nix",
-        "rev": "54df955a695a84cd47d4a43e08e1feaf90b1fd9b",
+        "rev": "46d55f0aeb1d567a78223e69729734f3dca25a85",
         "type": "github"
       },
       "original": {
@@ -106,10 +106,10 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1755783167,
+        "lastModified": 1758532697,
         "owner": "cachix",
         "repo": "devenv-nixpkgs",
-        "rev": "4a880fb247d24fbca57269af672e8f78935b0328",
+        "rev": "207a4cb0e1253c7658c6736becc6eb9cace1f25f",
         "type": "github"
       },
       "original": {
@@ -128,10 +128,10 @@
         ]
       },
       "locked": {
-        "lastModified": 1758002259,
+        "lastModified": 1759902829,
         "owner": "bobvanderlinden",
         "repo": "nixpkgs-ruby",
-        "rev": "52ccd11c43fa57f1b1b22ba514da5bec21c5cb8f",
+        "rev": "5fba6c022a63f1e76dee4da71edddad8959f088a",
         "type": "github"
       },
       "original": {
