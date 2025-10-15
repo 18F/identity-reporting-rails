@@ -21,16 +21,13 @@ set -x
 # use system libxml2, not the one vendored with nokogiri
 bundle config build.nokogiri --use-system-libraries
 bundle config set --local deployment 'true'
-bundle config set --local path $BUNDLE_DIR
+bundle config set --local path "$BUNDLE_DIR"
 bundle config set --local without 'deploy development doc test'
 
-if [ "$REPORTING_LOCAL_DEPENDENCIES" == "true" ]
-then
+if [ "$REPORTING_LOCAL_DEPENDENCIES" == "true" ]; then
   bundle install --jobs 4 --local
-  yarn install --production --frozen-lockfile --offline --cache-folder .yarn-cache
 else
   bundle install --jobs 4
-  yarn install --production --frozen-lockfile --cache-folder .yarn-cache
 fi
 
 bundle binstubs --all
