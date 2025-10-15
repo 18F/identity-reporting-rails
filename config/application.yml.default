@@ -34,6 +34,7 @@ report_timeout: 0
 s3_reports_enabled: false
 s3_report_bucket_prefix: login-gov.reports
 fraud_ops_private_key: ''
+fraud_ops_tracker_enabled: false
 
 development:
   database_host: ''
@@ -55,7 +56,6 @@ development:
   s3_report_public_bucket_prefix: ''
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
-  fraud_ops_tracker_enabled: true
 
 # These values serve as defaults for all production-like environments
 production:
@@ -76,7 +76,6 @@ production:
   report_timeout: 1_000_000
   s3_reports_enabled: false
   redshift_sia_v3_enabled: false
-  fraud_ops_tracker_enabled: false
 
 test:
   database_host: ''
