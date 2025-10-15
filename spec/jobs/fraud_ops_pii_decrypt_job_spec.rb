@@ -293,7 +293,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses jsonb cast in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.decrypted_events
-                      \s*\(event_key,\ message\)
+                      \s*\(event_key,\ message,\ import_timestamp\)
                       \s*VALUES.*::jsonb}x
 
         expect(mock_connection).to receive(:execute).
@@ -316,7 +316,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.decrypted_events
-                      \s*\(event_key,\ message\)
+                      \s*\(event_key,\ message,\ import_timestamp\)
                       \s*VALUES.*JSON_PARSE}x
 
         expect(mock_connection).to receive(:execute).
