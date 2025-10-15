@@ -26,10 +26,8 @@ bundle config set --local without 'deploy development doc test'
 
 if [ "$REPORTING_LOCAL_DEPENDENCIES" == "true" ]; then
   bundle install --jobs 4 --local
-  npm ci --only=production --offline --cache .npm-cache
 else
   bundle install --jobs 4
-  npm ci --only=production --cache .npm-cache
 fi
 
 bundle binstubs --all
