@@ -28,7 +28,6 @@ class IdentityConfig
     #    ./  / /\ \   | \ \  \ \
     #       / /  \ \  | |\ \  \7
     #        "     "    "  "
-
     config.add(:domain_name, type: :string)
     config.add(:database_host, type: :string)
     config.add(:database_name, type: :string)

@@ -33,7 +33,6 @@ s3_report_public_bucket_prefix: login-gov-pubdata
 report_timeout: 0
 s3_reports_enabled: false
 s3_report_bucket_prefix: login-gov.dw-reports
-fraud_ops_tracker_enabled: false
 fraud_ops_private_key: ''
 fraud_ops_tracker_enabled: false
 
