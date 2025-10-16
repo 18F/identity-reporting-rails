@@ -18,7 +18,6 @@
   };
 
   packages = with pkgs; [
-    foreman
     git
     glab
     gnumake
