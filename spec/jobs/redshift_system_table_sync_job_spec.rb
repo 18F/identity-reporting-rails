@@ -212,12 +212,24 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
     end
 
     context 'when datatype is :text' do
-      it 'returns :string' do
+      it 'returns VARCHAR(MAX)' do
         expect(job.send(:redshift_data_type, 'text')).to eq('VARCHAR(MAX)')
       end
     end
 
-    context 'when datatype is not :json or :jsonb or :text' do
+    context 'when datatype is :character' do
+      it 'returns VARCHAR(MAX)' do
+        expect(job.send(:redshift_data_type, 'character')).to eq('VARCHAR(MAX)')
+      end
+    end
+
+    context 'when datatype is :char' do
+      it 'returns VARCHAR(MAX)' do
+        expect(job.send(:redshift_data_type, 'char')).to eq('VARCHAR(MAX)')
+      end
+    end
+
+    context 'when datatype is not :json or :jsonb or :text or :character or :char' do
       it 'returns the input datatype symbol' do
         expect(job.send(:redshift_data_type, 'integer')).to eq('integer')
         expect(job.send(:redshift_data_type, 'string')).to eq('string')
