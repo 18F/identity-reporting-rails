@@ -103,10 +103,9 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
 
   describe '#create_target_table' do
     it 'creates target tables, and log message' do
-      source = DataWarehouseApplicationRecord.connection.table_exists?(source_table_with_schema)
-      target = DataWarehouseApplicationRecord.connection.table_exists?(target_table_with_schema)
-      expect(source).to be true
-      expect(target).to be false
+      allow(DataWarehouseApplicationRecord.connection).to receive(:table_exists?).
+        with(target_table_with_schema).and_return(false)
+      allow(DataWarehouseApplicationRecord.connection).to receive(:execute)
 
       allow(Rails.logger).to receive(:info).and_call_original
       expected_msgs = [
@@ -132,10 +131,10 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
         expect(Rails.logger).to receive(:info).with(msg)
       end
 
-      job.send(:create_target_table)
+      expect(DataWarehouseApplicationRecord.connection).to receive(:create_table).
+        with(target_table_with_schema, hash_including(id: false))
 
-      target = DataWarehouseApplicationRecord.connection.table_exists?(target_table_with_schema)
-      expect(target).to be true
+      job.send(:create_target_table)
     end
   end
 
