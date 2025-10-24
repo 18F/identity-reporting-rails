@@ -11,6 +11,7 @@
 # It's strongly recommended that you check this file into your version control system.
 
 ActiveRecord::Schema[7.2].define(version: 2025_10_13_212902) do
+  create_schema "fcms"
   create_schema "fraudops"
   create_schema "idp"
   create_schema "logs"
