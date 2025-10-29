@@ -16,9 +16,7 @@ namespace :db do
     schema_updater = RedshiftSchemaUpdater.new('idp')
     local_etl_path = IdentityConfig::REPO_PATHS[:etl_config]
 
-    file_path = IdentityConfig.store.data_warehouse_fcms_enabled ?
-        "#{local_etl_path}/modules/data_warehouse_etl_config/config/db-transformation-rules-fraudops.yml" : # rubocop:disable Layout/LineLength
-        "#{local_etl_path}/modules/data_warehouse_etl_config/config/db-transformation-rules.yml"
+    file_path = "#{local_etl_path}/modules/data_warehouse_etl_config/config/db-transformation-rules.yml" # rubocop:disable Layout/LineLength
     schema_updater.update_schema_from_yaml(file_path)
   end
 end
