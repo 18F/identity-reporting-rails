@@ -35,15 +35,23 @@ class RedshiftSchemaUpdater
     yaml_data.each do |table_data|
       table_name = "#{@schema_name}.#{table_data['table']}"
       include_columns = table_data['include_columns'] || []
-      add_columns = data_warehouse_fcms_enabled? ? (table_data['add_columns'] || []) : []
+      add_columns = table_data['add_columns'] || []
       columns = include_columns + add_columns
       primary_key_column = table_data['primary_key']
       foreign_key_columns = table_data['foreign_keys'] || []
+      pii_table_reference = data_warehouse_fcms_enabled ? (
+        table_data['pii_table_reference'] || []
+      ) : []
 
       if table_exists?(table_name)
         update_existing_table(table_name, columns)
       else
         create_table(table_name, columns, primary_key_column, foreign_key_columns)
+      end
+
+      # Process PII table if defined
+      unless pii_table_reference.empty?
+        process_pii_table(pii_table_reference)
       end
     end
     # Process foreign keys after all tables have been created or updated
@@ -51,6 +59,24 @@ class RedshiftSchemaUpdater
   rescue StandardError => e
     log_error(e.message)
     raise e
+  end
+
+  def process_pii_table(pii_table_reference)
+    pii_table_name = "#{pii_table_reference['schema']}.#{pii_table_reference['table']}"
+    pii_columns = pii_table_reference['include_columns'] || []
+    pii_primary_key_column = pii_table_reference['primary_key']
+    pii_foreign_key_columns = pii_table_reference['foreign_keys'] || []
+
+    if table_exists?(pii_table_name)
+      update_existing_table(pii_table_name, pii_columns)
+    else
+      create_table(
+        pii_table_name,
+        pii_columns,
+        pii_primary_key_column,
+        pii_foreign_key_columns,
+      )
+    end
   end
 
   def table_exists?(table_name)
@@ -149,14 +175,14 @@ class RedshiftSchemaUpdater
       end
     end
     # rubocop:enable Metrics/BlockLength
-    grant_select_permissions_for_columns(table_name, columns) if columns.any? { it['encrypt'] }
 
-    existing_columns.each do |existing_column_name|
+    existing_columns.each do |existing_col_name|
       column_names = columns.map { |item| item['name'] }
-      unless column_names.include?(existing_column_name)
+      skip = column_names.include?(existing_col_name) || dw_timestamps.include?(existing_col_name)
+      unless skip
         remove_column(
           table_name,
-          existing_column_name,
+          existing_col_name,
         )
       end
     end
@@ -337,6 +363,10 @@ class RedshiftSchemaUpdater
     raise e
   end
 
+  def dw_timestamps
+    ['dw_created_at', 'dw_updated_at']
+  end
+
   def create_table(table_name, columns, primary_key, foreign_keys)
     DataWarehouseApplicationRecord.connection.create_table(table_name, id: false) do |t|
       columns.each do |column_info|
@@ -345,7 +375,13 @@ class RedshiftSchemaUpdater
 
         t.column column_name, redshift_data_type(column_data_type), **config_column_options
       end
+
+      # Create dw insert and update timestamp columns with default values
+      dw_timestamps.each do |ts_column|
+        t.column ts_column, 'timestamp', default: -> { 'CURRENT_TIMESTAMP' }
+      end
     end
+
     log_info("Table created: #{table_name}")
 
     if primary_key
@@ -361,8 +397,6 @@ class RedshiftSchemaUpdater
     if foreign_keys.any?
       collect_foreign_keys(table_name, foreign_keys)
     end
-
-    grant_select_permissions_for_columns(table_name, columns) if columns.any? { it['encrypt'] }
   rescue StandardError => e
     log_error("Error creating table: #{e.message}")
     raise e
@@ -383,26 +417,6 @@ class RedshiftSchemaUpdater
       DataWarehouseApplicationRecord.connection.execute(
         DataWarehouseApplicationRecord.sanitize_sql(revoke_sql),
       )
-    end
-  end
-
-  def grant_select_column_permissions(group, table_name, column_name)
-    if using_redshift_adapter?
-      grant_sql = "GRANT SELECT(#{column_name}) ON #{table_name} TO GROUP #{group}"
-      DataWarehouseApplicationRecord.connection.execute(
-        DataWarehouseApplicationRecord.sanitize_sql(grant_sql),
-      )
-    end
-  end
-
-  def grant_select_permissions_for_columns(table_name, columns)
-    ['lg_users', 'lg_powerusers'].each do |group|
-      revoke_table_select_permissions(group, table_name)
-
-      columns.each do |column_info|
-        next if column_info['encrypt']
-        grant_select_column_permissions(group, table_name, column_info['name'])
-      end
     end
   end
 
@@ -461,7 +475,7 @@ class RedshiftSchemaUpdater
 
   private
 
-  def data_warehouse_fcms_enabled?
+  def data_warehouse_fcms_enabled
     IdentityConfig.store.data_warehouse_fcms_enabled
   end
 

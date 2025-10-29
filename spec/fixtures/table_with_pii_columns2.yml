@@ -1,0 +1,42 @@
+- table: new_users
+  schema: public
+  primary_key: id
+  include_columns:
+    - name: id
+      datatype: bigint
+      not_null: true
+    - name: name
+      datatype: string
+      not_null: true
+    - name: encrypted_ssn
+      datatype: string
+    - name: encrypted_mailing_address
+      datatype: string
+  pii_table_reference:
+    table: decrypted_new_users
+    schema: fraudops
+    primary_key: id
+    foreign_keys:
+      - column: id
+        references:
+          table: new_users
+          column: id
+    include_columns:
+      - name: id
+        datatype: bigint
+        not_null: true
+      - name: ssn
+        datatype: string
+      - name: mailing_address
+        datatype: string
+  add_columns:
+    - name: add_column_1
+      expression: "some expression"
+      datatype: string
+      length: 255
+    - name: add_column_2
+      expression: "some expression 2"
+      datatype: bigint
+      length: 255
+
+
