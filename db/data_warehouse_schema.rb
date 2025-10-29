@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_10_13_212902) do
+ActiveRecord::Schema[7.2].define(version: 2025_10_28_200932) do
   create_schema "fcms"
   create_schema "fraudops"
   create_schema "idp"
@@ -30,8 +30,8 @@ ActiveRecord::Schema[7.2].define(version: 2025_10_13_212902) do
   create_table "encrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
     t.string "message", limit: 65535
     t.date "partition_dt"
-    t.datetime "import_timestamp", precision: nil
     t.datetime "processed_timestamp", precision: nil
+    t.datetime "import_timestamp", precision: nil
   end
 
   create_table "events", id: false, force: :cascade do |t|

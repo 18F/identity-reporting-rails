@@ -228,6 +228,12 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
       end
     end
 
+    context 'when datatypes have a length' do
+      it 'returns VARCHAR(length)' do
+        expect(job.send(:redshift_data_type, 'character(10)')).to eq('VARCHAR(10)')
+      end
+    end
+
     context 'when datatype is not :json or :jsonb or :text or :character or :char' do
       it 'returns the input datatype symbol' do
         expect(job.send(:redshift_data_type, 'integer')).to eq('integer')
