@@ -168,8 +168,10 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     case data_type
     when 'json', 'jsonb'
       'super'
-    when 'text', /^char/
+    when 'text'
       'VARCHAR(MAX)'
+    when /^char/
+      "VARCHAR(#{data_type[/\d+/] || 'MAX'})"
     else
       data_type
     end
