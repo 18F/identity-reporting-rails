@@ -54,15 +54,18 @@ else
         cron: cron_24h,
         args: -> { [Time.zone.today] },
       },
+      # todo: temporarily increased frequency  of IdvRedisToRedshiftJob and FraudOpsPiiDecryptJob
+      # for testing and demo purposes. Either revert to staggered cron_10m after or
+      # decide on final frequency
       # Queue IDV Redis to Redshift job to GoodJob
       idv_redis_to_redshift_job: {
         class: 'IdvRedisToRedshiftJob',
-        cron: cron_10m,
+        cron: '0/2 * * * *', # every 2 minutes
       },
       # Import FraudOps PII Decrypt Job
       fraud_ops_pii_decrypt_job: {
         class: 'FraudOpsPiiDecryptJob',
-        cron: '5/10 * * * *', # every 10 minutes starting at 5 minutes past the hour
+        cron: '1/2 * * * *', # every 2 minutes, staggered 1 minute after IdvRedisToRedshiftJob
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
