@@ -110,7 +110,21 @@ class RedshiftSystemTableSyncJob < ApplicationJob
   end
 
   def perform_merge_upsert
-    columns = fetch_source_columns.map { |col| col['column'] }
+    source_columns = fetch_source_columns
+    columns = source_columns.map { |col| col['column'] }
+
+    select_columns = source_columns.map do |col|
+      column_name = col['column']
+      column_type = col['type']
+      target_type = redshift_data_type(column_type)
+
+      if target_type != column_type
+        "CAST(#{column_name} AS #{target_type}) AS #{column_name}"
+      else
+        column_name
+      end
+    end.join(', ')
+
     update_assignments = columns.map { |col| "#{col} = source.#{col}" }.join(', ')
     insert_columns = columns.join(', ')
     insert_values = columns.map { |col| "source.#{col}" }.join(', ')
@@ -122,6 +136,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     build_params = {
       target_table_with_schema: @target_table_with_schema,
       source_table: @source_table,
+      select_columns: select_columns,
       on_conditions: on_conditions,
       timestamp_column: @timestamp_column,
       update_assignments: update_assignments,
@@ -135,7 +150,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       USING(
         SELECT *
         FROM (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY %{partition_by}) AS row_num
+            SELECT %{select_columns}, ROW_NUMBER() OVER (PARTITION BY %{partition_by}) AS row_num
             FROM %{source_table}
         )
         WHERE row_num = 1
