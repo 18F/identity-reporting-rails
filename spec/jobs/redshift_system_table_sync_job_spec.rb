@@ -56,7 +56,9 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
         MERGE INTO system_tables.stl_query
         USING(
           SELECT * FROM (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY stl_query.userid, stl_query.query) AS row_num
+            SELECT userid, query, CAST(label AS VARCHAR(MAX)) AS label, xid, pid, CAST(database AS VARCHAR(MAX)) AS database,
+            CAST(querytxt AS VARCHAR(MAX)) AS querytxt, starttime, endtime, aborted, insert_pristine, concurency_scalling_status,
+            ROW_NUMBER() OVER (PARTITION BY stl_query.userid, stl_query.query) AS row_num
             FROM stl_query
           )
           WHERE row_num = 1
