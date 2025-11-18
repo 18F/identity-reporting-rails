@@ -9,7 +9,10 @@ class ExtractorRowCheckerEnqueueJob < ApplicationJob
         if schema_name == 'logs'
           PiiRowCheckerJob.perform_later(table_name)
         end
-        next if table_name.start_with?('unextracted_') || schema_name == 'system_tables'
+        # Only process specific schemas for duplicate checking
+        allowed_schemas = ['logs', 'idp']
+        next if table_name.start_with?('unextracted_') || !allowed_schemas.include?(schema_name)
+
         DuplicateRowCheckerJob.perform_later(table_name, schema_name)
       end
     end
