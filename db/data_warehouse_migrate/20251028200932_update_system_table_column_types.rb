@@ -15,13 +15,23 @@ class UpdateSystemTableColumnTypes < ActiveRecord::Migration[7.2]
   private
 
   def convert_column_type(table_name, column_name, new_type)
+    return unless connection.adapter_name.downcase.include?('redshift')
+    return unless table_exists?(table_name)
+    return unless column_exists?(table_name, column_name)
+
     temp_column_name = "#{column_name}_temp"
 
-    if connection.adapter_name.downcase.include?('redshift')
-      execute "ALTER TABLE #{table_name} ADD COLUMN #{temp_column_name} #{new_type};"
-      execute "UPDATE #{table_name} SET #{temp_column_name} = #{column_name};"
-      execute "ALTER TABLE #{table_name} DROP COLUMN #{column_name};"
-      execute "ALTER TABLE #{table_name} RENAME COLUMN #{temp_column_name} TO #{column_name};"
-    end
+    execute "ALTER TABLE #{table_name} ADD COLUMN #{temp_column_name} #{new_type};"
+    execute "UPDATE #{table_name} SET #{temp_column_name} = #{column_name};"
+    execute "ALTER TABLE #{table_name} DROP COLUMN #{column_name};"
+    execute "ALTER TABLE #{table_name} RENAME COLUMN #{temp_column_name} TO #{column_name};"
+  end
+
+  def table_exists?(table_name)
+    connection.table_exists?(table_name)
+  end
+
+  def column_exists?(table_name, column_name)
+    connection.column_exists?(table_name, column_name)
   end
 end
