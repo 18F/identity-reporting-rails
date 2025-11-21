@@ -58,15 +58,15 @@ else
       # for testing and demo purposes. Either revert to staggered cron_10m after or
       # decide on final frequency
       # Queue IDV Redis to Redshift job to GoodJob
-      # idv_redis_to_redshift_job: {
-      #   class: 'IdvRedisToRedshiftJob',
-      #   cron: '0/2 * * * *', # every 2 minutes
-      # },
-      # # Import FraudOps PII Decrypt Job
-      # fraud_ops_pii_decrypt_job: {
-      #   class: 'FraudOpsPiiDecryptJob',
-      #   cron: '1/2 * * * *', # every 2 minutes, staggered 1 minute after IdvRedisToRedshiftJob
-      # },
+      idv_redis_to_redshift_job: {
+        class: 'IdvRedisToRedshiftJob',
+        cron: '0/2 * * * *', # every 2 minutes
+      },
+      # Import FraudOps PII Decrypt Job
+      fraud_ops_pii_decrypt_job: {
+        class: 'FraudOpsPiiDecryptJob',
+        cron: '1/2 * * * *', # every 2 minutes, staggered 1 minute after IdvRedisToRedshiftJob
+      },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
   end
