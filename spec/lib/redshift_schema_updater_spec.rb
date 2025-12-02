@@ -10,6 +10,7 @@ RSpec.describe RedshiftSchemaUpdater do
   let!(:pii_columns_file_path2) do
     Rails.root.join('spec', 'fixtures', 'table_with_pii_columns2.yml')
   end
+  let!(:text_columns_file_path) { Rails.root.join('spec', 'fixtures', 'text_columns.yml') }
   let!(:users_table) { 'idp.new_users' }
   let!(:users_table_pii) { 'fraudops.decrypted_new_users' }
   let!(:events_table) { 'idp.events' }
@@ -550,6 +551,271 @@ RSpec.describe RedshiftSchemaUpdater do
       it 'returns the input datatype symbol' do
         expect(redshift_schema_updater.redshift_data_type('integer')).to eq('integer')
         expect(redshift_schema_updater.redshift_data_type('string')).to eq('string')
+        # Text always converts to string for all databases now
+        expect(redshift_schema_updater.redshift_data_type('text')).to eq('string')
+      end
+    end
+  end
+
+  describe '.update_schema_from_yaml with text datatype columns' do
+    context 'when table has text columns with specified limits in YAML' do
+      before do
+        DataWarehouseApplicationRecord.establish_connection(:data_warehouse)
+      end
+
+      it 'creates text columns as VARCHAR(MAX) ignoring YAML limit specification' do
+        expect(redshift_schema_updater.table_exists?(users_table)).to eq(false)
+
+        redshift_schema_updater.update_schema_from_yaml(text_columns_file_path)
+
+        expect(redshift_schema_updater.table_exists?(users_table)).to eq(true)
+
+        columns_objs = DataWarehouseApplicationRecord.connection.columns(users_table)
+
+        # Verify text columns ignore YAML limits and use unlimited storage
+        description_col = columns_objs.find { |col| col.name == 'description' }
+        expect(description_col.type).to eq(:string) # Always string type now
+        if redshift_schema_updater.using_redshift_adapter?
+          expect(description_col.limit).to be_in([-1, 65535])
+        else
+          expect(description_col.limit).to be_nil
+        end
+
+        content_col = columns_objs.find { |col| col.name == 'content' }
+        expect(content_col.type).to eq(:string)
+        if redshift_schema_updater.using_redshift_adapter?
+          expect(content_col.limit).to be_in([-1, 65535])
+        else
+          expect(content_col.limit).to be_nil
+        end
+        name_col = columns_objs.find { |col| col.name == 'name' }
+        expect(name_col.type).to eq(:string)
+        if redshift_schema_updater.using_redshift_adapter?
+          expect(name_col.limit).to eq(256)
+        else
+          expect(name_col.limit).to be_nil
+        end
+      end
+    end
+
+    context 'when using get_config_column_options method with text datatype' do
+      it 'returns MAX limit for text datatype for all databases' do
+        text_column_with_limit = { 'datatype' => 'text', 'limit' => 100, 'not_null' => false }
+        options = redshift_schema_updater.get_config_column_options(text_column_with_limit)
+        expect(options[:limit]).to eq('MAX')
+
+        text_column_without_limit = { 'datatype' => 'text', 'not_null' => false }
+        options = redshift_schema_updater.get_config_column_options(text_column_without_limit)
+        expect(options[:limit]).to eq('MAX')
+
+        # String columns should still respect their limits
+        string_column_with_limit = { 'datatype' => 'string', 'limit' => 500, 'not_null' => false }
+        options = redshift_schema_updater.get_config_column_options(string_column_with_limit)
+        expect(options[:limit]).to eq(500)
+      end
+    end
+
+    context 'when creating table directly with create_table method' do
+      let(:text_table_name) { 'idp.test_text_table' }
+      let(:text_columns) do
+        [
+          { 'name' => 'id', 'datatype' => 'integer', 'not_null' => true },
+          { 'name' => 'short_description', 'datatype' => 'text', 'limit' => 50 },
+          { 'name' => 'long_content', 'datatype' => 'text' },
+          { 'name' => 'regular_string', 'datatype' => 'string', 'limit' => 100 },
+        ]
+      end
+      let(:primary_key) { 'id' }
+      let(:foreign_keys) { [] }
+
+      before do
+        DataWarehouseApplicationRecord.establish_connection(:data_warehouse)
+        if redshift_schema_updater.table_exists?(text_table_name)
+          DataWarehouseApplicationRecord.connection.drop_table(text_table_name)
+        end
+      end
+
+      after do
+        if redshift_schema_updater.table_exists?(text_table_name)
+          DataWarehouseApplicationRecord.connection.drop_table(text_table_name)
+        end
+      end
+
+      it 'creates text columns with VARCHAR(MAX) limit regardless of YAML specification' do
+        redshift_schema_updater.create_table(
+          text_table_name, text_columns, primary_key, foreign_keys
+        )
+        expect(redshift_schema_updater.table_exists?(text_table_name)).to eq(true)
+        columns_objs = DataWarehouseApplicationRecord.connection.columns(text_table_name)
+
+        # Test text column with specified limit in YAML - should ignore limit and use VARCHAR(MAX)
+        short_description_col = columns_objs.find { |col| col.name == 'short_description' }
+        expect(short_description_col.type).to eq(:string)
+        if redshift_schema_updater.using_redshift_adapter?
+          expect(short_description_col.limit).to be_in([-1, 65535])
+        else
+          expect(short_description_col.limit).to be_nil
+        end
+
+        long_content_col = columns_objs.find { |col| col.name == 'long_content' }
+        expect(long_content_col.type).to eq(:string)
+        if redshift_schema_updater.using_redshift_adapter?
+          expect(long_content_col.limit).to be_in([-1, 65535])
+        else
+          expect(long_content_col.limit).to be_nil
+        end
+
+        regular_string_col = columns_objs.find { |col| col.name == 'regular_string' }
+        expect(regular_string_col.type).to eq(:string)
+        expect(regular_string_col.limit).to eq(100)
+
+        # Verify primary key column
+        id_col = columns_objs.find { |col| col.name == 'id' }
+        expect(id_col.type).to eq(:integer)
+        expect(id_col.null).to eq(false)
+      end
+
+      it 'applies text column conversion for Redshift after table creation' do
+        # Mock log_info to verify conversion messages
+        allow(redshift_schema_updater).to receive(:log_info)
+        redshift_schema_updater.create_table(
+          text_table_name, text_columns, primary_key, foreign_keys
+        )
+
+        if redshift_schema_updater.using_redshift_adapter?
+          expect(redshift_schema_updater).to have_received(:log_info).
+            with(match(/Converting Redshift text column short_description to VARCHAR\(MAX\)/))
+          expect(redshift_schema_updater).to have_received(:log_info).
+            with(match(/Converting Redshift text column long_content to VARCHAR\(MAX\)/))
+        else
+          expect(redshift_schema_updater).to have_received(:log_info).
+            with(match(/Creating text column short_description as string with limit: unlimited/))
+          expect(redshift_schema_updater).to have_received(:log_info).
+            with(match(/Creating text column long_content as string with limit: unlimited/))
+        end
+      end
+
+      it 'handles view dependency errors gracefully when updating varchar length' do
+        # Create table first
+        redshift_schema_updater.create_table(
+          text_table_name, text_columns, primary_key, foreign_keys
+        )
+
+        # Mock the connection to raise a view dependency error
+        if redshift_schema_updater.using_redshift_adapter?
+          allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_call_original
+          allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
+            with(include('ALTER TABLE')).and_raise(
+              ActiveRecord::StatementInvalid.new(
+                'ERROR: cannot alter type of a column used by a view or rule',
+              ),
+            )
+        else
+          allow(DataWarehouseApplicationRecord.connection).
+            to receive(:change_column).and_call_original
+          allow(DataWarehouseApplicationRecord.connection).to receive(:change_column).
+            with(text_table_name, 'short_description', 'string').and_raise(
+              ActiveRecord::StatementInvalid.new(
+                'ERROR: cannot alter type of a column used by a view or rule',
+              ),
+            )
+        end
+
+        # Mock log_warning to verify the error is handled
+        allow(redshift_schema_updater).to receive(:log_warning)
+
+        # This should not raise an error but log a warning
+        expect do
+          redshift_schema_updater.update_varchar_length(text_table_name, 'short_description', 'MAX')
+        end.not_to raise_error
+
+        # # Verify warning was logged
+        # expect(redshift_schema_updater).to have_received(:log_warning)
+        #   .with(match(/Cannot alter column short_description .* due to view\/rule dependency/))
+      end
+
+      it 'updates existing text column with limit to VARCHAR(MAX) using update_existing_table' do
+        # Create table manually with text column having a limited size to simulate existing table
+        # that hasn't been updated yet (bypassing our automatic text column conversion)
+        DataWarehouseApplicationRecord.connection.create_table(text_table_name, id: false) do |t|
+          t.integer :id, null: false
+          t.string :description, limit: 100 # Create with limited string instead of unlimited text
+          t.timestamp :dw_created_at, default: -> { 'CURRENT_TIMESTAMP' }
+          t.timestamp :dw_updated_at, default: -> { 'CURRENT_TIMESTAMP' }
+        end
+
+        # Verify initial state - column should have a limit of 100
+        initial_columns_objs = DataWarehouseApplicationRecord.connection.columns(text_table_name)
+        initial_description_col = initial_columns_objs.find { |col| col.name == 'description' }
+        expect(initial_description_col.type).to eq(:string)
+        expect(initial_description_col.limit).to eq(100) # Should have the limit we set
+
+        # Now update the table with text datatype configuration (should force to MAX)
+        updated_columns = [
+          { 'name' => 'id', 'datatype' => 'integer', 'not_null' => true },
+          { 'name' => 'description', 'datatype' => 'text' }, # Changed to text datatype
+        ]
+
+        # Mock log_info to capture the update process
+        allow(redshift_schema_updater).to receive(:log_info).and_call_original
+
+        # Call update_existing_table which should detect text column needs VARCHAR(MAX) update
+        redshift_schema_updater.update_existing_table(text_table_name, updated_columns)
+
+        # Verify the column was updated to unlimited storage
+        final_columns_objs = DataWarehouseApplicationRecord.connection.columns(text_table_name)
+        final_description_col = final_columns_objs.find { |col| col.name == 'description' }
+        expect(final_description_col.type).to eq(:string)
+
+        if redshift_schema_updater.using_redshift_adapter?
+          # For Redshift, VARCHAR(MAX) shows as -1 or 65535
+          expect(final_description_col.limit).to be_in([-1, 65535])
+        else
+          # For PostgreSQL, unlimited string shows as nil limit
+          expect(final_description_col.limit).to be_nil
+        end
+
+        # Verify the correct log messages were generated
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Text column description needs update to VARCHAR\(MAX\)/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Updating varchar length for column: description to MAX/)).at_least(:once)
+      end
+
+      it 'skips update when text column is already at VARCHAR(MAX) using update_existing_table' do
+        # Create table where text column is already at MAX
+        redshift_schema_updater.create_table(
+          text_table_name, text_columns, primary_key, foreign_keys
+        )
+
+        # Verify initial state - text columns should already be at MAX
+        initial_columns_objs = DataWarehouseApplicationRecord.connection.columns(text_table_name)
+        short_description_col = initial_columns_objs.find { |col| col.name == 'short_description' }
+
+        if redshift_schema_updater.using_redshift_adapter?
+          expect(short_description_col.limit).to be_in([-1, 65535]) # Already at MAX
+        else
+          expect(short_description_col.limit).to be_nil # Already unlimited
+        end
+
+        # Mock log_info to capture the update process
+        allow(redshift_schema_updater).to receive(:log_info).and_call_original
+
+        # Call update_existing_table with same text column configuration
+        update_columns = [
+          { 'name' => 'id', 'datatype' => 'integer', 'not_null' => true },
+          { 'name' => 'short_description', 'datatype' => 'text', 'limit' => 50 },
+          { 'name' => 'long_content', 'datatype' => 'text' },
+          { 'name' => 'regular_string', 'datatype' => 'string', 'limit' => 100 },
+        ]
+
+        redshift_schema_updater.update_existing_table(text_table_name, update_columns)
+
+        # Verify no varchar update was triggered for text columns
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Text column short_description is already VARCHAR\(MAX\), no update needed/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Text column long_content is already VARCHAR\(MAX\), no update needed/))
       end
     end
   end

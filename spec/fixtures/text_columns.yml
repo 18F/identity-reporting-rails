@@ -1,0 +1,22 @@
+- table: new_users
+  schema: public
+  primary_key: id
+  include_columns:
+    - name: id
+      datatype: integer
+      not_null: true
+    - name: name
+      datatype: string
+      not_null: true
+    - name: email
+      datatype: string
+      limit: 255
+    - name: description
+      datatype: text
+      limit: 100
+    - name: content
+      datatype: text
+    - name: created_at
+      datatype: datetime
+    - name: updated_at
+      datatype: datetime
