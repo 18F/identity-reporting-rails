@@ -156,6 +156,10 @@ class RedshiftSchemaUpdater
       config_column_options = get_config_column_options(column_info)
       column_exists = existing_columns.include?(config_column_name)
 
+      # Initialize variables for all columns
+      varchar_requires_update = false
+      data_type_requires_update = false
+
       if column_exists
         current_dw_data_types = [
           datatype_metadata.type.to_s,
