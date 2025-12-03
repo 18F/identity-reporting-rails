@@ -57,7 +57,7 @@ class RedshiftSchemaUpdater
     # Process foreign keys after all tables have been created or updated
     process_foreign_keys
   rescue StandardError => e
-    log_error(e.message)
+    log_error("Error updating schema from YAML: #{e.message}")
     raise e
   end
 
@@ -497,45 +497,48 @@ class RedshiftSchemaUpdater
   end
 
   def update_varchar_length(table_name, column_name, new_limit)
-    begin
-      if using_redshift_adapter?
-        if new_limit == 'MAX'
-          varchar_type = 'VARCHAR(MAX)'
-        elsif new_limit.nil?
-          varchar_type = 'VARCHAR(MAX)'
-        else
-          varchar_type = "VARCHAR(#{new_limit})"
-        end
-
-        log_info("Updating varchar length for column: #{column_name} to #{varchar_type}")
-        DataWarehouseApplicationRecord.connection.execute(
-          DataWarehouseApplicationRecord.sanitize_sql(
-            "ALTER TABLE #{table_name} ALTER COLUMN #{column_name} TYPE #{varchar_type}",
-          ),
-        )
-      elsif new_limit.nil? || new_limit == 'MAX'
-        log_info("Updating varchar length for column: #{column_name} to MAX")
-        DataWarehouseApplicationRecord.connection.change_column(
-          table_name, column_name, 'string'
-        )
-        else
-          log_info("Updating varchar length for column: #{column_name} to #{new_limit}")
-          DataWarehouseApplicationRecord.connection.change_column(
-            table_name, column_name, 'string', limit: new_limit
-          )
-      end
-    rescue ActiveRecord::StatementInvalid => e
-      if e.message.include?('cannot alter type of a column used by a view or rule')
-        database_type = using_redshift_adapter? ? 'Redshift' : 'PostgreSQL'
-        log_warning(
-          "Cannot alter column #{column_name} in #{table_name} due to view/rule dependency " \
-          "in #{database_type}. Column type change skipped: #{e.message}",
-        )
+    if using_redshift_adapter?
+      if new_limit == 'MAX'
+        varchar_type = 'VARCHAR(MAX)'
+      elsif new_limit.nil?
+        varchar_type = 'VARCHAR(MAX)'
       else
-        raise e
+        varchar_type = "VARCHAR(#{new_limit})"
       end
+
+      log_info("Updating varchar length for column: #{column_name} to #{varchar_type}")
+      DataWarehouseApplicationRecord.connection.execute(
+        DataWarehouseApplicationRecord.sanitize_sql(
+          "ALTER TABLE #{table_name} ALTER COLUMN #{column_name} TYPE #{varchar_type}",
+        ),
+      )
+    elsif new_limit.nil? || new_limit == 'MAX'
+      log_info("Updating varchar length for column: #{column_name} to MAX")
+      DataWarehouseApplicationRecord.connection.change_column(
+        table_name, column_name, 'string'
+      )
+      else
+        log_info("Updating varchar length for column: #{column_name} to #{new_limit}")
+        DataWarehouseApplicationRecord.connection.change_column(
+          table_name, column_name, 'string', limit: new_limit
+        )
     end
+  rescue StandardError => e
+    log_error("Cannot alter varchar length: #{e.message}")
+    raise e
   end
+  # rescue ActiveRecord::StatementInvalid => e
+  #   if e.message.include?('cannot alter type of a column used by a view or rule')
+  #     database_type = using_redshift_adapter? ? 'Redshift' : 'PostgreSQL'
+  #     log_warning(
+  #       "Cannot alter column #{column_name} in #{table_name} due to view/rule dependency " \
+  #       "in #{database_type}. Column type change skipped: #{e.message}",
+  #     )
+  #   else
+  #     raise e
+  #   end
+  # end
+  # end
 
   def update_column_data_type(table_name, column_name, new_data_type, keyword_options)
     old_column_name = "#{column_name}_copy"
@@ -630,17 +633,22 @@ class RedshiftSchemaUpdater
         )
       end
     end
-  rescue ActiveRecord::StatementInvalid => e
-    if e.message.include?('cannot alter type of a column used by a view or rule')
-      database_type = using_redshift_adapter? ? 'Redshift' : 'PostgreSQL'
-      log_warning(
-        "Cannot convert text columns in #{table_name} due to view/rule dependency " \
-        "in #{database_type}. Text column conversion skipped: #{e.message}",
-      )
-    else
-      raise e
-    end
+  rescue StandardError => e
+    log_error("Error apply_text_column_conversion_for_redshift: #{e.message}")
+    raise e
   end
+
+  # rescue ActiveRecord::StatementInvalid => e
+  #   if e.message.include?('cannot alter type of a column used by a view or rule')
+  #     database_type = using_redshift_adapter? ? 'Redshift' : 'PostgreSQL'
+  #     log_warning(
+  #       "Cannot convert text columns in #{table_name} due to view/rule dependency " \
+  #       "in #{database_type}. Text column conversion skipped: #{e.message}",
+  #     )
+  #   else
+  #     raise e
+  #   end
+  # end
 
   private
 

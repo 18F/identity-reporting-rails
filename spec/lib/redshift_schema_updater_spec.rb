@@ -695,13 +695,13 @@ RSpec.describe RedshiftSchemaUpdater do
         end
       end
 
-      it 'handles view dependency errors gracefully when updating varchar length' do
+      it 'handles database errors when updating varchar length' do
         # Create table first
         redshift_schema_updater.create_table(
           text_table_name, text_columns, primary_key, foreign_keys
         )
 
-        # Mock the connection to raise a view dependency error
+        # Mock the connection to raise a database error
         if redshift_schema_updater.using_redshift_adapter?
           allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_call_original
           allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
@@ -721,17 +721,17 @@ RSpec.describe RedshiftSchemaUpdater do
             )
         end
 
-        # Mock log_warning to verify the error is handled
-        allow(redshift_schema_updater).to receive(:log_warning)
+        # Mock log_error to verify the error is handled
+        allow(redshift_schema_updater).to receive(:log_error)
 
-        # This should not raise an error but log a warning
+        # This should raise an error and log it
         expect do
           redshift_schema_updater.update_varchar_length(text_table_name, 'short_description', 'MAX')
-        end.not_to raise_error
+        end.to raise_error(ActiveRecord::StatementInvalid)
 
-        # # Verify warning was logged
-        # expect(redshift_schema_updater).to have_received(:log_warning)
-        #   .with(match(/Cannot alter column short_description .* due to view\/rule dependency/))
+        # Verify error was logged
+        expect(redshift_schema_updater).to have_received(:log_error).
+          with(match(/Cannot alter varchar length:/))
       end
 
       it 'updates existing text column with limit to VARCHAR(MAX) using update_existing_table' do
