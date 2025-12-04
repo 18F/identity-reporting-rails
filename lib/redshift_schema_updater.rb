@@ -527,18 +527,6 @@ class RedshiftSchemaUpdater
     log_error("Cannot alter varchar length: #{e.message}")
     raise e
   end
-  # rescue ActiveRecord::StatementInvalid => e
-  #   if e.message.include?('cannot alter type of a column used by a view or rule')
-  #     database_type = using_redshift_adapter? ? 'Redshift' : 'PostgreSQL'
-  #     log_warning(
-  #       "Cannot alter column #{column_name} in #{table_name} due to view/rule dependency " \
-  #       "in #{database_type}. Column type change skipped: #{e.message}",
-  #     )
-  #   else
-  #     raise e
-  #   end
-  # end
-  # end
 
   def update_column_data_type(table_name, column_name, new_data_type, keyword_options)
     old_column_name = "#{column_name}_copy"
@@ -637,18 +625,6 @@ class RedshiftSchemaUpdater
     log_error("Error apply_text_column_conversion_for_redshift: #{e.message}")
     raise e
   end
-
-  # rescue ActiveRecord::StatementInvalid => e
-  #   if e.message.include?('cannot alter type of a column used by a view or rule')
-  #     database_type = using_redshift_adapter? ? 'Redshift' : 'PostgreSQL'
-  #     log_warning(
-  #       "Cannot convert text columns in #{table_name} due to view/rule dependency " \
-  #       "in #{database_type}. Text column conversion skipped: #{e.message}",
-  #     )
-  #   else
-  #     raise e
-  #   end
-  # end
 
   private
 
