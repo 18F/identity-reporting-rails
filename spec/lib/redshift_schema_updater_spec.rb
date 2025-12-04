@@ -557,7 +557,7 @@ RSpec.describe RedshiftSchemaUpdater do
     end
   end
 
-  describe '.update_schema_from_yaml with text datatype columns' do
+  describe 'update_schema_from_yaml with text datatype columns' do
     context 'when table has text columns with specified limits in YAML' do
       before do
         DataWarehouseApplicationRecord.establish_connection(:data_warehouse)
