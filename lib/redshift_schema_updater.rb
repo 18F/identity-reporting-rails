@@ -123,13 +123,10 @@ class RedshiftSchemaUpdater
   def get_config_column_options(column_info)
     config_column_data_type = column_info.fetch('datatype')
 
-    if text_datatype?(config_column_data_type)
-      default_varchar_limit = get_text_column_limit_for_database
-    elsif using_redshift_adapter? && config_column_data_type == 'string'
-      default_varchar_limit = 256
-    else
-      default_varchar_limit = nil
-    end
+    # Set default limits for non-text columns
+    default_varchar_limit = if using_redshift_adapter? && config_column_data_type == 'string'
+                              256
+                            end
 
     # For text columns, force unlimited storage regardless of YAML specification
     final_limit = if text_datatype?(config_column_data_type)
@@ -559,12 +556,6 @@ class RedshiftSchemaUpdater
     else
       datatype
     end
-  end
-
-  def validate_and_format_limit_for_database(limit, datatype)
-    return limit unless text_datatype?(datatype)
-    # For both Redshift and PostgreSQL, text columns should use 'MAX' limit and for postgres is nil
-    'MAX'
   end
 
   def text_datatype?(datatype)
