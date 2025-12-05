@@ -50,7 +50,7 @@ group :development, :test do
 end
 
 group :test do
-  gem 'bundler-audit', require: false
+  gem 'bundler-audit', '>= 0.9.3', require: false
   gem 'simplecov', '~> 0.22.0', require: false
   gem 'simplecov-cobertura'
   gem 'simplecov_json_formatter'
