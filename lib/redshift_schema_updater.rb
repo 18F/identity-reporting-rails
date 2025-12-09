@@ -124,7 +124,7 @@ class RedshiftSchemaUpdater
     config_column_data_type = column_info.fetch('datatype')
 
     # Set default limits for non-text columns
-    default_varchar_limit = if using_redshift_adapter? && config_column_data_type == 'string'
+    default_varchar_limit = if config_column_data_type == 'string'
                               256
                             end
 
@@ -145,7 +145,6 @@ class RedshiftSchemaUpdater
   def update_existing_table(table_name, columns)
     columns_objs = DataWarehouseApplicationRecord.connection.columns(table_name)
     existing_columns = columns_objs.map(&:name)
-
     # rubocop:disable Metrics/BlockLength
     columns.each do |column_info|
       config_column_name, config_column_data_type = column_info.values_at('name', 'datatype')
@@ -154,9 +153,6 @@ class RedshiftSchemaUpdater
       column_exists = existing_columns.include?(config_column_name)
 
       # Initialize variables for all columns
-      varchar_requires_update = false
-      data_type_requires_update = false
-
       if column_exists
         current_dw_data_types = [
           datatype_metadata.type.to_s,
@@ -166,43 +162,8 @@ class RedshiftSchemaUpdater
           redshift_data_type(config_column_data_type),
         )
         is_string_data_type = (current_dw_data_types & ['string', 'text']).any?
-
-        # Special handling for text columns - always check if they need unlimited storage
-        current_limit = datatype_metadata.limit
-        new_limit = config_column_options[:limit]
-        is_text_column = text_datatype?(config_column_data_type)
-
-        log_info(
-          "Column #{config_column_name}: current_limit=#{current_limit}, " \
-          "new_limit=#{new_limit}, is_text=#{is_text_column}",
-        )
-
-        # For text datatype, only force update if not already set to VARCHAR(MAX)
-        limit_changed = if text_datatype?(config_column_data_type)
-                          # Check if text column needs to be updated to VARCHAR(MAX)
-                          if needs_unlimited_storage_update?(current_limit, config_column_data_type)
-                            log_info(
-                              "Text column #{config_column_name} needs update to " \
-                              "VARCHAR(MAX) (current_limit: #{current_limit})",
-                            )
-                            true
-                          else
-                            log_info(
-                              "Text column #{config_column_name} is already " \
-                              "VARCHAR(MAX), no update needed",
-                            )
-                            false
-                          end
-                        else
-                          current_limit != new_limit
-                        end
-
+        limit_changed = datatype_metadata.limit != config_column_options[:limit]
         varchar_requires_update = is_string_data_type && limit_changed
-
-        log_info(
-          "Column #{config_column_name}: varchar_requires_update=#{varchar_requires_update}, " \
-          "limit_changed=#{limit_changed}",
-        )
       end
 
       if !column_exists
@@ -423,21 +384,7 @@ class RedshiftSchemaUpdater
         column_name, column_data_type = column_info.values_at('name', 'datatype')
         config_column_options = get_config_column_options(column_info)
         final_data_type = redshift_data_type(column_data_type)
-
-        # Prepare column options for database-specific table creation
-        creation_options = prepare_column_options_for_creation(config_column_options)
-
-        # Log text column creation for validation
-        if text_datatype?(column_data_type)
-          adapter_type = using_redshift_adapter? ? 'Redshift' : 'PostgreSQL'
-          limit_info = creation_options[:limit] || 'unlimited'
-          log_info(
-            "Creating text column #{column_name} as #{final_data_type} " \
-            "with limit: #{limit_info} for #{adapter_type}",
-          )
-        end
-
-        t.column column_name, final_data_type, **creation_options
+        t.column column_name, final_data_type, **config_column_options
       end
 
       # Create dw insert and update timestamp columns with default values
@@ -445,9 +392,6 @@ class RedshiftSchemaUpdater
         t.column ts_column, 'timestamp', default: -> { 'CURRENT_TIMESTAMP' }
       end
     end
-
-    # Apply text column conversions after table creation
-    apply_text_column_conversion_for_redshift(table_name, columns)
 
     log_info("Table created: #{table_name}")
 
@@ -495,30 +439,15 @@ class RedshiftSchemaUpdater
 
   def update_varchar_length(table_name, column_name, new_limit)
     if using_redshift_adapter?
-      if new_limit == 'MAX'
-        varchar_type = 'VARCHAR(MAX)'
-      elsif new_limit.nil?
-        varchar_type = 'VARCHAR(MAX)'
-      else
-        varchar_type = "VARCHAR(#{new_limit})"
-      end
-
-      log_info("Updating varchar length for column: #{column_name} to #{varchar_type}")
       DataWarehouseApplicationRecord.connection.execute(
         DataWarehouseApplicationRecord.sanitize_sql(
-          "ALTER TABLE #{table_name} ALTER COLUMN #{column_name} TYPE #{varchar_type}",
+          "ALTER TABLE #{table_name} ALTER COLUMN #{column_name} TYPE VARCHAR(#{new_limit})",
         ),
       )
-    elsif new_limit.nil? || new_limit == 'MAX'
-      log_info("Updating varchar length for column: #{column_name} to MAX")
+    else
       DataWarehouseApplicationRecord.connection.change_column(
-        table_name, column_name, 'string'
+        table_name, column_name, 'string', limit: new_limit
       )
-      else
-        log_info("Updating varchar length for column: #{column_name} to #{new_limit}")
-        DataWarehouseApplicationRecord.connection.change_column(
-          table_name, column_name, 'string', limit: new_limit
-        )
     end
   rescue StandardError => e
     log_error("Cannot alter varchar length: #{e.message}")
@@ -563,29 +492,19 @@ class RedshiftSchemaUpdater
   end
 
   def get_text_column_limit_for_database
-    'MAX'
+    if using_redshift_adapter?
+      65534 # Redshift VARCHAR(MAX) actual limit
+    end
   end
 
   def needs_unlimited_storage_update?(current_limit, config_datatype)
     return false unless text_datatype?(config_datatype)
 
     if using_redshift_adapter?
-      current_limit != -1 && current_limit != 65535
+      current_limit != -1 && current_limit != 65534
     else
       # For PostgreSQL, nil limit means unlimited, any other value means limited
       !current_limit.nil?
-    end
-  end
-
-  def prepare_column_options_for_creation(config_column_options)
-    if config_column_options[:limit] == 'MAX'
-      if using_redshift_adapter?
-        config_column_options.merge(limit: 65535) # Use max supported limit for creation
-      else
-        config_column_options.merge(limit: nil)
-      end
-    else
-      config_column_options
     end
   end
 
