@@ -163,7 +163,16 @@ class RedshiftSchemaUpdater
         )
         is_string_data_type = (current_dw_data_types & ['string', 'text']).any?
         limit_changed = datatype_metadata.limit != config_column_options[:limit]
-        varchar_requires_update = is_string_data_type && limit_changed
+
+        # For text columns, use the specialized check to avoid unnecessary updates
+        if text_datatype?(config_column_data_type)
+          varchar_requires_update = needs_unlimited_storage_update?(
+            datatype_metadata.limit,
+            config_column_data_type,
+          )
+        else
+          varchar_requires_update = is_string_data_type && limit_changed
+        end
       end
 
       if !column_exists
@@ -492,16 +501,16 @@ class RedshiftSchemaUpdater
   end
 
   def get_text_column_limit_for_database
-    if using_redshift_adapter?
-      65534 # Redshift VARCHAR(MAX) actual limit
-    end
+    return 65534 if using_redshift_adapter? # Redshift VARCHAR(MAX) actual limit
+
+    nil # PostgreSQL unlimited text
   end
 
   def needs_unlimited_storage_update?(current_limit, config_datatype)
     return false unless text_datatype?(config_datatype)
 
     if using_redshift_adapter?
-      current_limit != -1 && current_limit != 65534
+      current_limit != 65534
     else
       # For PostgreSQL, nil limit means unlimited, any other value means limited
       !current_limit.nil?
