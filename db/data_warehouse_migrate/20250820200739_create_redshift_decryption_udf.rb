@@ -8,7 +8,7 @@ class CreateRedshiftDecryptionUdf < ActiveRecord::Migration[7.2]
         redshift_iam_role_name = "arn:aws:iam::#{account_id}:role/#{env_name}-redshift-iam-role"
         dir.up do
           execute <<-SQL
-          CREATE OR REPLACE EXTERNAL FUNCTION fraudops.decrypt_udf (encrypted_value varchar)
+          CREATE OR REPLACE EXTERNAL FUNCTION decrypt_udf (encrypted_value varchar)
           RETURNS varchar STABLE
           LAMBDA '#{lambda_name}'
           IAM_ROLE '#{redshift_iam_role_name}';
@@ -17,7 +17,7 @@ class CreateRedshiftDecryptionUdf < ActiveRecord::Migration[7.2]
 
         dir.down do
           execute <<-SQL
-          DROP FUNCTION fraudops.decrypt_udf(varchar);
+          DROP FUNCTION decrypt_udf(varchar);
           SQL
         end
       end
