@@ -176,6 +176,18 @@ class RedshiftSchemaUpdater
     end
     # rubocop:enable Metrics/BlockLength
 
+    # Create dw insert and update timestamp columns with default values for existing tables
+    dw_timestamps.each do |ts_column|
+      unless existing_columns.include?(ts_column)
+        add_column(
+          table_name,
+          ts_column,
+          'timestamp',
+          default: -> { 'CURRENT_TIMESTAMP' },
+        )
+      end
+    end
+
     existing_columns.each do |existing_col_name|
       column_names = columns.map { |item| item['name'] }
       skip = column_names.include?(existing_col_name) || dw_timestamps.include?(existing_col_name)
@@ -375,11 +387,16 @@ class RedshiftSchemaUpdater
 
         t.column column_name, redshift_data_type(column_data_type), **config_column_options
       end
+    end
 
-      # Create dw insert and update timestamp columns with default values
-      dw_timestamps.each do |ts_column|
-        t.column ts_column, 'timestamp', default: -> { 'CURRENT_TIMESTAMP' }
-      end
+    # Create dw insert and update timestamp columns with default values for new tables
+    dw_timestamps.each do |ts_column|
+      add_column(
+        table_name,
+        ts_column,
+        'timestamp',
+        default: -> { 'CURRENT_TIMESTAMP' },
+      )
     end
 
     log_info("Table created: #{table_name}")
