@@ -27,6 +27,12 @@ else
         # runs every 5 minutes starting at 2 minutes past the hour to allow the user sync script
         # to complete at the top of the hour
       },
+      # Queue redshift user login detection job to GoodJob
+      redshift_user_login_detection_job: {
+        class: 'RedshiftUserLoginDetectionJob',
+        cron: cron_5m,
+        # runs every 5 minutes
+      },
       # Queue schema service job to GoodJob
       extractor_row_checker_enqueue_job: {
         class: 'ExtractorRowCheckerEnqueueJob',
