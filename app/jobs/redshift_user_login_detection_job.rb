@@ -36,7 +36,9 @@ class RedshiftUserLoginDetectionJob < ApplicationJob
       AND user_name IN (#{users_to_check.map { |s| "'#{s}'" }.join(", ")}) 
       AND record_time >= CURRENT_TIMESTAMP - INTERVAL '15 MINUTES';
     SQL
-    result = DataWarehouseApplicationRecord.connection.execute(query)
+    result = DataWarehouseApplicationRecord.connection.execute(
+      DataWarehouseApplicationRecord.sanitize_sql(query),
+    )
     result.map(&:values).flatten
   end
 
