@@ -5,6 +5,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     table_definitions.each do |table|
       setup_instance_variables(table)
       create_target_table
+      sync_target_and_source_table_schemas
       upsert_data
       update_sync_time
     end
@@ -77,6 +78,76 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       log_info(e.message, false)
       raise e
     end
+  end
+
+  def sync_target_and_source_table_schemas
+    missing_columns = missing_system_table_columns
+    return if missing_columns.empty?
+
+    add_column_statements = add_missing_column_statements(missing_columns)
+    return if add_column_statements.empty?
+
+    add_column_statements.each do |statement|
+      DataWarehouseApplicationRecord.connection.execute(statement)
+      log_info("Successfully added column with statement: #{statement}", true)
+    end
+    log_info(
+      "Synchronized schema for #{@target_table}", true,
+      added_columns: missing_columns,
+    )
+  end
+
+  def missing_system_table_columns
+    query = <<~SQL
+      WITH source AS (
+        SELECT *
+        FROM svv_columns
+        WHERE table_name = '#{@source_table}' AND table_schema = '#{@source_schema}'
+      ),
+      target as (
+        SELECT *
+        FROM svv_columns
+        WHERE table_name = '#{@source_table}' AND table_schema = '#{@target_schema}'
+      )
+      SELECT src.column_name
+      FROM source src
+      LEFT JOIN target tgt 
+      ON tgt.table_name = src.table_name AND tgt.column_name = src.column_name
+      WHERE tgt.table_name IS NULL;
+    SQL
+    result = DataWarehouseApplicationRecord.connection.execute(
+      DataWarehouseApplicationRecord.sanitize_sql(query)
+    )
+    if result.any?
+      result.map { |row| row['column_name'] }
+    else
+      []
+    end
+  end
+
+  def get_source_table_ddl
+    ddl_statement_query = <<~SQL
+      SHOW TABLE pg_catalog.#{@source_table};
+    SQL
+    result = DataWarehouseApplicationRecord.connection.execute(
+      DataWarehouseApplicationRecord.sanitize_sql(ddl_statement_query)
+    )
+    result.to_a[0]["Show Table DDL statement"]
+  end
+
+  def add_missing_column_statements(missing_columns)
+    ddl_statement_string = get_source_table_ddl
+    add_column_clauses = missing_columns.map do |column_name|
+      column_definition_match = ddl_statement_string.match(/^\s*#{Regexp.escape(column_name)}\s+[^,\n]+/m).to_s.strip
+      if column_definition_match
+        <<-SQL
+          ALTER TABLE #{@target_table_with_schema} ADD COLUMN #{column_definition_match}
+        SQL
+      else
+        nil
+      end
+    end.compact
+    add_column_clauses
   end
 
   def fetch_source_columns
