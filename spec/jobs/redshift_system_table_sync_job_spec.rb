@@ -6,16 +6,31 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
   let(:target_schema) { 'system_tables' }
   let(:source_table) { 'stl_query' }
   let(:target_table) { 'stl_query' }
+  let(:source_table2) { 'stl_some_table' }
+  let(:target_table2) { 'stl_some_table' }
   let(:source_table_with_schema) { "#{source_schema}.#{source_table}" }
   let(:target_table_with_schema) { "#{target_schema}.#{target_table}" }
+  let(:source_table_with_schema2) { "#{source_schema}.#{source_table2}" }
+  let(:target_table_with_schema2) { "#{target_schema}.#{target_table2}" }
   let(:timestamp_column) { 'endtime' }
   let(:column_keys) { ['userid', 'query'] }
   let(:last_sync_time) { Time.zone.now - 6.days }
   let!(:file_path) { Rails.root.join('spec', 'fixtures', 'redshift_system_tables.yml') }
+  let!(:file_path2) { Rails.root.join('spec', 'fixtures', 'redshift_system_tables2.yml') }
   let(:table) do
     {
       'source_table' => source_table,
       'target_table' => source_table,
+      'source_schema' => source_schema,
+      'target_schema' => target_schema,
+      'column_keys' => column_keys,
+      'timestamp_column' => timestamp_column,
+    }
+  end
+  let(:table2) do
+    {
+      'source_table' => source_table2,
+      'target_table' => target_table2,
       'source_schema' => source_schema,
       'target_schema' => target_schema,
       'column_keys' => column_keys,
@@ -137,6 +152,61 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
         with(target_table_with_schema, hash_including(id: false))
 
       job.send(:create_target_table)
+    end
+  end
+
+  describe '#sync_target_and_source_table_schemas' do
+    context 'when there are missing columns from target table' do
+      before do
+        # Create source table with no new columns that are missing from target
+        DataWarehouseApplicationRecord.connection.create_table(
+          source_table_with_schema2,
+          id: false,
+        ) do |t|
+          t.column 'userid', 'integer'
+          t.column 'query', 'integer'
+          t.column 'starttime', 'timestamp without time zone'
+          t.column 'endtime', 'timestamp without time zone'
+        end
+        job.send(:setup_instance_variables, table2)
+        job.send(:create_target_table)
+      end
+
+      it 'adds missing columns to target table, and log message' do
+        # Add a new columns to source table to simulate missing column scenario
+        DataWarehouseApplicationRecord.connection.add_column(
+          source_table_with_schema2,
+          'new_column1',
+          'integer',
+        )
+        DataWarehouseApplicationRecord.connection.add_column(
+          source_table_with_schema2,
+          'new_column2',
+          'varchar',
+          limit: 130
+        )
+        allow(job).to receive(:missing_system_table_columns).and_return(['new_column1', 'new_column2'])
+        allow(job).to receive(:get_source_table_ddl).and_return(
+          'CREATE TABLE test_pg_catalog.stl_some_table (
+            userid integer,
+            query integer,
+            starttime timestamp without time zone,
+            endtime timestamp without time zone,
+            new_column1 integer,
+            new_column2 varchar(130)
+          );',
+        )
+        allow(Rails.logger).to receive(:info).and_call_original
+        msg = {
+          job: 'RedshiftSystemTableSyncJob',
+          success: true,
+          message: "Synchronized schema for #{target_table2}",
+          added_columns: ['new_column1', 'new_column2'],
+        }
+        expect(Rails.logger).to receive(:info).with(msg.to_json)
+
+        job.send(:sync_target_and_source_table_schemas)
+      end
     end
   end
 
