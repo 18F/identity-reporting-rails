@@ -93,7 +93,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     end
     log_info(
       "Synchronized schema for #{@target_table}", true,
-      added_columns: missing_columns,
+      added_columns: missing_columns
     )
   end
 
@@ -116,7 +116,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       WHERE tgt.table_name IS NULL;
     SQL
     result = DataWarehouseApplicationRecord.connection.execute(
-      DataWarehouseApplicationRecord.sanitize_sql(query)
+      DataWarehouseApplicationRecord.sanitize_sql(query),
     )
     if result.any?
       result.map { |row| row['column_name'] }
@@ -130,24 +130,22 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       SHOW TABLE pg_catalog.#{@source_table};
     SQL
     result = DataWarehouseApplicationRecord.connection.execute(
-      DataWarehouseApplicationRecord.sanitize_sql(ddl_statement_query)
+      DataWarehouseApplicationRecord.sanitize_sql(ddl_statement_query),
     )
-    result.to_a[0]["Show Table DDL statement"]
+    result.to_a[0]['Show Table DDL statement']
   end
 
   def add_missing_column_statements(missing_columns)
     ddl_statement_string = get_source_table_ddl
-    add_column_clauses = missing_columns.map do |column_name|
-      column_definition_match = ddl_statement_string.match(/^\s*#{Regexp.escape(column_name)}\s+[^,\n]+/m).to_s.strip
+    missing_columns.map do |column_name|
+      regex_pattern = /^\s*#{Regexp.escape(column_name)}\s+[^,\n]+/m
+      column_definition_match = ddl_statement_string.match(regex_pattern).to_s.strip
       if column_definition_match
         <<-SQL
           ALTER TABLE #{@target_table_with_schema} ADD COLUMN #{column_definition_match}
         SQL
-      else
-        nil
       end
     end.compact
-    add_column_clauses
   end
 
   def fetch_source_columns

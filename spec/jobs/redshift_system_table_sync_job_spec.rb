@@ -183,9 +183,12 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
           source_table_with_schema2,
           'new_column2',
           'varchar',
-          limit: 130
+          limit: 130,
         )
-        allow(job).to receive(:missing_system_table_columns).and_return(['new_column1', 'new_column2'])
+        allow(job).to receive(:missing_system_table_columns).and_return(
+          ['new_column1',
+           'new_column2'],
+        )
         allow(job).to receive(:get_source_table_ddl).and_return(
           'CREATE TABLE test_pg_catalog.stl_some_table (
             userid integer,
