@@ -39,7 +39,7 @@ class RedshiftUserLoginDetectionJob < ApplicationJob
     result = DataWarehouseApplicationRecord.connection.execute(
       DataWarehouseApplicationRecord.sanitize_sql(query),
     )
-    result.map(&:values).flatten
+    result.map(&:values).flatten.map(&:strip)
   end
 
   def log_user_logins
