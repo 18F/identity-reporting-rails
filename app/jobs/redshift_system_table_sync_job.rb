@@ -2,12 +2,21 @@ class RedshiftSystemTableSyncJob < ApplicationJob
   queue_as :default
 
   def perform
+    error_msgs = []
     table_definitions.each do |table|
-      setup_instance_variables(table)
-      create_target_table
-      sync_target_and_source_table_schemas
-      upsert_data
-      update_sync_time
+      # Catch errors for each table to continue processing other tables
+      begin
+        setup_instance_variables(table)
+        create_target_table
+        upsert_data
+        update_sync_time
+      rescue StandardError => e
+        error_msgs << "Error processing table #{table[:source_table]}: #{e.message}"
+      end
+    end
+    # Raise an error if any table processing failed
+    unless error_msgs.empty?
+      raise StandardError, error_msgs.join('; ')
     end
   end
 
