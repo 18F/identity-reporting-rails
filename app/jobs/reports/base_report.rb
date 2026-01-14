@@ -26,7 +26,17 @@ module Reports
 
     def public_bucket_name
       if (prefix = IdentityConfig.store.s3_report_public_bucket_prefix)
-        Identity::Hostdata.bucket_name("#{prefix}-#{Identity::Hostdata.env}")
+        env = Identity::Hostdata.env
+        account = if Identity::Hostdata.respond_to?(:aws_account_id)
+                    Identity::Hostdata.aws_account_id
+                  end
+        region = Aws.config[:region] || IdentityConfig.store.aws_region
+
+        if prefix == 'login-gov-dw-reports' && account.present? && region.present?
+          "#{prefix}-#{env}-#{account}-#{region}"
+        else
+          Identity::Hostdata.bucket_name("#{prefix}-#{env}")
+        end
       end
     end
 
