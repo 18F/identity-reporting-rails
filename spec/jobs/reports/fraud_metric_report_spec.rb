@@ -23,7 +23,7 @@ RSpec.describe Reports::FraudMetricsReport do
     {
       body: anything,
       content_type: 'text/csv',
-      bucket: 'reports-bucket.1234-us-west-1',
+      bucket: 'reports-bucket-1234-us-west-1',
     }
   end
 

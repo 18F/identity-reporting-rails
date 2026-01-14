@@ -75,7 +75,7 @@ module Reports
     end
 
     def bucket_name
-      Identity::Hostdata.bucket_name(IdentityConfig.store.s3_report_bucket_prefix)
+      Identity::Hostdata.bucket_name(IdentityConfig.store.s3_report_bucket_prefix).tr('.', '-')
     end
 
     def s3_client
