@@ -32,8 +32,8 @@ module Reports
                   end
         region = Aws.config[:region] || IdentityConfig.store.aws_region
 
-        if prefix == 'login-gov-dw-reports' && account.present? && region.present?
-          "#{prefix}-#{env}-#{account}-#{region}"
+        if prefix == 'login-gov-dw-reports'
+          "#{prefix}-#{account}-#{region}"
         else
           Identity::Hostdata.bucket_name("#{prefix}-#{env}")
         end
