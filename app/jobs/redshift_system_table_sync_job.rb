@@ -8,6 +8,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       begin
         setup_instance_variables(table)
         create_target_table
+        sync_target_and_source_table_schemas
         upsert_data
         update_sync_time
       rescue StandardError => e
