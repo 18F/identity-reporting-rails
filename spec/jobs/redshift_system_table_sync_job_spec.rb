@@ -11,12 +11,10 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
   let(:source_table_with_schema) { "#{source_schema}.#{source_table}" }
   let(:target_table_with_schema) { "#{target_schema}.#{target_table}" }
   let(:source_table_with_schema2) { "#{source_schema}.#{source_table2}" }
-  let(:target_table_with_schema2) { "#{target_schema}.#{target_table2}" }
   let(:timestamp_column) { 'endtime' }
   let(:column_keys) { ['userid', 'query'] }
   let(:last_sync_time) { Time.zone.now - 6.days }
   let!(:file_path) { Rails.root.join('spec', 'fixtures', 'redshift_system_tables.yml') }
-  let!(:file_path2) { Rails.root.join('spec', 'fixtures', 'redshift_system_tables2.yml') }
   let(:table) do
     {
       'source_table' => source_table,

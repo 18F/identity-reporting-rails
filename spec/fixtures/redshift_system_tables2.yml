@@ -1,9 +1,0 @@
-tables:
-  - source_table: "stl_some_table"
-    target_table: "stl_some_table"
-    source_schema: 'test_pg_catalog'
-    target_schema: 'system_tables'
-    column_keys:
-      - 'userid'
-      - 'query'
-    timestamp_column: "endtime"
