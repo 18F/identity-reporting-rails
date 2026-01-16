@@ -189,7 +189,7 @@ class RedshiftSync
       "SELECT usename FROM pg_user WHERE usename NOT IN #{quote(excluded_users)}",
     )
 
-    result.map { |row| row['usename'] }
+    result.to_a.map { |row| row['usename'] }
   end
 
   def users_to_create(yaml, redshift)
@@ -266,7 +266,7 @@ class RedshiftSync
     log_info("Creating lambda user #{user_name}")
 
     result = execute_query("SELECT usename FROM pg_user WHERE usename = '#{user_name}'")
-    user_exists = result.any?
+    user_exists = result.to_a.any?
 
     schema_privileges = schemas.map do |schema|
       create_lambda_user_privileges(user_name, schema)
@@ -294,7 +294,7 @@ class RedshiftSync
     log_info("Creating system user #{user_name}")
 
     result = execute_query("SELECT usename FROM pg_user WHERE usename = '#{user_name}'")
-    user_exists = result.any?
+    user_exists = result.to_a.any?
 
     active_schemas = schemas.select { |s| feature_enabled?(s['feature_flag']) }
     schema_privileges = active_schemas.map do |schema|
@@ -358,7 +358,7 @@ class RedshiftSync
       "SELECT groname FROM pg_group WHERE groname = #{quote(user_group['name'])}",
     )
 
-    if result.empty?
+    if result.to_a.empty?
       sql = "CREATE group #{user_group['name']};"
       execute_query(sql)
     end
@@ -379,7 +379,7 @@ class RedshiftSync
     result = execute_query(
       "SELECT groname FROM pg_group WHERE groname = #{quote(user_group['name'])}",
     )
-    return if result.empty?
+    return if result.to_a.empty?
 
     active_schemas = user_group['schemas'].select { |s| feature_enabled?(s['feature_flag']) }
 
@@ -439,8 +439,8 @@ class RedshiftSync
     result = execute_query(current_group_users_statement)
     user_group_sql = []
 
-    if result.any?
-      current_group_users = result.map { |row| row['usename'] }
+    if result.to_a.any?
+      current_group_users = result.to_a.map { |row| row['usename'] }
       user_group_sql.append(
         "ALTER GROUP #{group['name']} DROP USER #{current_group_users.map do |v|
           "\"#{v}\""
