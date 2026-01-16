@@ -33,7 +33,7 @@ class RedshiftSync
           system_user['user_name'],
           system_user['schemas'],
           system_user['secret_id'],
-          system_user['syslog_access']
+          system_user['syslog_access'],
         )
       end
     end
@@ -78,7 +78,7 @@ class RedshiftSync
     @config_file ||= begin
       terraform_config_path = IdentityConfig.local_devops_path(
         :identity_devops,
-        "terraform/data-warehouse/#{env_name}/main.tf"
+        "terraform/data-warehouse/#{env_name}/main.tf",
       )
       File.read(terraform_config_path)
     end
@@ -120,7 +120,7 @@ class RedshiftSync
 
   def secrets_manager_client
     @secrets_manager_client ||= Aws::SecretsManager::Client.new(
-      region: Identity::Hostdata.config.aws_region
+      region: Identity::Hostdata.config.aws_region,
     )
   end
 
@@ -182,11 +182,11 @@ class RedshiftSync
       'superuser',
       'rdsdb',
       *lambda_users.map { |lambda_user| lambda_user['user_name'] },
-      *system_users.map { |system_user| system_user['user_name'] }
+      *system_users.map { |system_user| system_user['user_name'] },
     ]
 
     result = execute_query(
-      "SELECT usename FROM pg_user WHERE usename NOT IN #{quote(excluded_users)}"
+      "SELECT usename FROM pg_user WHERE usename NOT IN #{quote(excluded_users)}",
     )
 
     result.map { |row| row['usename'] }
@@ -274,7 +274,7 @@ class RedshiftSync
 
     sql = [
       *("CREATE USER #{user_name} WITH PASSWORD DISABLE SESSION TIMEOUT 900;" unless user_exists),
-      schema_privileges
+      schema_privileges,
     ]
 
     execute_query(sql.flatten.join("\n"))
@@ -303,7 +303,7 @@ class RedshiftSync
         schema['schema_name'],
         schema['schema_privileges'],
         schema['table_privileges'],
-        schema['tables']
+        schema['tables'],
       )
     end
 
@@ -312,7 +312,7 @@ class RedshiftSync
 
     sql = [
       *("CREATE USER #{user_name} WITH PASSWORD #{password_option} #{syslog_access_option} SESSION TIMEOUT 900;" unless user_exists),
-      schema_privileges
+      schema_privileges,
     ]
 
     execute_query(sql.flatten.join("\n"))
@@ -330,14 +330,18 @@ class RedshiftSync
     dbt_user?(user_name) && dbt_user_schema?(schema_name) && schema_privileges == 'ALL PRIVILEGES'
   end
 
-  def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges, tables)
+  def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
+                                    tables)
     table_list = if tables.nil? || tables.empty?
                    "ALL TABLES IN SCHEMA #{schema_name}"
                  else
                    tables.map { |table| "#{schema_name}.#{table}" }.join(', ')
                  end
 
-    schema_creation = should_create_schema?(user_name, schema_name, schema_privileges) ? "CREATE SCHEMA IF NOT EXISTS #{schema_name};\n" : ''
+    schema_creation = should_create_schema?(
+      user_name, schema_name,
+      schema_privileges
+    ) ? "CREATE SCHEMA IF NOT EXISTS #{schema_name};\n" : ''
 
     <<~SQL
       #{schema_creation}GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO #{user_name};
@@ -351,7 +355,7 @@ class RedshiftSync
     log_info("Creating user group #{user_group['name']}")
 
     result = execute_query(
-      "SELECT groname FROM pg_group WHERE groname = #{quote(user_group['name'])}"
+      "SELECT groname FROM pg_group WHERE groname = #{quote(user_group['name'])}",
     )
 
     if result.empty?
@@ -373,7 +377,7 @@ class RedshiftSync
     log_info("Updating schema privileges for user group #{user_group['name']}")
 
     result = execute_query(
-      "SELECT groname FROM pg_group WHERE groname = #{quote(user_group['name'])}"
+      "SELECT groname FROM pg_group WHERE groname = #{quote(user_group['name'])}",
     )
     return if result.empty?
 
@@ -389,7 +393,7 @@ class RedshiftSync
         schema['schema_name'],
         schema['schema_privileges'],
         schema['table_privileges'],
-        schema.fetch('restricted_tables', [])
+        schema.fetch('restricted_tables', []),
       )
     end
 
@@ -403,7 +407,8 @@ class RedshiftSync
     execute_query(sql)
   end
 
-  def create_user_group_privileges(group_name, schema_name, schema_privileges, table_privileges, restricted_tables = [])
+  def create_user_group_privileges(group_name, schema_name, schema_privileges, table_privileges,
+                                   restricted_tables = [])
     sql = <<~SQL
       GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{group_name};
       GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP #{group_name};
@@ -437,7 +442,9 @@ class RedshiftSync
     if result.any?
       current_group_users = result.map { |row| row['usename'] }
       user_group_sql.append(
-        "ALTER GROUP #{group['name']} DROP USER #{current_group_users.map { |v| "\"#{v}\"" }.join(', ')};"
+        "ALTER GROUP #{group['name']} DROP USER #{current_group_users.map do |v|
+          "\"#{v}\""
+        end.join(', ')};",
       )
     end
 
@@ -449,7 +456,9 @@ class RedshiftSync
 
     if new_group_users.any?
       user_group_sql.append(
-        "ALTER GROUP #{group['name']} ADD USER #{new_group_users.map { |v| "\"#{v}\"" }.join(', ')}"
+        "ALTER GROUP #{group['name']} ADD USER #{new_group_users.map do |v|
+          "\"#{v}\""
+        end.join(', ')}",
       )
     end
 
@@ -484,7 +493,7 @@ if $PROGRAM_NAME == __FILE__
   args = optparse.parse!
 
   unless args.length == 2
-    $stderr.puts optparse
+    warn optparse
     exit 1
   end
 
@@ -493,7 +502,7 @@ if $PROGRAM_NAME == __FILE__
 
   sync = RedshiftSync.new(
     config_file_path: config_file_path,
-    users_yaml_path: users_yaml_path
+    users_yaml_path: users_yaml_path,
   )
 
   sync.sync
