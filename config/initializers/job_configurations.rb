@@ -73,6 +73,11 @@ else
         class: 'FraudOpsPiiDecryptJob',
         cron: '1/2 * * * *', # every 2 minutes, staggered 1 minute after IdvRedisToRedshiftJob
       },
+      # PII Retention Enforcement Job - deletes PII older than retention period
+      pii_retention_enforcement_job: {
+        class: 'PiiRetentionEnforcementJob',
+        cron: cron_1d,
+      },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
   end
