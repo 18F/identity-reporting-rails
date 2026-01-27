@@ -1,0 +1,12 @@
+# PII Retention Enforcement Configuration
+# This file configures which schemas/tables are subject to PII retention enforcement.
+# Data older than retention_days will be deleted.
+
+retention_days: 366
+
+schemas:
+  fraudops:
+    excluded_tables: []
+    # Optional: specify timestamp column for tables without updated_at or created_at
+    # timestamp_columns:
+    #   special_table: custom_timestamp_column
