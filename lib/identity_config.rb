@@ -31,7 +31,7 @@ class IdentityConfig
     config.add(:domain_name, type: :string)
     config.add(:database_host, type: :string)
     config.add(:database_name, type: :string)
-    config.add(:data_warehouse_fcms_enabled, type: :boolean)
+    config.add(:dw_fraudops_email_enabled, type: :boolean)
     config.add(:database_password, type: :string)
     config.add(:database_pool_reporting, type: :integer)
     config.add(:database_read_replica_host, type: :string)

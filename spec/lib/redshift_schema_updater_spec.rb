@@ -377,9 +377,9 @@ RSpec.describe RedshiftSchemaUpdater do
   end
 
   describe '.update_schema_from_yaml' do
-    context 'when data_warehouse_fcms_enabled is true' do
+    context 'when dw_fraudops_email_enabled is true' do
       before do
-        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(true)
+        allow(IdentityConfig.store).to receive(:dw_fraudops_email_enabled).and_return(true)
       end
 
       context 'pii_table_reference is configured' do
@@ -497,9 +497,9 @@ RSpec.describe RedshiftSchemaUpdater do
       end
     end
 
-    context 'when data_warehouse_fcms_enabled is false' do
+    context 'when dw_fraudops_email_enabled is false' do
       before do
-        allow(IdentityConfig.store).to receive(:data_warehouse_fcms_enabled).and_return(false)
+        allow(IdentityConfig.store).to receive(:dw_fraudops_email_enabled).and_return(false)
       end
 
       it 'pii_table_reference configuration is ignored' do

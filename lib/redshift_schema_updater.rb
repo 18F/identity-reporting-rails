@@ -39,7 +39,7 @@ class RedshiftSchemaUpdater
       columns = include_columns + add_columns
       primary_key_column = table_data['primary_key']
       foreign_key_columns = table_data['foreign_keys'] || []
-      pii_table_reference = data_warehouse_fcms_enabled ? (
+      pii_table_reference = dw_fraudops_email_enabled ? (
         table_data['pii_table_reference'] || []
       ) : []
 
@@ -492,8 +492,8 @@ class RedshiftSchemaUpdater
 
   private
 
-  def data_warehouse_fcms_enabled
-    IdentityConfig.store.data_warehouse_fcms_enabled
+  def dw_fraudops_email_enabled
+    IdentityConfig.store.dw_fraudops_email_enabled
   end
 
   def execute_query(query, *args)
