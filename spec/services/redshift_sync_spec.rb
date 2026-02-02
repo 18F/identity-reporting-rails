@@ -7,8 +7,41 @@ RSpec.describe RedshiftSync do
   let(:secrets_manager_client) { instance_double(Aws::SecretsManager::Client) }
 
   let(:test_redshift_config) do
-    config_path = '/Users/anagucki/workspace/identity-devops/bin/data-warehouse/users/redshift_config.yaml' # rubocop:disable Layout/LineLength
-    YAML.safe_load(File.read(config_path))
+    {
+      'enabled_aws_groups' => {
+        'prod' => ['dwuser', 'dwpoweruser', 'dwadmin'],
+        'sandbox' => ['dwuser', 'dwusernonprod', 'dwpoweruser', 'dwpowerusernonprod', 'dwadmin',
+                      'dwadminnonprod'],
+      },
+      'user_groups' => [
+        {
+          'name' => 'lg_users',
+          'aws_groups' => { 'prod' => ['dwuser'], 'sandbox' => ['dwuser', 'dwusernonprod'] },
+          'schemas' => [
+            { 'schema_name' => 'idp',
+              'schema_privileges' => 'USAGE',
+              'table_privileges' => 'SELECT' },
+            { 'schema_name' => 'logs',
+              'schema_privileges' => 'USAGE',
+              'table_privileges' => 'SELECT' },
+          ],
+        },
+      ],
+      'lambda_users' => [
+        { 'user_name' => 'IAMR:testenv_db_consumption', 'schemas' => ['idp', 'fraudops'] },
+      ],
+      'system_users' => [
+        {
+          'user_name' => 'security_audit',
+          'secret_id' => 'redshift/testenv-analytics-security-audit',
+          'schemas' => [
+            { 'schema_name' => 'system_tables',
+              'schema_privileges' => 'USAGE',
+              'table_privileges' => 'SELECT' },
+          ],
+        },
+      ],
+    }
   end
 
   let(:test_users_yaml) do
