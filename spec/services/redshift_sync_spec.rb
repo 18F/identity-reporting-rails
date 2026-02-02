@@ -7,7 +7,8 @@ RSpec.describe RedshiftSync do
   let(:secrets_manager_client) { instance_double(Aws::SecretsManager::Client) }
 
   let(:test_redshift_config) do
-    YAML.safe_load(File.read('/Users/anagucki/workspace/identity-devops/bin/data-warehouse/users/redshift_config.yaml'))
+    config_path = '/Users/anagucki/workspace/identity-devops/bin/data-warehouse/users/redshift_config.yaml' # rubocop:disable Layout/LineLength
+    YAML.safe_load(File.read(config_path))
   end
 
   let(:test_users_yaml) do
@@ -101,7 +102,9 @@ RSpec.describe RedshiftSync do
 
       expect(sql).to include('GRANT USAGE ON SCHEMA logs TO GROUP lg_users')
       expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA logs TO GROUP lg_users')
-      expect(sql).to include('REVOKE ALL PRIVILEGES ON TABLE logs.unextracted_events FROM GROUP lg_users')
+      expect(sql).to include(
+        'REVOKE ALL PRIVILEGES ON TABLE logs.unextracted_events FROM GROUP lg_users',
+      )
     end
 
     it 'includes ALTER DEFAULT PRIVILEGES for DBT schemas when user exists' do

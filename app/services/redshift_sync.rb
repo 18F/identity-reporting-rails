@@ -208,7 +208,10 @@ class RedshiftSync
 
   def get_existing_schemas
     result = execute_query(
-      "SELECT DISTINCT schemaname FROM pg_tables WHERE schemaname NOT LIKE 'pg_%' AND schemaname != 'information_schema';",
+      <<~SQL.squish,
+        SELECT DISTINCT schemaname FROM pg_tables
+        WHERE schemaname NOT LIKE 'pg_%' AND schemaname != 'information_schema'
+      SQL
     )
     result.map { |row| row['schemaname'] }
   end
@@ -319,8 +322,11 @@ class RedshiftSync
     password_option = secret_id.nil? ? 'DISABLE' : redshift_secret(user_name, secret_id)
     syslog_access_option = syslog_access ? 'SYSLOG ACCESS UNRESTRICTED' : 'SYSLOG ACCESS RESTRICTED'
 
+    create_user_sql = "CREATE USER #{user_name} WITH PASSWORD #{password_option} " \
+                      "#{syslog_access_option} SESSION TIMEOUT 900;"
+
     sql = [
-      *("CREATE USER #{user_name} WITH PASSWORD #{password_option} #{syslog_access_option} SESSION TIMEOUT 900;" unless user_exists),
+      *(create_user_sql unless user_exists),
       schema_privileges,
     ]
 
@@ -499,7 +505,7 @@ if $PROGRAM_NAME == __FILE__
 
   unless args.length == 2
     warn optparse
-    exit 1
+    abort
   end
 
   config_file_path = args[0]
