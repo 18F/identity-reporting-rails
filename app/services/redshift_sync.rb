@@ -101,7 +101,13 @@ class RedshiftSync
   end
 
   def feature_enabled?(feature_flag)
-    feature_flag.nil? || config_file.match?(/^\s*(?!#|\/\/)#{feature_flag}\s+=\s+true/m)
+    return true if feature_flag.nil?
+
+    flags_to_check = feature_flag.is_a?(Array) ? feature_flag : [feature_flag]
+
+    flags_to_check.any? do |flag|
+      config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m)
+    end
   end
 
   def connection
@@ -321,6 +327,11 @@ class RedshiftSync
     execute_query(sql.flatten.join("\n"))
   end
 
+  def user_exists?(user_name)
+    result = execute_query("SELECT usename FROM pg_user WHERE usename = '#{user_name}'")
+    result.any?
+  end
+
   def dbt_user?(user_name)
     ['marts', 'qa_marts', 'fraudops_marts', 'fraudops_qa_marts'].include?(user_name)
   end
@@ -419,7 +430,7 @@ class RedshiftSync
       GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP #{group_name};
     SQL
 
-    if dbt_user?(schema_name)
+    if dbt_user_schema?(schema_name) && user_exists?(schema_name)
       sql += <<~SQL
         ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} GRANT #{table_privileges} ON TABLES TO GROUP #{group_name};
       SQL
