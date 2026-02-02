@@ -104,10 +104,18 @@ RSpec.describe RedshiftSync do
       expect(sql).to include('REVOKE ALL PRIVILEGES ON TABLE logs.unextracted_events FROM GROUP lg_users')
     end
 
-    it 'includes ALTER DEFAULT PRIVILEGES for DBT schemas' do
+    it 'includes ALTER DEFAULT PRIVILEGES for DBT schemas when user exists' do
+      allow(sync).to receive(:user_exists?).with('marts').and_return(true)
       sql = sync.send(:create_user_group_privileges, 'lg_users', 'marts', 'USAGE', 'SELECT', [])
 
       expect(sql).to include('ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts')
+    end
+
+    it 'does not include ALTER DEFAULT PRIVILEGES for DBT schemas when user does not exist' do
+      allow(sync).to receive(:user_exists?).with('marts').and_return(false)
+      sql = sync.send(:create_user_group_privileges, 'lg_users', 'marts', 'USAGE', 'SELECT', [])
+
+      expect(sql).not_to include('ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts')
     end
   end
 
