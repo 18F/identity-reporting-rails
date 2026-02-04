@@ -39,27 +39,28 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
   def process_schema(schema_name, schema_config)
     excluded_tables = Array(schema_config[:excluded_tables] || schema_config['excluded_tables'])
+    included_tables = schema_config[:included_tables] || schema_config['included_tables'] || "*"
     timestamp_columns =
       schema_config[:timestamp_columns] || schema_config['timestamp_columns'] || {}
 
     tables = fetch_tables_in_schema(schema_name)
+
+    # Apply included_tables filter first
+    filtered_tables = filter_included_tables(tables, included_tables)
+
+    # Then remove excluded tables
+    final_tables = filtered_tables.reject { |table| excluded_tables.include?(table) }
+
     Rails.logger.info(
       log_format(
         'Processing schema',
         schema: schema_name,
-        table_count: tables.size,
+        table_count: final_tables.size,
         excluded_count: excluded_tables.size,
       ),
     )
 
-    tables.each do |table_name|
-      if excluded_tables.include?(table_name)
-        Rails.logger.info(
-          log_format('Skipping excluded table', schema: schema_name, table: table_name),
-        )
-        next
-      end
-
+    final_tables.each do |table_name|
       process_table(schema_name, table_name, timestamp_columns)
     end
   end
@@ -178,6 +179,18 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
   def connection
     @connection ||= DataWarehouseApplicationRecord.connection
+  end
+
+  def filter_included_tables(tables, included_tables)
+    # Handle wildcard - return all tables
+    return tables if included_tables == "*" || included_tables == ["*"]
+
+    # Handle nil or empty - default to all tables (backward compatibility)
+    return tables if included_tables.nil? || included_tables.empty?
+
+    # Convert to array if needed and filter to only included tables
+    included_array = Array(included_tables)
+    tables.select { |table| included_array.include?(table) }
   end
 
   def log_format(message, **data)
