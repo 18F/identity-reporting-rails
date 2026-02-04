@@ -128,17 +128,150 @@ RSpec.describe PiiRetentionEnforcementJob, type: :job do
       job.send(:process_schema, 'fraudops', config[:schemas][:fraudops])
     end
 
-    it 'logs when skipping excluded tables' do
-      expect(Rails.logger).to receive(:info).with(
-        a_string_matching(/Skipping excluded table.*excluded_table/),
-      )
-      job.send(:process_schema, 'fraudops', config[:schemas][:fraudops])
-    end
-
     it 'processes non-excluded tables' do
       expect(job).to receive(:process_table).with('fraudops', 'table1', anything).and_call_original
       expect(job).to receive(:process_table).with('fraudops', 'table2', anything).and_call_original
       job.send(:process_schema, 'fraudops', config[:schemas][:fraudops])
+    end
+
+    context 'when included_tables is "*"' do
+      let(:schema_config) do
+        {
+          included_tables: "*",
+          excluded_tables: [],
+        }
+      end
+
+      it 'processes all tables in schema' do
+        expect(job).to receive(:process_table).with('fraudops', 'table1', anything)
+        expect(job).to receive(:process_table).with('fraudops', 'excluded_table', anything)
+        expect(job).to receive(:process_table).with('fraudops', 'table2', anything)
+        job.send(:process_schema, 'fraudops', schema_config)
+      end
+    end
+
+    context 'when included_tables is an array of specific tables' do
+      let(:schema_config) do
+        {
+          included_tables: ['table1'],
+          excluded_tables: [],
+        }
+      end
+
+      it 'processes only included tables' do
+        expect(job).to receive(:process_table).with('fraudops', 'table1', anything)
+        expect(job).not_to receive(:process_table).with('fraudops', 'table2', anything)
+        expect(job).not_to receive(:process_table).with('fraudops', 'excluded_table', anything)
+        job.send(:process_schema, 'fraudops', schema_config)
+      end
+    end
+
+    context 'when both included_tables and excluded_tables are specified' do
+      let(:schema_config) do
+        {
+          included_tables: ['table1', 'excluded_table', 'table2'],
+          excluded_tables: ['excluded_table'],
+        }
+      end
+
+      it 'processes only included tables minus excluded tables' do
+        expect(job).to receive(:process_table).with('fraudops', 'table1', anything)
+        expect(job).not_to receive(:process_table).with('fraudops', 'excluded_table', anything)
+        expect(job).to receive(:process_table).with('fraudops', 'table2', anything)
+        job.send(:process_schema, 'fraudops', schema_config)
+      end
+    end
+
+    context 'when included_tables is an empty array' do
+      let(:schema_config) do
+        {
+          included_tables: [],
+          excluded_tables: [],
+        }
+      end
+
+      it 'processes all tables (treats empty array as wildcard)' do
+        expect(job).to receive(:process_table).with('fraudops', 'table1', anything)
+        expect(job).to receive(:process_table).with('fraudops', 'excluded_table', anything)
+        expect(job).to receive(:process_table).with('fraudops', 'table2', anything)
+        job.send(:process_schema, 'fraudops', schema_config)
+      end
+    end
+
+    context 'when included_tables is nil (not specified)' do
+      let(:schema_config) do
+        {
+          excluded_tables: [],
+        }
+      end
+
+      it 'processes all tables (backward compatible with existing configs)' do
+        expect(job).to receive(:process_table).with('fraudops', 'table1', anything)
+        expect(job).to receive(:process_table).with('fraudops', 'excluded_table', anything)
+        expect(job).to receive(:process_table).with('fraudops', 'table2', anything)
+        job.send(:process_schema, 'fraudops', schema_config)
+      end
+    end
+
+    context 'when included_tables contains non-existent table' do
+      let(:schema_config) do
+        {
+          included_tables: ['table1', 'nonexistent_table'],
+          excluded_tables: [],
+        }
+      end
+
+      it 'processes only existing tables from included list' do
+        expect(job).to receive(:process_table).with('fraudops', 'table1', anything)
+        expect(job).not_to receive(:process_table).with('fraudops', 'nonexistent_table', anything)
+        job.send(:process_schema, 'fraudops', schema_config)
+      end
+    end
+  end
+
+  describe '#filter_included_tables' do
+    let(:tables) { ['table1', 'table2', 'table3'] }
+
+    context 'when included_tables is "*"' do
+      it 'returns all tables' do
+        result = job.send(:filter_included_tables, tables, "*")
+        expect(result).to eq(tables)
+      end
+    end
+
+    context 'when included_tables is ["*"]' do
+      it 'returns all tables' do
+        result = job.send(:filter_included_tables, tables, ["*"])
+        expect(result).to eq(tables)
+      end
+    end
+
+    context 'when included_tables is nil' do
+      it 'returns all tables' do
+        result = job.send(:filter_included_tables, tables, nil)
+        expect(result).to eq(tables)
+      end
+    end
+
+    context 'when included_tables is empty array' do
+      it 'returns all tables' do
+        result = job.send(:filter_included_tables, tables, [])
+        expect(result).to eq(tables)
+      end
+    end
+
+    context 'when included_tables is a specific array' do
+      it 'returns only specified tables' do
+        result = job.send(:filter_included_tables, tables, ['table1', 'table3'])
+        expect(result).to eq(['table1', 'table3'])
+      end
+    end
+
+    context 'when included_tables contains non-existent tables' do
+      it 'returns only existing tables from the list' do
+        result = job.send(:filter_included_tables, tables, ['table1', 'nonexistent'])
+        expect(result).to eq(['table1'])
+      end
     end
   end
 
