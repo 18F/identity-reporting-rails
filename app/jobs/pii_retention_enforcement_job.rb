@@ -62,6 +62,19 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
     final_tables.each do |table_name|
       process_table(schema_name, table_name, timestamp_columns)
+    rescue StandardError => e
+      # Catch errors in case process_table is stubbed or raises before its rescue block
+      error_message = "#{schema_name}.#{table_name}: #{e.message}"
+      @errors ||= []
+      @errors << error_message
+      Rails.logger.error(
+        log_format(
+          'Error processing table',
+          schema: schema_name,
+          table: table_name,
+          error: e.message,
+        ),
+      )
     end
   end
 
@@ -76,6 +89,7 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
     deleted_count = delete_expired_records(schema_name, table_name, timestamp_column)
 
+    @total_deleted ||= 0
     @total_deleted += deleted_count
     Rails.logger.info(
       log_format(
@@ -88,6 +102,7 @@ class PiiRetentionEnforcementJob < ApplicationJob
     )
   rescue StandardError => e
     error_message = "#{schema_name}.#{table_name}: #{e.message}"
+    @errors ||= []
     @errors << error_message
     Rails.logger.error(
       log_format(
