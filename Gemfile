@@ -2,12 +2,16 @@ source 'https://rubygems.org'
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
-gem 'activerecord7-redshift-adapter-pennylane'
-gem 'rails', '~> 7.2.1'
+gem 'rails', '~> 8.0.0'
+
+gem 'activerecord-redshift-adapter', '~> 8.0'
 gem 'bootsnap', '~> 1.0', require: false
+gem 'caxlsx', require: false
+gem 'connection_pool'
 gem 'csv'
 gem 'faker'
 gem 'good_job', '~> 4.0'
+gem 'jwe'
 gem 'identity-hostdata', github: '18F/identity-hostdata', tag: 'v4.4.2'
 gem 'identity-logging', github: '18F/identity-logging', tag: 'v0.1.1'
 gem 'identity_validations', github: '18F/identity-validations', tag: 'v0.7.2'
@@ -15,12 +19,9 @@ gem 'puma', '~> 6.0'
 gem 'pg'
 gem 'rack', '~> 3.1.12'
 gem 'redacted_struct'
-gem 'tzinfo-data', platforms: %i[ windows jruby ]
-gem 'caxlsx', require: false
 gem 'simple_xlsx_reader', require: false
-gem 'connection_pool'
 gem 'redis', '>= 3.2.0'
-gem 'jwe'
+gem 'tzinfo-data', platforms: %i[ windows jruby ]
 
 group :development do
   gem 'better_errors', '>= 2.5.1'
