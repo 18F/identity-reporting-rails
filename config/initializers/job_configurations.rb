@@ -2,6 +2,7 @@ cron_30m = '*/30 * * * *'
 cron_5m = '0/5 * * * *'
 # cron_10m = '0/10 * * * *'
 cron_1d = '0 6 * * *' # 6:00am UTC or 2:00am EST
+cron_1d_evening = '0 18 * * *' # 6:00pm UTC or 2:00pm EST
 cron_24h = '0 0 * * *'
 cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever else runs at 0000 UTC
 
@@ -76,7 +77,7 @@ else
       # PII Retention Enforcement Job - deletes PII older than retention period
       pii_retention_enforcement_job: {
         class: 'PiiRetentionEnforcementJob',
-        cron: cron_1d,
+        cron: cron_1d_evening,
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
