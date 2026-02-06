@@ -137,7 +137,7 @@ RSpec.describe PiiRetentionEnforcementJob, type: :job do
     context 'when included_tables is "*"' do
       let(:schema_config) do
         {
-          included_tables: "*",
+          included_tables: '*',
           excluded_tables: [],
         }
       end
@@ -234,14 +234,14 @@ RSpec.describe PiiRetentionEnforcementJob, type: :job do
 
     context 'when included_tables is "*"' do
       it 'returns all tables' do
-        result = job.send(:filter_included_tables, tables, "*")
+        result = job.send(:filter_included_tables, tables, '*')
         expect(result).to eq(tables)
       end
     end
 
     context 'when included_tables is ["*"]' do
       it 'returns all tables' do
-        result = job.send(:filter_included_tables, tables, ["*"])
+        result = job.send(:filter_included_tables, tables, ['*'])
         expect(result).to eq(tables)
       end
     end
@@ -379,9 +379,9 @@ RSpec.describe PiiRetentionEnforcementJob, type: :job do
         expect(Rails.logger).to receive(:error).with(
           a_string_matching(/Error processing table.*Connection lost/),
         )
-        expect {
+        expect do
           job.send(:process_table, 'fraudops', 'events', timestamp_columns)
-        }.not_to raise_error
+        end.not_to raise_error
       end
     end
   end

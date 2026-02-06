@@ -39,7 +39,7 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
   def process_schema(schema_name, schema_config)
     excluded_tables = Array(schema_config[:excluded_tables] || schema_config['excluded_tables'])
-    included_tables = schema_config[:included_tables] || schema_config['included_tables'] || "*"
+    included_tables = schema_config[:included_tables] || schema_config['included_tables'] || '*'
     timestamp_columns =
       schema_config[:timestamp_columns] || schema_config['timestamp_columns'] || {}
 
@@ -200,7 +200,7 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
   def filter_included_tables(tables, included_tables)
     # Handle wildcard - return all tables
-    return tables if included_tables == "*" || included_tables == ["*"]
+    return tables if included_tables == '*' || included_tables == ['*']
 
     # Handle nil or empty - default to all tables (backward compatibility)
     return tables if included_tables.nil? || included_tables.empty?
