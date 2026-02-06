@@ -117,9 +117,10 @@ class PiiRetentionEnforcementJob < ApplicationJob
   def resolve_timestamp_column(schema_name, table_name, timestamp_columns)
     columns = fetch_columns_for_table(schema_name, table_name)
 
-    return 'updated_at' if columns.include?('updated_at')
-    return 'created_at' if columns.include?('created_at')
-    return 'import_timestamp' if columns.include?('import_timestamp')
+    # Check standard timestamp columns in priority order
+    ['updated_at', 'created_at', 'import_timestamp'].each do |column|
+      return column if columns.include?(column)
+    end
 
     # Check YAML config for table-specific override
     timestamp_columns[table_name] || timestamp_columns[table_name.to_sym]
