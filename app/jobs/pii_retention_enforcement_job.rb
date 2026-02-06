@@ -119,6 +119,7 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
     return 'updated_at' if columns.include?('updated_at')
     return 'created_at' if columns.include?('created_at')
+    return 'import_timestamp' if columns.include?('import_timestamp')
 
     # Check YAML config for table-specific override
     timestamp_columns[table_name] || timestamp_columns[table_name.to_sym]
