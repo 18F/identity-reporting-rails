@@ -160,10 +160,11 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
     delete_query = <<~SQL.squish
       DELETE FROM #{quoted_schema}.#{quoted_table}
-      WHERE #{quoted_column} < CURRENT_DATE - #{retention_days}
+      WHERE #{quoted_column} < CURRENT_DATE - ?
     SQL
 
-    result = connection.execute(delete_query)
+    sanitized_query = ActiveRecord::Base.sanitize_sql_array([delete_query, retention_days])
+    result = connection.execute(sanitized_query)
 
     # Redshift returns the number of affected rows
     extract_deleted_count(result)
