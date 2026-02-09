@@ -9,5 +9,5 @@ schemas:
     included_tables: "*"  # "*" means all tables (default), or specify a list of tables
     excluded_tables: []
     # Optional: specify timestamp column for tables without updated_at or created_at
-    # timestamp_columns:
-    #   special_table: custom_timestamp_column
+    timestamp_columns:
+      frd_email_addresses: dw_updated_at
