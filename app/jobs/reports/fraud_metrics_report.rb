@@ -38,7 +38,10 @@ module Reports
     end
 
     def upload_to_s3(report_body, report_name: nil)
-      _latest, path = generate_s3_paths(REPORT_NAME, 'csv', subname: report_name, now: report_date)
+      _latest, path = generate_s3_paths(
+        REPORT_NAME, 'csv', directory: 'idp',
+                            subname: report_name, now: report_date
+      )
 
       if bucket_name.present?
         upload_file_to_s3_bucket(

@@ -8,7 +8,7 @@ RSpec.describe Reports::FraudMetricsReport do
   let(:name) { 'fraud-metrics-report' }
   let(:s3_report_bucket_prefix) { 'reports-bucket' }
   let(:report_folder) do
-    'int/fraud-metrics-report/2021/2021-03-02.fraud-metrics-report'
+    'int/idp/fraud-metrics-report/2021/2021-03-02.fraud-metrics-report'
   end
 
   let(:expected_s3_paths) do
