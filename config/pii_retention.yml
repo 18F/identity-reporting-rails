@@ -11,5 +11,5 @@ schemas:
       - decrypted_events
     excluded_tables: []
     # Optional: specify timestamp column for tables without updated_at or created_at
-    timestamp_columns:
-      frd_email_addresses: dw_updated_at
+    # timestamp_columns:
+      # frd_email_addresses: dw_updated_at
