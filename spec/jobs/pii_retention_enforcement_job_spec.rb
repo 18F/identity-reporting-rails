@@ -278,7 +278,25 @@ RSpec.describe PiiRetentionEnforcementJob, type: :job do
   describe '#resolve_timestamp_column' do
     let(:timestamp_columns) { { 'custom_table' => 'custom_timestamp' } }
 
-    context 'when table has updated_at column' do
+    context 'when table has import_timestamp column' do
+      let(:columns_result) do
+        instance_double(
+          ActiveRecord::Result,
+          rows: [['id'], ['import_timestamp'], ['updated_at'], ['created_at']],
+        )
+      end
+
+      before do
+        allow(mock_connection).to receive(:exec_query).and_return(columns_result)
+      end
+
+      it 'returns import_timestamp' do
+        result = job.send(:resolve_timestamp_column, 'fraudops', 'events', timestamp_columns)
+        expect(result).to eq('import_timestamp')
+      end
+    end
+
+    context 'when table has updated_at but no import_timestamp column' do
       let(:columns_result) do
         instance_double(ActiveRecord::Result, rows: [['id'], ['updated_at'], ['created_at']])
       end
