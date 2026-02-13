@@ -131,9 +131,9 @@ module RedshiftCommon
     end
 
     def fetch_single_column(query_id)
-      fetch_results(query_id)
-        .flatten
-        .map { |record| record[:string_value] }
+      fetch_results(query_id).
+        flatten.
+        map { |record| record[:string_value] }
     end
 
     # Execute a query and return single-column results as an array
@@ -317,7 +317,7 @@ module RedshiftCommon
 
       unless args.length == required_count
         warn optparse
-        exit 1
+        abort
       end
 
       args

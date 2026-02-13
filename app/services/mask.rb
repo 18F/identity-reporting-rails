@@ -249,10 +249,10 @@ module RedshiftMasking
     def resolve_iam_role_to_users(role_name)
       target_groups = RedshiftCommon::IamRoleUtils.resolve_iam_groups(role_name)
 
-      users_yaml
-        .select { |_, data| user_has_aws_group?(data, target_groups) }
-        .keys
-        .filter_map { |username| db_user_case_map["IAM:#{username.upcase}"] }
+      users_yaml.
+        select { |_, data| user_has_aws_group?(data, target_groups) }.
+        keys.
+        filter_map { |username| db_user_case_map["IAM:#{username.upcase}"] }
     end
 
     def resolve_redshift_user_to_users(role_name)
