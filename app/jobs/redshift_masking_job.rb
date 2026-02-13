@@ -15,7 +15,7 @@ class RedshiftMaskingJob < ApplicationJob
   )
 
   def perform(dry_run: false)
-    require Rails.root.join('app/services/lib/common')
+    require Rails.root.join('lib/common')
 
     unless job_enabled?
       log_message(:info, 'RedshiftMasking job is disabled, skipping', true)
