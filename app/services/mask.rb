@@ -1,7 +1,4 @@
-#!/usr/bin/env ruby
 # frozen_string_literal: true
-
-require_relative 'lib/common'
 
 module RedshiftMasking
 
@@ -526,86 +523,4 @@ module RedshiftMasking
       SQL
     end
   end
-
-  # Orchestrates the masking policy synchronization process by coordinating all components
-  class Orchestrator < RedshiftCommon::BaseScript
-    include RedshiftCommon::UserQueries
-
-    def run
-      options, data_controls_path, users_yaml_path = parse_options
-
-      data_controls = load_yaml(data_controls_path)
-      users_yaml = load_yaml(users_yaml_path)['users']
-
-      sync_masking_policies(data_controls, users_yaml, dry_run: options[:dry_run])
-    end
-
-    private
-
-    def parse_options
-      require 'optparse'
-
-      options = { dry_run: false }
-
-      OptionParser.new do |opts|
-        opts.banner = "usage: #{script_name} [--dry-run] DATA_CONTROLS_YAML USERS_YAML"
-
-        opts.on('--dry-run', 'Run in dry-run mode (show what would be changed without applying)') do
-          options[:dry_run] = true
-        end
-
-        opts.on('-h', '--help', 'Show this help message') do
-          puts opts
-          exit
-        end
-      end.parse!
-
-      if ARGV.length != 2
-        puts "usage: #{script_name} [--dry-run] DATA_CONTROLS_YAML USERS_YAML"
-        exit 1
-      end
-
-      [options, ARGV[0], ARGV[1]]
-    end
-
-    def sync_masking_policies(data_controls, users_yaml, dry_run: false)
-      log_info('starting data controls sync')
-
-      config = Configuration.new(data_controls, users_yaml, env_name: @config.env_name)
-      db_queries = DatabaseQueries.new(executor, self)
-
-      users = RedshiftCommon::UserQueries.fetch_users(executor)
-      db_user_case_map = users.to_h { |u| [u.upcase, u] }
-      log_info("found #{db_user_case_map.size} database users")
-      db_users_set = Set.new(db_user_case_map.keys)
-
-      columns = extract_columns(config)
-      column_types = db_queries.fetch_column_types(columns)
-
-      user_resolver = UserResolver.new(config, users_yaml, db_user_case_map, self)
-      policy_builder = PolicyBuilder.new(config, user_resolver, self)
-      drift_detector = DriftDetector.new(self)
-      sql_executor = SqlExecutor.new(executor, config, self, dry_run: dry_run)
-
-      sql_executor.create_masking_policies(column_types)
-
-      expected = policy_builder.build_expected_state(column_types, db_users_set)
-      actual = db_queries.fetch_existing_policies
-
-      log_info("expected: #{expected.size} attachments, actual: #{actual.size} attachments")
-
-      drift = drift_detector.detect(expected, actual)
-      sql_executor.apply_corrections(drift)
-
-      log_info('sync completed')
-    end
-
-    def extract_columns(config)
-      config.columns_config.flat_map do |entry|
-        entry.keys.filter_map { |id| Column.parse(id) }
-      end
-    end
-  end
 end
-
-RedshiftMasking::Orchestrator.new.run if $PROGRAM_NAME == __FILE__
