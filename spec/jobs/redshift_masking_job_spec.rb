@@ -5,9 +5,8 @@ require 'rails_helper'
 # Stub out lib/common.rb and its AWS SDK dependencies so they don't need to be
 # present in the test bundle. The job loads lib/common via require inside perform.
 # Skip stubs if common.rb was already loaded by another spec (e.g. common_spec.rb).
-real_common_loaded = defined?(RedshiftCommon::QueryExecutor) &&
-                     RedshiftCommon::QueryExecutor.instance_methods.any?
-unless real_common_loaded
+unless defined?(RedshiftCommon::QueryExecutor) &&
+       RedshiftCommon::QueryExecutor.instance_methods.any?
   module RedshiftCommon
     class Config
       def env_name; end
