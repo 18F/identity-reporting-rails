@@ -1,8 +1,26 @@
 # frozen_string_literal: true
 
-require 'rspec'
-require_relative '../users/lib/common'
-require_relative '../users/mask'
+require 'spec_helper'
+
+# Stub AWS SDK gems that are not in the test bundle so require in lib/common.rb is a no-op
+%w[aws-sdk-redshiftdataapiservice aws-sdk-secretsmanager].each do |gem_name|
+  $LOADED_FEATURES << "#{gem_name}.rb" unless $LOADED_FEATURES.include?("#{gem_name}.rb")
+end
+
+module Aws
+  module RedshiftDataAPIService
+    class Client; end unless defined?(Client)
+  end
+
+  module SecretsManager
+    class Client; end unless defined?(Client)
+  end
+
+  class InstanceProfileCredentials; end unless defined?(InstanceProfileCredentials)
+end
+
+require_relative '../../app/services/lib/common'
+require_relative '../../app/services/mask'
 
 RSpec.describe RedshiftMasking do
   describe RedshiftMasking::PolicyAttachment do

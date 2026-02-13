@@ -1,7 +1,25 @@
 # frozen_string_literal: true
 
-require 'rspec'
-require_relative '../users/lib/common'
+require 'spec_helper'
+
+# Stub AWS SDK gems that are not in the test bundle so require in lib/common.rb is a no-op
+%w[aws-sdk-redshiftdataapiservice aws-sdk-secretsmanager].each do |gem_name|
+  $LOADED_FEATURES << "#{gem_name}.rb" unless $LOADED_FEATURES.include?("#{gem_name}.rb")
+end
+
+module Aws
+  module RedshiftDataAPIService
+    class Client; end unless defined?(Client)
+  end
+
+  module SecretsManager
+    class Client; end unless defined?(Client)
+  end
+
+  class InstanceProfileCredentials; end unless defined?(InstanceProfileCredentials)
+end
+
+require_relative '../../app/services/lib/common'
 
 RSpec.describe RedshiftCommon do
   describe RedshiftCommon::Config do
@@ -72,7 +90,7 @@ RSpec.describe RedshiftCommon do
     end
     let(:aws_clients) { instance_double(RedshiftCommon::AwsClients) }
     let(:logger) { instance_double(Logger) }
-    let(:redshift_data) { instance_double(Aws::RedshiftDataAPIService::Client) }
+    let(:redshift_data) { double('Aws::RedshiftDataAPIService::Client') }
     let(:executor) { described_class.new(config, aws_clients, logger) }
 
     before do

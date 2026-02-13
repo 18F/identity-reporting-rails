@@ -4,25 +4,30 @@ require 'rails_helper'
 
 # Stub out lib/common.rb and its AWS SDK dependencies so they don't need to be
 # present in the test bundle. The job loads lib/common via require inside perform.
-module RedshiftCommon
-  class Config
-    def env_name; end
-  end
+# Skip stubs if common.rb was already loaded by another spec (e.g. common_spec.rb).
+real_common_loaded = defined?(RedshiftCommon::QueryExecutor) &&
+                     RedshiftCommon::QueryExecutor.instance_methods.any?
+unless real_common_loaded
+  module RedshiftCommon
+    class Config
+      def env_name; end
+    end
 
-  class AwsClients; end
+    class AwsClients; end
 
-  class QueryExecutor; end
+    class QueryExecutor; end
 
-  module UserQueries
-    def self.fetch_users(_executor); end
-  end
+    module UserQueries
+      def self.fetch_users(_executor); end
+    end
 
-  module SqlQuoting
-    def self.quote_grantee(grantee) = grantee
+    module SqlQuoting
+      def self.quote_grantee(grantee) = grantee
+    end
   end
 end
 
-load Rails.root.join('app/services/mask.rb')
+require_relative '../../app/services/mask'
 
 RSpec.describe RedshiftMaskingJob, type: :job do
   let(:job) { described_class.new }
