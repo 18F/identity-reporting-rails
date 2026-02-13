@@ -2,6 +2,7 @@ cron_30m = '*/30 * * * *'
 cron_5m = '0/5 * * * *'
 # cron_10m = '0/10 * * * *'
 cron_1d = '0 6 * * *' # 6:00am UTC or 2:00am EST
+cron_1d_morning = '0 11 * * *' # 11:00am UTC or 6:00am EST
 cron_24h = '0 0 * * *'
 cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever else runs at 0000 UTC
 
@@ -72,6 +73,11 @@ else
       fraud_ops_pii_decrypt_job: {
         class: 'FraudOpsPiiDecryptJob',
         cron: '1/2 * * * *', # every 2 minutes, staggered 1 minute after IdvRedisToRedshiftJob
+      },
+      # PII Retention Enforcement Job - deletes PII older than retention period
+      pii_retention_enforcement_job: {
+        class: 'PiiRetentionEnforcementJob',
+        cron: cron_1d_morning,
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
