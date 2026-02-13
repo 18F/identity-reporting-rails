@@ -2,6 +2,28 @@
 
 require 'rails_helper'
 
+# Stub out lib/common.rb and its AWS SDK dependencies so they don't need to be
+# present in the test bundle. The job loads lib/common via require inside perform.
+module RedshiftCommon
+  class Config
+    def env_name; end
+  end
+
+  class AwsClients; end
+
+  class QueryExecutor; end
+
+  module UserQueries
+    def self.fetch_users(_executor); end
+  end
+
+  module SqlQuoting
+    def self.quote_grantee(grantee) = grantee
+  end
+end
+
+load Rails.root.join('app/services/mask.rb')
+
 RSpec.describe RedshiftMaskingJob, type: :job do
   let(:job) { described_class.new }
   let(:redshift_config) { instance_double(RedshiftCommon::Config, env_name: 'test') }
@@ -19,11 +41,12 @@ RSpec.describe RedshiftMaskingJob, type: :job do
   let(:users_yaml) { {} }
 
   before do
+    allow(job).to receive(:require) # suppress lib/common require inside perform
     allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(true)
-    allow(File).to receive(:read).with(described_class::DATA_CONTROLS_PATH)
-                                 .and_return(data_controls.to_yaml)
-    allow(File).to receive(:read).with(described_class::USERS_YAML_PATH)
-                                 .and_return({ 'users' => users_yaml }.to_yaml)
+    allow(File).to receive(:read).with(described_class::DATA_CONTROLS_PATH).
+      and_return(data_controls.to_yaml)
+    allow(File).to receive(:read).with(described_class::USERS_YAML_PATH).
+      and_return({ 'users' => users_yaml }.to_yaml)
     allow(RedshiftCommon::Config).to receive(:new).and_return(redshift_config)
     allow(RedshiftCommon::AwsClients).to receive(:new).with(redshift_config).and_return(aws)
     allow(RedshiftCommon::QueryExecutor).to receive(:new).and_return(executor)
@@ -50,16 +73,16 @@ RSpec.describe RedshiftMaskingJob, type: :job do
       let(:mock_policies) { [] }
 
       before do
-        allow_any_instance_of(RedshiftMasking::DatabaseQueries).to receive(:fetch_column_types)
-          .and_return(mock_column_types)
-        allow_any_instance_of(RedshiftMasking::DatabaseQueries).to receive(:fetch_existing_policies)
-          .and_return(mock_policies)
+        allow_any_instance_of(RedshiftMasking::DatabaseQueries).to receive(:fetch_column_types).
+          and_return(mock_column_types)
+        allow_any_instance_of(RedshiftMasking::DatabaseQueries).
+          to receive(:fetch_existing_policies).and_return(mock_policies)
         allow_any_instance_of(RedshiftMasking::SqlExecutor).to receive(:create_masking_policies)
         allow_any_instance_of(RedshiftMasking::SqlExecutor).to receive(:apply_corrections)
-        allow_any_instance_of(RedshiftMasking::PolicyBuilder).to receive(:build_expected_state)
-          .and_return([])
-        allow_any_instance_of(RedshiftMasking::DriftDetector).to receive(:detect)
-          .and_return({ missing: [], extra: [], mismatched: [] })
+        allow_any_instance_of(RedshiftMasking::PolicyBuilder).to receive(:build_expected_state).
+          and_return([])
+        allow_any_instance_of(RedshiftMasking::DriftDetector).to receive(:detect).
+          and_return({ missing: [], extra: [], mismatched: [] })
       end
 
       it 'runs the masking policy sync' do
@@ -69,9 +92,9 @@ RSpec.describe RedshiftMaskingJob, type: :job do
       end
 
       it 'passes dry_run: true to SqlExecutor when specified' do
-        expect(RedshiftMasking::SqlExecutor).to receive(:new)
-          .with(executor, anything, anything, dry_run: true)
-          .and_call_original
+        expect(RedshiftMasking::SqlExecutor).to receive(:new).
+          with(executor, anything, anything, dry_run: true).
+          and_call_original
         allow_any_instance_of(RedshiftMasking::SqlExecutor).to receive(:create_masking_policies)
         allow_any_instance_of(RedshiftMasking::SqlExecutor).to receive(:apply_corrections)
         job.perform(dry_run: true)

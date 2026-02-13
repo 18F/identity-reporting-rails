@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'yaml'
-require Rails.root.join('app/services/lib/common')
 
 class RedshiftMaskingJob < ApplicationJob
   queue_as :default
@@ -16,6 +15,8 @@ class RedshiftMaskingJob < ApplicationJob
   )
 
   def perform(dry_run: false)
+    require Rails.root.join('app/services/lib/common')
+
     unless job_enabled?
       log_message(:info, 'RedshiftMasking job is disabled, skipping', true)
       return
@@ -40,28 +41,40 @@ class RedshiftMaskingJob < ApplicationJob
     aws = RedshiftCommon::AwsClients.new(redshift_config)
     executor = RedshiftCommon::QueryExecutor.new(redshift_config, aws, logger_adapter)
 
-    config = RedshiftMasking::Configuration.new(data_controls, users_yaml, env_name: redshift_config.env_name)
+    config = RedshiftMasking::Configuration.new(
+      data_controls, users_yaml,
+      env_name: redshift_config.env_name
+    )
     db_queries = RedshiftMasking::DatabaseQueries.new(executor, logger_adapter)
 
     users = RedshiftCommon::UserQueries.fetch_users(executor)
-    db_user_case_map = users.to_h { |u| [u.upcase, u] }
+    db_user_case_map = users.index_by { |u| u.upcase }
     log_message(:info, "found #{db_user_case_map.size} database users", true)
     db_users_set = Set.new(db_user_case_map.keys)
 
     columns = extract_columns(config)
     column_types = db_queries.fetch_column_types(columns)
 
-    user_resolver = RedshiftMasking::UserResolver.new(config, users_yaml, db_user_case_map, logger_adapter)
+    user_resolver = RedshiftMasking::UserResolver.new(
+      config, users_yaml, db_user_case_map,
+      logger_adapter
+    )
     policy_builder = RedshiftMasking::PolicyBuilder.new(config, user_resolver, logger_adapter)
     drift_detector = RedshiftMasking::DriftDetector.new(logger_adapter)
-    sql_executor = RedshiftMasking::SqlExecutor.new(executor, config, logger_adapter, dry_run: dry_run)
+    sql_executor = RedshiftMasking::SqlExecutor.new(
+      executor, config, logger_adapter,
+      dry_run: dry_run
+    )
 
     sql_executor.create_masking_policies(column_types)
 
     expected = policy_builder.build_expected_state(column_types, db_users_set)
     actual = db_queries.fetch_existing_policies
 
-    log_message(:info, "expected: #{expected.size} attachments, actual: #{actual.size} attachments", true)
+    log_message(
+      :info,
+      "expected: #{expected.size} attachments, actual: #{actual.size} attachments", true
+    )
 
     drift = drift_detector.detect(expected, actual)
     sql_executor.apply_corrections(drift)
