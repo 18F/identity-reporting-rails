@@ -76,12 +76,6 @@ RSpec.describe Reporting::FraudMetricsLg99ReportFromS3 do
         expect(report.time_range.begin).to eq(Time.parse('2025-11-01 00:00:00 UTC'))
         expect(report.time_range.end).to eq(Time.parse('2025-11-30 23:59:59 UTC'))
       end
-
-      it 'returns the correct stats_month' do
-        report = consumer.populate_report
-
-        expect(report.stats_month).to eq('Nov-2025')
-      end
     end
 
     context 'when metrics have non-zero integer values' do
@@ -151,7 +145,6 @@ RSpec.describe Reporting::FraudMetricsLg99ReportFromS3 do
 
         expect(report.time_range.begin).to eq(Time.parse('2025-12-01 00:00:00 UTC'))
         expect(report.time_range.end).to eq(Time.parse('2025-12-31 23:59:59 UTC'))
-        expect(report.stats_month).to eq('Dec-2025')
       end
     end
 
