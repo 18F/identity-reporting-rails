@@ -13,7 +13,7 @@ RSpec.describe RedshiftMasking do
         table: 'users',
         column: 'ssn',
         grantee: 'testuser',
-        priority: 100
+        priority: 100,
       )
     end
 
@@ -31,7 +31,7 @@ RSpec.describe RedshiftMasking do
           table: 'users',
           column: 'ssn',
           grantee: 'testuser',
-          priority: 100
+          priority: 100,
         )
         expect(policy.matches?(other)).to be true
       end
@@ -43,7 +43,7 @@ RSpec.describe RedshiftMasking do
           table: 'users',
           column: 'ssn',
           grantee: 'testuser',
-          priority: 100
+          priority: 100,
         )
         expect(policy.matches?(other)).to be false
       end
@@ -55,7 +55,7 @@ RSpec.describe RedshiftMasking do
           table: 'users',
           column: 'ssn',
           grantee: 'testuser',
-          priority: 200
+          priority: 200,
         )
         expect(policy.matches?(other)).to be false
       end
@@ -159,43 +159,49 @@ RSpec.describe RedshiftMasking do
       end
 
       it 'fetches and normalizes column types' do
-        allow(executor).to receive(:query_records).and_return([
-                                                                [
-                                                                  { string_value: 'public' },
-                                                                  { string_value: 'users' },
-                                                                  { string_value: 'email' },
-                                                                  { string_value: 'varchar' },
-                                                                  { long_value: nil },
-                                                                ],
-                                                                [
-                                                                  { string_value: 'public' },
-                                                                  { string_value: 'users' },
-                                                                  { string_value: 'ssn' },
-                                                                  { string_value: 'char' },
-                                                                  { long_value: 11 },
-                                                                ],
-                                                              ])
+        allow(executor).to receive(:query_records).and_return(
+          [
+            [
+              { string_value: 'public' },
+              { string_value: 'users' },
+              { string_value: 'email' },
+              { string_value: 'varchar' },
+              { long_value: nil },
+            ],
+            [
+              { string_value: 'public' },
+              { string_value: 'users' },
+              { string_value: 'ssn' },
+              { string_value: 'char' },
+              { long_value: 11 },
+            ],
+          ],
+        )
 
         result = db_queries.fetch_column_types(columns)
-        expect(result).to eq({
-                               'public.users.email' => 'VARCHAR(MAX)',
-                               'public.users.ssn' => 'CHAR(11)',
-                             })
+        expect(result).to eq(
+          {
+            'public.users.email' => 'VARCHAR(MAX)',
+            'public.users.ssn' => 'CHAR(11)',
+          },
+        )
       end
     end
 
     describe '#fetch_existing_policies' do
       it 'returns array of PolicyAttachment objects' do
-        allow(executor).to receive(:query_records).and_return([
-                                                                [
-                                                                  { string_value: 'mask_public_users_ssn' },
-                                                                  { string_value: 'public' },
-                                                                  { string_value: 'users' },
-                                                                  { string_value: 'ssn' },
-                                                                  { string_value: 'testuser' },
-                                                                  { long_value: 100 },
-                                                                ],
-                                                              ])
+        allow(executor).to receive(:query_records).and_return(
+          [
+            [
+              { string_value: 'mask_public_users_ssn' },
+              { string_value: 'public' },
+              { string_value: 'users' },
+              { string_value: 'ssn' },
+              { string_value: 'testuser' },
+              { long_value: 100 },
+            ],
+          ],
+        )
 
         result = db_queries.fetch_existing_policies
         expect(result).to be_an(Array)
@@ -214,7 +220,7 @@ RSpec.describe RedshiftMasking do
           'redshift_user' => ['analyst'],
           'superuser' => ['admin'],
         },
-        env_name: 'test'
+        env_name: 'test',
       )
     end
     let(:users_yaml) do
@@ -223,7 +229,9 @@ RSpec.describe RedshiftMasking do
         'bob' => { 'aws_groups' => ['dwpoweruser'] },
       }
     end
-    let(:db_user_case_map) { { 'IAM:ALICE' => 'IAM:alice', 'IAM:BOB' => 'IAM:bob', 'ANALYST' => 'analyst' } }
+    let(:db_user_case_map) do
+      { 'IAM:ALICE' => 'IAM:alice', 'IAM:BOB' => 'IAM:bob', 'ANALYST' => 'analyst' }
+    end
     let(:logger) { double('logger', log_info: nil, log_warn: nil) }
     let(:resolver) { described_class.new(config, users_yaml, db_user_case_map, logger) }
 
@@ -290,7 +298,7 @@ RSpec.describe RedshiftMasking do
         table: 'users',
         column: 'ssn',
         grantee: 'testuser',
-        priority: 100
+        priority: 100,
       )
     end
 
@@ -320,7 +328,7 @@ RSpec.describe RedshiftMasking do
           table: 'users',
           column: 'ssn',
           grantee: 'testuser',
-          priority: 300
+          priority: 300,
         )
 
         drift = detector.detect([expected_policy], [actual_policy])
@@ -374,7 +382,7 @@ RSpec.describe RedshiftMasking do
           table: 'users',
           column: 'ssn',
           grantee: 'testuser',
-          priority: 100
+          priority: 100,
         )
       end
 
@@ -411,7 +419,7 @@ RSpec.describe RedshiftMasking do
           table: 'users',
           column: 'ssn',
           grantee: 'testuser',
-          priority: 300
+          priority: 300,
         )
 
         drift = { missing: [], extra: [], mismatched: [{ expected: expected, actual: actual }] }
@@ -441,7 +449,7 @@ RSpec.describe RedshiftMasking do
           table: 'users',
           column: 'ssn',
           grantee: 'testuser',
-          priority: 100
+          priority: 100,
         )
       end
 
@@ -467,7 +475,7 @@ RSpec.describe RedshiftMasking do
           table: 'users',
           column: 'ssn',
           grantee: 'PUBLIC',
-          priority: 10
+          priority: 10,
         )
 
         sql = sql_executor.send(:attach_sql, public_policy)
@@ -483,7 +491,7 @@ RSpec.describe RedshiftMasking do
         RedshiftMasking::Configuration,
         columns_config: [
           { 'public.users.ssn' => { 'allowed' => ['dwadmin'], 'masked' => ['dwuser'] } },
-        ]
+        ],
       )
     end
     let(:user_resolver) { instance_double(RedshiftMasking::UserResolver) }

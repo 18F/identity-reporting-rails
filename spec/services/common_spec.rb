@@ -9,8 +9,9 @@ RSpec.describe RedshiftCommon do
 
     before do
       allow(File).to receive(:read).with('/etc/login.gov/info/env').and_return("staging\n")
-      allow(File).to receive(:read).with('/etc/login.gov/repos/identity-devops/terraform/data-warehouse/staging/main.tf')
-                                   .and_return("enable_feature = true\n# disabled_feature = true")
+      allow(File).to receive(:read).
+        with('/etc/login.gov/repos/identity-devops/terraform/data-warehouse/staging/main.tf').
+        and_return("enable_feature = true\n# disabled_feature = true")
     end
 
     describe '#env_name' do
@@ -28,8 +29,9 @@ RSpec.describe RedshiftCommon do
     describe '#env_type' do
       it 'returns prod for prod environments' do
         allow(File).to receive(:read).with('/etc/login.gov/info/env').and_return("prod\n")
-        allow(File).to receive(:read).with('/etc/login.gov/repos/identity-devops/terraform/data-warehouse/prod/main.tf')
-                                     .and_return("enable_feature = true\n")
+        allow(File).to receive(:read).
+          with('/etc/login.gov/repos/identity-devops/terraform/data-warehouse/prod/main.tf').
+          and_return("enable_feature = true\n")
         expect(described_class.new.env_type).to eq('prod')
       end
 
@@ -39,8 +41,9 @@ RSpec.describe RedshiftCommon do
 
       it 'returns sandbox for non-prod environments' do
         allow(File).to receive(:read).with('/etc/login.gov/info/env').and_return("dev\n")
-        allow(File).to receive(:read).with('/etc/login.gov/repos/identity-devops/terraform/data-warehouse/dev/main.tf')
-                                     .and_return("enable_feature = true\n")
+        allow(File).to receive(:read).
+          with('/etc/login.gov/repos/identity-devops/terraform/data-warehouse/dev/main.tf').
+          and_return("enable_feature = true\n")
         expect(described_class.new.env_type).to eq('sandbox')
       end
     end
@@ -61,14 +64,20 @@ RSpec.describe RedshiftCommon do
   end
 
   describe RedshiftCommon::QueryExecutor do
-    let(:config) { instance_double(RedshiftCommon::Config, cluster_identifier: 'test-cluster', database: 'testdb', env_name: 'test') }
+    let(:config) do
+      instance_double(
+        RedshiftCommon::Config,
+        cluster_identifier: 'test-cluster', database: 'testdb', env_name: 'test',
+      )
+    end
     let(:aws_clients) { instance_double(RedshiftCommon::AwsClients) }
     let(:logger) { instance_double(Logger) }
     let(:redshift_data) { instance_double(Aws::RedshiftDataAPIService::Client) }
     let(:executor) { described_class.new(config, aws_clients, logger) }
 
     before do
-      allow(aws_clients).to receive(:secret_arn).and_return('arn:aws:secretsmanager:us-west-2:123456789:secret:test')
+      allow(aws_clients).to receive(:secret_arn).
+        and_return('arn:aws:secretsmanager:us-west-2:123456789:secret:test')
       allow(aws_clients).to receive(:redshift_data).and_return(redshift_data)
     end
 
@@ -84,7 +93,11 @@ RSpec.describe RedshiftCommon do
       it 'raises error on query failure' do
         allow(redshift_data).to receive(:execute_statement).and_return({ 'id' => 'query-123' })
         allow(redshift_data).to receive(:describe_statement).and_return(
-          { 'status' => 'FAILED', 'error' => 'Syntax error', 'query_string' => 'SELECT bad' }
+          {
+            'status' => 'FAILED',
+            'error' => 'Syntax error',
+            'query_string' => 'SELECT bad',
+          },
         )
 
         expect { executor.execute_and_wait('SELECT bad') }.to raise_error(/Redshift query failed/)
@@ -96,7 +109,9 @@ RSpec.describe RedshiftCommon do
         allow(redshift_data).to receive(:execute_statement).and_return({ 'id' => 'query-123' })
         allow(redshift_data).to receive(:describe_statement).and_return({ 'status' => 'FINISHED' })
         allow(redshift_data).to receive(:get_statement_result).and_return(
-          { records: [[{ string_value: 'user1' }], [{ string_value: 'user2' }]] }
+          {
+            records: [[{ string_value: 'user1' }], [{ string_value: 'user2' }]],
+          },
         )
 
         result = executor.query_single_column('SELECT usename FROM pg_user')
@@ -249,7 +264,9 @@ RSpec.describe RedshiftCommon do
       end
 
       it 'raises for invalid username' do
-        expect { described_class.validate_username!('invalid user') }.to raise_error(/Invalid username/)
+        expect do
+          described_class.validate_username!('invalid user')
+        end.to raise_error(/Invalid username/)
       end
     end
   end
@@ -265,8 +282,9 @@ RSpec.describe RedshiftCommon do
 
     before do
       allow(File).to receive(:read).with('/etc/login.gov/info/env').and_return("test\n")
-      allow(File).to receive(:read).with('/etc/login.gov/repos/identity-devops/terraform/data-warehouse/test/main.tf')
-                                   .and_return("enable_feature = true\n")
+      allow(File).to receive(:read).
+        with('/etc/login.gov/repos/identity-devops/terraform/data-warehouse/test/main.tf').
+        and_return("enable_feature = true\n")
     end
 
     it 'initializes with config, aws clients, and executor' do

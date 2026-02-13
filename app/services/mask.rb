@@ -1,10 +1,8 @@
 # frozen_string_literal: true
 
 module RedshiftMasking
-
   # Represents a masking policy attachment to a database column for a specific grantee
   class PolicyAttachment
-
     attr_reader :policy_name, :schema, :table, :column, :grantee, :priority
 
     def initialize(policy_name:, schema:, table:, column:, grantee:, priority:)
@@ -66,7 +64,8 @@ module RedshiftMasking
     end
   end
 
-  # Manages masking policy configuration including user types, column permissions, and policy templates
+  # Manages masking policy configuration including user types, column permissions,
+  # and policy templates
   class Configuration
     # Permission type constants
     PERMISSION_ALLOWED = 'allowed'
@@ -162,7 +161,7 @@ module RedshiftMasking
         hash[key] = RedshiftCommon::DataTypeUtils.normalize_data_type(
           record[3][:string_value],
           record[4][:long_value],
-          logger: logger
+          logger: logger,
         )
       end
     end
@@ -182,7 +181,7 @@ module RedshiftMasking
           table: r[2][:string_value],
           column: r[3][:string_value],
           grantee: r[4][:string_value],
-          priority: r[5][:long_value]
+          priority: r[5][:long_value],
         )
       end
     end
@@ -211,16 +210,17 @@ module RedshiftMasking
 
     def find_implicitly_masked_users(explicit_permission_sets, all_db_users)
       explicit_users = explicit_permission_sets.values.reduce(Set.new, :|)
-      all_attachable_users = all_db_users
-                             .reject { |u| superuser_db_user?(u) }
-                             .map { |u| db_user_case_map[u.upcase] }
-                             .to_set
+      all_attachable_users = all_db_users.
+        reject { |u| superuser_db_user?(u) }.
+        map { |u| db_user_case_map[u.upcase] }.
+        to_set
 
       all_attachable_users - explicit_users
     end
 
     def superuser_allowed?(permissions)
-      permissions&.dig(Configuration::PERMISSION_ALLOWED)&.any? { |role| unattachable_role?(role) } || false
+      permissions&.dig(Configuration::PERMISSION_ALLOWED)&.
+        any? { |role| unattachable_role?(role) } || false
     end
 
     private
@@ -287,7 +287,8 @@ module RedshiftMasking
     end
   end
 
-  # Builds masking policy attachments for database columns based on configuration and user permissions
+  # Builds masking policy attachments for database columns based on configuration
+  # and user permissions
   class PolicyBuilder
     attr_reader :config, :user_resolver, :logger
 
@@ -299,7 +300,9 @@ module RedshiftMasking
 
     def build_expected_state(column_types, db_users)
       config.columns_config.flat_map do |entry|
-        entry.map { |column_id, permissions| build_policies_for_column(column_id, permissions, column_types, db_users) }
+        entry.map do |column_id, permissions|
+          build_policies_for_column(column_id, permissions, column_types, db_users)
+        end
       end.flatten
     end
 
@@ -317,7 +320,7 @@ module RedshiftMasking
     private
 
     def empty_permission_sets
-      Configuration::PERMISSION_TYPES.to_h { |type| [type, Set.new] }
+      Configuration::PERMISSION_TYPES.index_with { Set.new }
     end
 
     def build_public_baseline_policies(column_id, column, permissions)
@@ -326,7 +329,7 @@ module RedshiftMasking
           config.policy_name(Configuration::PERMISSION_MASKED, column_id),
           column,
           'PUBLIC',
-          10
+          10,
         ),
       ]
 
@@ -334,10 +337,18 @@ module RedshiftMasking
 
       sets = apply_permission_precedence(resolve_permission_user_sets(permissions))
 
-      policies += build_policy_entries_for_users(sets[Configuration::PERMISSION_ALLOWED],
-                                                 Configuration::PERMISSION_ALLOWED, column_id, column)
-      policies += build_policy_entries_for_users(sets[Configuration::PERMISSION_DENIED],
-                                                 Configuration::PERMISSION_DENIED, column_id, column)
+      policies += build_policy_entries_for_users(
+        sets[Configuration::PERMISSION_ALLOWED],
+        Configuration::PERMISSION_ALLOWED,
+        column_id,
+        column,
+      )
+      policies += build_policy_entries_for_users(
+        sets[Configuration::PERMISSION_DENIED],
+        Configuration::PERMISSION_DENIED,
+        column_id,
+        column,
+      )
       policies
     end
 
@@ -347,12 +358,17 @@ module RedshiftMasking
 
       Configuration::PERMISSION_TYPES.flat_map do |type|
         build_policy_entries_for_users(sets[type], type, column_id, column)
-      end + build_policy_entries_for_users(implicitly_masked, Configuration::PERMISSION_MASKED, column_id, column)
+      end + build_policy_entries_for_users(
+        implicitly_masked,
+        Configuration::PERMISSION_MASKED,
+        column_id,
+        column,
+      )
     end
 
     def resolve_permission_user_sets(permissions)
-      Configuration::PERMISSION_TYPES.to_h do |type|
-        [type, user_resolver.resolve_attachable_users(permissions[type])]
+      Configuration::PERMISSION_TYPES.index_with do |type|
+        user_resolver.resolve_attachable_users(permissions[type])
       end
     end
 
@@ -360,7 +376,11 @@ module RedshiftMasking
       allowed = sets[Configuration::PERMISSION_ALLOWED] || Set.new
       masked  = (sets[Configuration::PERMISSION_MASKED]  || Set.new) - allowed
       denied  = (sets[Configuration::PERMISSION_DENIED]  || Set.new) - allowed - masked
-      { Configuration::PERMISSION_ALLOWED => allowed, Configuration::PERMISSION_MASKED => masked, Configuration::PERMISSION_DENIED => denied }
+      {
+        Configuration::PERMISSION_ALLOWED => allowed,
+        Configuration::PERMISSION_MASKED => masked,
+        Configuration::PERMISSION_DENIED => denied,
+      }
     end
 
     def build_policy_entries_for_users(users, perm_type, column_id, column)
@@ -376,7 +396,7 @@ module RedshiftMasking
         table: col.table,
         column: col.column,
         grantee: grantee,
-        priority: priority
+        priority: priority,
       )
     end
   end
@@ -392,8 +412,8 @@ module RedshiftMasking
     def detect(expected_list, actual_list)
       logger.log_info('detecting drift in masking policies')
 
-      expected_map = expected_list.to_h { |p| [p.key, p] }
-      actual_map = actual_list.to_h { |p| [p.key, p] }
+      expected_map = expected_list.index_by(&:key)
+      actual_map = actual_list.index_by(&:key)
 
       drift = { missing: [], extra: [], mismatched: [] }
 
@@ -413,8 +433,10 @@ module RedshiftMasking
           logger.log_warn("MISSING: #{expected.grantee} on #{expected.column_id}")
         elsif !expected.matches?(actual)
           drift[:mismatched] << { expected: expected, actual: actual }
-          logger.log_warn("MISMATCH: #{expected.grantee} on #{expected.column_id} " \
-                           "(Expected #{expected.policy_name} P#{expected.priority})")
+          logger.log_warn(
+            "MISMATCH: #{expected.grantee} on #{expected.column_id} " \
+            "(Expected #{expected.policy_name} P#{expected.priority})",
+          )
         end
       end
     end
@@ -456,14 +478,16 @@ module RedshiftMasking
       logger.log_info('creating masking policies')
 
       sql_parts = column_types.flat_map do |column_id, data_type|
-        Configuration::PERMISSION_TYPES.map { |perm_type| build_policy_sql(perm_type, column_id, data_type) }
+        Configuration::PERMISSION_TYPES.map do |perm_type|
+          build_policy_sql(perm_type, column_id, data_type)
+        end
       end
 
       sql = "#{sql_parts.join(";\n")};"
 
       execute_or_log_dry_run(
         "created/verified policies for #{column_types.size} columns",
-        sql
+        sql,
       ) { executor.execute_and_wait(sql) }
     end
 
@@ -473,8 +497,12 @@ module RedshiftMasking
 
       return logger.log_info('no changes needed') if (to_detach + to_attach).empty?
 
-      to_detach.each { |p| execute_correction(detach_sql(p), "Detaching #{p.policy_name} from #{p.grantee}") }
-      to_attach.each { |p| execute_correction(attach_sql(p), "Attaching #{p.policy_name} to #{p.grantee}") }
+      to_detach.each do |p|
+        execute_correction(detach_sql(p), "Detaching #{p.policy_name} from #{p.grantee}")
+      end
+      to_attach.each do |p|
+        execute_correction(attach_sql(p), "Attaching #{p.policy_name} to #{p.grantee}")
+      end
     end
 
     private
@@ -483,7 +511,7 @@ module RedshiftMasking
       format(
         POLICY_TEMPLATES[permission_type],
         name: config.policy_name(permission_type, column_id),
-        type: data_type
+        type: data_type,
       )
     end
 
@@ -493,7 +521,7 @@ module RedshiftMasking
         logger.log_info("[DRY RUN] SQL: #{sql.strip.gsub(/\s+/, ' ')}")
       else
         logger.log_info(description)
-        block.call if block_given?
+        block.call(&block)
       end
     end
 

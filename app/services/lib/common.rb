@@ -10,7 +10,6 @@ require 'json'
 
 # Common utilities for Redshift management scripts
 module RedshiftCommon
-
   # Configuration for the Redshift connection
   class Config
     LOGIN_BASE_PATH = '/etc/login.gov'
@@ -18,7 +17,8 @@ module RedshiftCommon
     DEVOPS_REPO_BASE_PATH = File.join(LOGIN_BASE_PATH, 'repos', 'identity-devops')
     TERRAFORM_DW_PATH = File.join(DEVOPS_REPO_BASE_PATH, 'terraform', 'data-warehouse')
 
-    attr_reader :env_name, :region, :cluster_suffix, :database, :cluster_identifier, :config_file_path
+    attr_reader :env_name, :region, :cluster_suffix, :database,
+                :cluster_identifier, :config_file_path
 
     def initialize(
       env_file: ENV_FILE_PATH,
@@ -95,7 +95,7 @@ module RedshiftCommon
       @superuser_secret_arn ||= @aws.secret_arn("redshift/#{@config.env_name}-analytics-superuser")
     end
 
-    def execute(sql, parameters=nil)
+    def execute(sql, parameters = nil)
       params = {
         cluster_identifier: @config.cluster_identifier,
         database: @config.database,
@@ -118,16 +118,16 @@ module RedshiftCommon
       end
     end
 
-    def execute_and_wait(sql, parameters=nil)
+    def execute_and_wait(sql, parameters = nil)
       query = execute(sql, parameters)
       wait_for_completion(query['id'])
       query['id']
     end
 
     def fetch_results(query_id)
-      @aws.redshift_data
-          .get_statement_result(id: query_id)
-          .to_h[:records]
+      @aws.redshift_data.
+        get_statement_result(id: query_id).
+        to_h[:records]
     end
 
     def fetch_single_column(query_id)
@@ -137,7 +137,7 @@ module RedshiftCommon
     end
 
     # Execute a query and return single-column results as an array
-    def query_single_column(sql, parameters=nil)
+    def query_single_column(sql, parameters = nil)
       query = execute(sql, parameters)
       return [] unless wait_for_completion(query['id'])
 
@@ -145,7 +145,7 @@ module RedshiftCommon
     end
 
     # Execute a query and return results as array of hashes
-    def query_records(sql, parameters=nil, &block)
+    def query_records(sql, parameters = nil, &block)
       query = execute(sql, parameters)
       return [] unless wait_for_completion(query['id'])
 
@@ -180,7 +180,8 @@ module RedshiftCommon
   module DataTypeUtils
     DATA_TYPE_MAPPINGS = {
       /^(?:character varying|varchar|text)/i => 'VARCHAR(MAX)',
-      /^(?:character|char)$/i => ->(_, len) { "CHAR(#{len || 1})" }, # Lambda to preserve original length
+      # Lambda to preserve original length
+      /^(?:character|char)$/i => ->(_, len) { "CHAR(#{len || 1})" },
       /^(?:numeric|decimal|integer|int|smallint|bigint|real|double)/i => 'NUMERIC',
       /^date$/i => 'DATE',
       /^timestamp/i => 'TIMESTAMP',
@@ -188,14 +189,17 @@ module RedshiftCommon
     }.freeze
 
     # Normalize a Redshift data type to a standardized format
-    def self.normalize_data_type(data_type, char_max_length=nil, logger: nil)
+    def self.normalize_data_type(data_type, char_max_length = nil, logger: nil)
       DATA_TYPE_MAPPINGS.each do |pattern, result|
         next unless pattern.match?(data_type)
 
         return result.respond_to?(:call) ? result.call(data_type, char_max_length) : result
       end
 
-      logger&.warn("RedshiftCommon::DataTypeUtils: unknown data type '#{data_type}', defaulting to VARCHAR(MAX)")
+      logger&.warn(
+        "RedshiftCommon::DataTypeUtils: unknown data type " \
+        "'#{data_type}', defaulting to VARCHAR(MAX)",
+      )
       'VARCHAR(MAX)'
     end
   end
@@ -230,7 +234,8 @@ module RedshiftCommon
     end
 
     def self.group_exists?(executor, group_name)
-      query = 'SELECT 1 FROM pg_roles WHERE rolname ILIKE :group_name AND rolcanlogin = false LIMIT 1'
+      query = 'SELECT 1 FROM pg_roles WHERE rolname ILIKE :group_name ' \
+              'AND rolcanlogin = false LIMIT 1'
       parameters = [{ name: 'group_name', value: group_name }]
       results = executor.query_single_column(query, parameters)
       results.any?
@@ -311,7 +316,7 @@ module RedshiftCommon
       args = optparse.parse!
 
       unless args.length == required_count
-        $stderr.puts optparse
+        warn optparse
         exit 1
       end
 
