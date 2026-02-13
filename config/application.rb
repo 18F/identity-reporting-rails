@@ -41,6 +41,10 @@ module IdentityReportingRails
       end
     end
 
+    # lib/common.rb requires AWS SDK gems not in the Gemfile; it is loaded explicitly
+    # by jobs at runtime, so exclude it from Zeitwerk autoloading and eager loading.
+    Rails.autoloaders.main.ignore(Rails.root.join('app/services/lib'))
+
     config.load_defaults '7.2'
     config.active_record.belongs_to_required_by_default = false
     config.active_job.queue_adapter = :good_job
