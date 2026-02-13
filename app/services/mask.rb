@@ -552,3 +552,6 @@ module RedshiftMasking
     end
   end
 end
+
+# Zeitwerk expects app/services/mask.rb to define Mask
+Mask = RedshiftMasking
