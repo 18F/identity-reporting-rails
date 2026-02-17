@@ -7,7 +7,7 @@ class RedshiftMaskingJob < ApplicationJob
 
   DATA_CONTROLS_PATH = IdentityConfig.local_devops_path(
     :identity_devops,
-    "terraform/data-warehouse/#{Identity::Hostdata.env}/data_controls.yml",
+    "bin/data-warehouse/mask.yaml",
   )
   USERS_YAML_PATH = IdentityConfig.local_devops_path(
     :identity_devops,
