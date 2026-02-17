@@ -463,13 +463,12 @@ module RedshiftMasking
       "CREATE MASKING POLICY %<name>s IF NOT EXISTS WITH(value %<type>s) USING #{using_clause}"
     end.freeze
 
-    attr_reader :executor, :config, :logger, :dry_run
+    attr_reader :executor, :config, :logger
 
-    def initialize(executor, config, logger, dry_run: false)
+    def initialize(executor, config, logger)
       @executor = executor
       @config = config
       @logger = logger
-      @dry_run = dry_run
     end
 
     def create_masking_policies(column_types)
@@ -485,10 +484,8 @@ module RedshiftMasking
 
       sql = "#{sql_parts.join(";\n")};"
 
-      execute_or_log_dry_run(
-        "created/verified policies for #{column_types.size} columns",
-        sql,
-      ) { executor.execute_and_wait(sql) }
+      logger.log_info("created/verified policies for #{column_types.size} columns")
+      executor.execute_and_wait(sql)
     end
 
     def apply_corrections(drift)
@@ -515,20 +512,9 @@ module RedshiftMasking
       )
     end
 
-    def execute_or_log_dry_run(description, sql, &block)
-      if dry_run
-        logger.log_info("[DRY RUN] Would #{description.downcase}")
-        logger.log_info("[DRY RUN] SQL: #{sql.strip.gsub(/\s+/, ' ')}")
-      else
-        logger.log_info(description)
-        block.call(&block)
-      end
-    end
-
     def execute_correction(sql, description)
-      execute_or_log_dry_run(description, sql) do
-        executor.execute_and_wait(sql)
-      end
+      logger.log_info(description)
+      executor.execute_and_wait(sql)
     rescue RuntimeError => e
       logger.log_warn("Failed to apply correction: #{e.message}")
       logger.log_debug("Failed SQL: #{sql}")
