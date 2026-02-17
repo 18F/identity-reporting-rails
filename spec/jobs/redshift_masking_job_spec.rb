@@ -180,20 +180,6 @@ RSpec.describe RedshiftMaskingJob, type: :job do
         job.perform
       end
 
-      it 'passes dry_run: false to SqlExecutor by default' do
-        expect(RedshiftMasking::SqlExecutor).to receive(:new).with(
-          executor, masking_config, anything, dry_run: false
-        )
-        job.perform
-      end
-
-      it 'passes dry_run: true to SqlExecutor when specified' do
-        expect(RedshiftMasking::SqlExecutor).to receive(:new).with(
-          executor, masking_config, anything, dry_run: true
-        )
-        job.perform(dry_run: true)
-      end
-
       it 'logs sync start and completion' do
         expect(Rails.logger).to receive(:info).with(a_string_matching(/starting/i)).at_least(:once)
         expect(Rails.logger).to receive(:info).with(a_string_matching(/completed/i)).at_least(:once)

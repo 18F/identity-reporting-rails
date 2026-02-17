@@ -14,7 +14,7 @@ class RedshiftMaskingJob < ApplicationJob
     'terraform/master/global/users.yaml',
   )
 
-  def perform(dry_run: false)
+  def perform
     require Rails.root.join('lib/common')
 
     unless job_enabled?
@@ -25,7 +25,7 @@ class RedshiftMaskingJob < ApplicationJob
     data_controls = YAML.safe_load(File.read(DATA_CONTROLS_PATH))
     users_yaml = YAML.safe_load(File.read(USERS_YAML_PATH))['users']
 
-    sync_masking_policies(data_controls, users_yaml, dry_run: dry_run)
+    sync_masking_policies(data_controls, users_yaml)
   end
 
   private
@@ -34,7 +34,7 @@ class RedshiftMaskingJob < ApplicationJob
     IdentityConfig.store.fraud_ops_tracker_enabled
   end
 
-  def sync_masking_policies(data_controls, users_yaml, dry_run: false)
+  def sync_masking_policies(data_controls, users_yaml)
     log_message(:info, 'starting data controls sync', true)
 
     redshift_config = RedshiftCommon::Config.new
@@ -61,10 +61,7 @@ class RedshiftMaskingJob < ApplicationJob
     )
     policy_builder = RedshiftMasking::PolicyBuilder.new(config, user_resolver, logger_adapter)
     drift_detector = RedshiftMasking::DriftDetector.new(logger_adapter)
-    sql_executor = RedshiftMasking::SqlExecutor.new(
-      executor, config, logger_adapter,
-      dry_run: dry_run
-    )
+    sql_executor = RedshiftMasking::SqlExecutor.new(executor, config, logger_adapter)
 
     sql_executor.create_masking_policies(column_types)
 
