@@ -11,7 +11,7 @@ require_relative '../../config/environment'
 class RedshiftSync
   attr_reader :config_file_path, :users_yaml_path
 
-  def initialize(config_file_path:, users_yaml_path:)
+  def initialize(users_yaml_path:, config_file_path: 'config/redshift_config.yaml')
     @config_file_path = config_file_path
     @users_yaml_path = users_yaml_path
   end
@@ -105,7 +105,7 @@ class RedshiftSync
 
     flags_to_check = feature_flag.is_a?(Array) ? feature_flag : [feature_flag]
 
-    flags_to_check.any? do |flag|
+    flags_to_check.all? do |flag|
       config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m)
     end
   end
