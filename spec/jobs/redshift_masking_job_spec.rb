@@ -200,6 +200,63 @@ RSpec.describe RedshiftMaskingJob, type: :job do
         job.perform
       end
     end
+
+    context 'when user_filter is provided' do
+      let(:filtered_user) { 'IAM:alice' }
+      let(:filter_set) { Set.new([filtered_user.upcase]) }
+      let(:actual_policies_for_alice) do
+        [
+          RedshiftMasking::PolicyAttachment.new(
+            policy_name: 'mask_public_users_ssn',
+            schema: 'public',
+            table: 'users',
+            column: 'ssn',
+            grantee: 'IAM:alice',
+            priority: 100,
+          ),
+        ]
+      end
+      let(:actual_policies_with_other_user) do
+        actual_policies_for_alice + [
+          RedshiftMasking::PolicyAttachment.new(
+            policy_name: 'mask_public_users_ssn',
+            schema: 'public',
+            table: 'users',
+            column: 'ssn',
+            grantee: 'IAM:bob',
+            priority: 100,
+          ),
+        ]
+      end
+
+      before do
+        allow(db_queries).to receive(:fetch_existing_policies).and_return(
+          actual_policies_with_other_user,
+        )
+      end
+
+      it 'restricts db_users_set to filter set when building expected state' do
+        expect(policy_builder).to receive(:build_expected_state) do |_column_types, users_set|
+          expect(users_set).to include('IAM:ALICE')
+          expect(users_set).not_to include('IAM:BOB')
+          expected_policies
+        end
+        job.perform(user_filter: [filtered_user])
+      end
+
+      it 'filters actual policies to only filtered users before drift detection' do
+        expect(drift_detector).to receive(:detect) do |_expected, actual|
+          expect(actual.map(&:grantee)).to all(satisfy { |g| filter_set.include?(g.upcase) })
+          drift
+        end
+        job.perform(user_filter: [filtered_user])
+      end
+
+      it 'logs the number of users being filtered' do
+        expect(Rails.logger).to receive(:info).with(a_string_matching(/filtering sync to/i))
+        job.perform(user_filter: [filtered_user])
+      end
+    end
   end
 
   describe '#extract_columns (private)' do

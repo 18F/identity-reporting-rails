@@ -14,7 +14,7 @@ class RedshiftMaskingJob < ApplicationJob
     'terraform/master/global/users.yaml',
   )
 
-  def perform
+  def perform(user_filter: nil)
     require Rails.root.join('lib/common')
 
     unless job_enabled?
@@ -25,7 +25,7 @@ class RedshiftMaskingJob < ApplicationJob
     data_controls = YAML.safe_load(File.read(DATA_CONTROLS_PATH))
     users_yaml = YAML.safe_load(File.read(USERS_YAML_PATH))['users']
 
-    sync_masking_policies(data_controls, users_yaml)
+    sync_masking_policies(data_controls, users_yaml, user_filter: user_filter)
   end
 
   private
@@ -34,7 +34,7 @@ class RedshiftMaskingJob < ApplicationJob
     IdentityConfig.store.fraud_ops_tracker_enabled
   end
 
-  def sync_masking_policies(data_controls, users_yaml)
+  def sync_masking_policies(data_controls, users_yaml, user_filter: nil)
     log_message(:info, 'starting data controls sync', true)
 
     redshift_config = RedshiftCommon::Config.new
@@ -52,6 +52,12 @@ class RedshiftMaskingJob < ApplicationJob
     log_message(:info, "found #{db_user_case_map.size} database users", true)
     db_users_set = Set.new(db_user_case_map.keys)
 
+    if user_filter
+      filter_set = Set.new(user_filter.map(&:upcase))
+      db_users_set &= filter_set
+      log_message(:info, "filtering sync to #{db_users_set.size} user(s)", true)
+    end
+
     columns = extract_columns(config)
     column_types = db_queries.fetch_column_types(columns)
 
@@ -67,6 +73,7 @@ class RedshiftMaskingJob < ApplicationJob
 
     expected = policy_builder.build_expected_state(column_types, db_users_set)
     actual = db_queries.fetch_existing_policies
+    actual = actual.select { |p| filter_set.include?(p.grantee.upcase) } if user_filter
 
     log_message(
       :info,

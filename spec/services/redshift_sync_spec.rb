@@ -193,7 +193,10 @@ RSpec.describe RedshiftSync do
       allow(sync).to receive(:create_system_user) { call_order << :create_system_user }
       allow(sync).to receive(:create_user_group) { call_order << :create_user_group }
       allow(sync).to receive(:drop_users) { call_order << :drop_users }
-      allow(sync).to receive(:create_users) { call_order << :create_users }
+      allow(sync).to receive(:create_users) do
+        call_order << :create_users
+        []
+      end
       allow(sync).to receive(:sync_user_group) { call_order << :sync_user_group }
 
       sync.sync
@@ -208,6 +211,58 @@ RSpec.describe RedshiftSync do
           :sync_user_group,
         ],
       )
+    end
+  end
+
+  describe '#sync masking policy application' do
+    before do
+      allow(sync).to receive(:create_lambda_user)
+      allow(sync).to receive(:create_system_user)
+      allow(sync).to receive(:create_user_group)
+      allow(sync).to receive(:drop_users)
+      allow(sync).to receive(:sync_user_group)
+    end
+
+    context 'when new users are created' do
+      let(:new_users) { ['IAM:john.doe'] }
+
+      before do
+        allow(sync).to receive(:create_users).and_return(new_users)
+      end
+
+      it 'calls RedshiftMaskingJob with the new users' do
+        expect(RedshiftMaskingJob).to receive(:perform_now).with(user_filter: new_users)
+        sync.sync
+      end
+    end
+
+    context 'when no new users are created' do
+      before do
+        allow(sync).to receive(:create_users).and_return([])
+      end
+
+      it 'does not call RedshiftMaskingJob' do
+        expect(RedshiftMaskingJob).not_to receive(:perform_now)
+        sync.sync
+      end
+    end
+
+    context 'when masking job raises an error' do
+      let(:new_users) { ['IAM:john.doe'] }
+
+      before do
+        allow(sync).to receive(:create_users).and_return(new_users)
+        allow(RedshiftMaskingJob).to receive(:perform_now).and_raise(StandardError, 'AWS error')
+      end
+
+      it 'does not raise an error' do
+        expect { sync.sync }.not_to raise_error
+      end
+
+      it 'logs a warning' do
+        expect(Rails.logger).to receive(:warn).with(a_string_matching(/masking policies/i))
+        sync.sync
+      end
     end
   end
 end

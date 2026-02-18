@@ -32,11 +32,13 @@ class RedshiftSync
     end
 
     drop_users
-    create_users
+    new_users = create_users
 
     user_groups.each do |user_group|
       sync_user_group(user_group)
     end
+
+    apply_masking_for_new_users(new_users) unless new_users.empty?
 
     Rails.logger.info('Redshift user sync completed successfully')
   end
@@ -266,16 +268,26 @@ class RedshiftSync
   def create_users
     Rails.logger.info('Creating new users')
 
+    newly_created = []
     user_sql = users_to_create(canonical_users, current_users).filter_map do |name|
       next if disallowed_characters?(name)
 
       Rails.logger.info("Creating user #{name}")
+      newly_created << name
       "CREATE USER \"#{name}\" WITH PASSWORD DISABLE SESSION TIMEOUT 900;"
     end
 
-    return if user_sql.empty?
+    return [] if user_sql.empty?
 
     execute_query(user_sql.join("\n"))
+    newly_created
+  end
+
+  def apply_masking_for_new_users(new_users)
+    Rails.logger.info("Applying masking policies for #{new_users.size} new user(s)")
+    RedshiftMaskingJob.perform_now(user_filter: new_users)
+  rescue StandardError => e
+    Rails.logger.warn("Failed to apply masking policies for new users: #{e.message}")
   end
 
   def create_lambda_user(user_name, schemas)
