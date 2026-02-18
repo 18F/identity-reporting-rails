@@ -9,13 +9,6 @@ require 'json'
 
 require_relative '../../config/environment'
 class RedshiftSync
-  attr_reader :config_file_path, :users_yaml_path
-
-  def initialize(users_yaml_path:, config_file_path: 'config/redshift_config.yaml')
-    @config_file_path = config_file_path
-    @users_yaml_path = users_yaml_path
-  end
-
   def sync
     Rails.logger.info('Starting Redshift user sync')
 
@@ -61,7 +54,7 @@ class RedshiftSync
   end
 
   def redshift_config
-    @redshift_config ||= YAML.safe_load(File.read(config_file_path))
+    @redshift_config ||= YAML.safe_load(File.read(redshift_config_path))
   end
 
   def users_yaml
@@ -76,6 +69,13 @@ class RedshiftSync
       )
       File.read(terraform_config_path)
     end
+  end
+
+  def users_yaml_path
+    @users_yaml ||= IdentityConfig.local_devops_path(
+      :identity_devops,
+      'terraform/master/global/users.yaml',
+    )
   end
 
   def interpolate_env_name(str)
@@ -105,7 +105,7 @@ class RedshiftSync
 
     flags_to_check = feature_flag.is_a?(Array) ? feature_flag : [feature_flag]
 
-    flags_to_check.all? do |flag|
+    flags_to_check.any? do |flag|
       config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m)
     end
   end

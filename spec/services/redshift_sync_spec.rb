@@ -1,8 +1,6 @@
 require 'rails_helper'
 
 RSpec.describe RedshiftSync do
-  let(:config_file_path) { '/path/to/redshift_config.yaml' }
-  let(:users_yaml_path) { '/path/to/users.yaml' }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
   let(:secrets_manager_client) { instance_double(Aws::SecretsManager::Client) }
 
@@ -62,11 +60,7 @@ RSpec.describe RedshiftSync do
     TERRAFORM
   end
 
-  subject(:sync) do
-    described_class.new(
-      config_file_path: config_file_path, users_yaml_path: users_yaml_path,
-    )
-  end
+  subject(:sync) { described_class.new }
 
   before do
     allow(sync).to receive(:redshift_config).and_return(test_redshift_config)
@@ -107,6 +101,18 @@ RSpec.describe RedshiftSync do
 
     it 'returns true when feature flag is nil' do
       expect(sync.send(:feature_enabled?, nil)).to be true
+    end
+
+    it 'returns true when any flag in a list is enabled' do
+      expect(
+        sync.send(:feature_enabled?, %w[redshift_quicksight_connector_enabled dbt_enabled]),
+      ).to be true
+    end
+
+    it 'returns false when no flags in a list are enabled' do
+      expect(
+        sync.send(:feature_enabled?, %w[redshift_quicksight_connector_enabled fraud_ops_tracker_enabled]),
+      ).to be false
     end
   end
 
