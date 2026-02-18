@@ -1,0 +1,284 @@
+---
+enabled_aws_groups:
+  prod:
+    - dwuser
+    - dwpoweruser
+    - dwadmin
+  sandbox:
+    - dwuser
+    - dwusernonprod
+    - dwpoweruser
+    - dwpowerusernonprod
+    - dwadmin
+    - dwadminnonprod
+
+user_groups:
+  - name: lg_users
+    aws_groups:
+      prod:
+        - dwuser
+      sandbox:
+        - dwuser
+        - dwusernonprod
+    schemas:
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        restricted_tables:
+          - unextracted_events
+          - unextracted_production
+      - schema_name: marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+
+  - name: lg_powerusers
+    aws_groups:
+      prod:
+        - dwpoweruser
+      sandbox:
+        - dwpoweruser
+        - dwpowerusernonprod
+    schemas:
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        restricted_tables:
+          - unextracted_events
+          - unextracted_production
+      - schema_name: marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+
+  - name: lg_admins
+    aws_groups:
+      prod:
+        - dwadmin
+      sandbox:
+        - dwadmin
+        - dwadminnonprod
+    schemas:
+      - schema_name: idp
+        schema_privileges: ALL PRIVILEGES
+        table_privileges: ALL PRIVILEGES
+      - schema_name: logs
+        schema_privileges: ALL PRIVILEGES
+        table_privileges: ALL PRIVILEGES
+      - schema_name: system_tables
+        schema_privileges: ALL PRIVILEGES
+        table_privileges: ALL PRIVILEGES
+      - schema_name: fraudops
+        schema_privileges: ALL PRIVILEGES
+        table_privileges: ALL PRIVILEGES
+      - schema_name: marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+      - schema_name: fraudops_qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+
+lambda_users:
+  - user_name: "IAMR:%{env_name}_db_consumption"
+    schemas:
+      - idp
+      - fraudops
+  - user_name: "IAMR:%{env_name}_log_consumption"
+    schemas:
+      - logs
+  - user_name: "IAMR:%{env_name}_stale_data_check"
+    schemas:
+      - idp
+      - logs
+
+system_users:
+  - user_name: security_audit
+    secret_id: "redshift/%{env_name}-analytics-security-audit"
+    schemas:
+      - schema_name: pg_catalog
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - pg_user
+      - schema_name: system_tables
+        schema_privileges: USAGE
+        table_privileges: SELECT
+
+  - user_name: pii_reader
+    syslog_access: true
+    secret_id: "redshift/%{env_name}-analytics-pii-reader"
+    feature_flag: dw_fraudops_email_enabled
+    schemas:
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: system_tables
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+      - schema_name: fraudops_qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+
+  - user_name: quicksight_connector
+    secret_id: "redshift/%{env_name}-analytics-quicksight-connector"
+    feature_flag: redshift_quicksight_connector_enabled
+    schemas:
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - events
+          - production
+      - schema_name: system_tables
+        schema_privileges: USAGE
+        table_privileges: SELECT
+
+  - user_name: idp_connector
+    secret_id: "redshift/%{env_name}-analytics-idp-connector"
+    feature_flag: redshift_idp_connector_enabled
+    schemas:
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - events
+          - production
+
+  - user_name: marts
+    secret_id: "redshift/%{env_name}-analytics-dbt-marts"
+    feature_flag: dbt_enabled
+    schemas:
+      - schema_name: pg_catalog
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: marts
+        schema_privileges: ALL PRIVILEGES
+        table_privileges: ALL PRIVILEGES
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - events
+          - production
+
+  - user_name: qa_marts
+    secret_id: "redshift/%{env_name}-analytics-dbt-qa_marts"
+    feature_flag: dbt_enabled
+    schemas:
+      - schema_name: pg_catalog
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: ALL PRIVILEGES
+        table_privileges: ALL PRIVILEGES
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - events
+          - production
+
+  - user_name: fraudops_marts
+    secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_marts"
+    feature_flag:
+      - fraud_ops_tracker_enabled
+      - dw_fraudops_email_enabled
+    schemas:
+      - schema_name: pg_catalog
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops_marts
+        schema_privileges: ALL PRIVILEGES
+        table_privileges: ALL PRIVILEGES
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - events
+          - production
+      - schema_name: fraudops
+        schema_privileges: USAGE
+        table_privileges: SELECT
+
+  - user_name: fraudops_qa_marts
+    secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_qa_marts"
+    feature_flag:
+      - fraud_ops_tracker_enabled
+      - dw_fraudops_email_enabled
+    schemas:
+      - schema_name: pg_catalog
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops_qa_marts
+        schema_privileges: ALL PRIVILEGES
+        table_privileges: ALL PRIVILEGES
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - events
+          - production
+      - schema_name: fraudops
+        schema_privileges: USAGE
+        table_privileges: SELECT
