@@ -111,7 +111,10 @@ RSpec.describe RedshiftSync do
 
     it 'returns false when no flags in a list are enabled' do
       expect(
-        sync.send(:feature_enabled?, %w[redshift_quicksight_connector_enabled fraud_ops_tracker_enabled]),
+        sync.send(
+          :feature_enabled?,
+          %w[redshift_quicksight_connector_enabled fraud_ops_tracker_enabled],
+        ),
       ).to be false
     end
   end
