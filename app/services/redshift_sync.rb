@@ -57,6 +57,10 @@ class RedshiftSync
     @redshift_config ||= YAML.safe_load(File.read(redshift_config_path))
   end
 
+  def redshift_config_path
+    Rails.root.join('config/redshift_config.yaml')
+  end
+
   def users_yaml
     @users_yaml ||= YAML.safe_load(File.read(users_yaml_path))['users']
   end
