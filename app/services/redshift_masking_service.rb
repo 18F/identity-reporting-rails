@@ -31,7 +31,7 @@ class RedshiftMaskingService
       data_controls, users_yaml,
       env_name: env_name
     )
-    db_queries = RedshiftMasking::DatabaseQueries.new(logger_adapter)
+    db_queries = RedshiftMasking::DatabaseQueries.new(Rails.logger)
 
     users = db_queries.fetch_users
     db_user_case_map = users.index_by { |u| u.upcase }
@@ -49,11 +49,11 @@ class RedshiftMaskingService
 
     user_resolver = RedshiftMasking::UserResolver.new(
       config, users_yaml, db_user_case_map,
-      logger_adapter
+      Rails.logger
     )
-    policy_builder = RedshiftMasking::PolicyBuilder.new(config, user_resolver, logger_adapter)
-    drift_detector = RedshiftMasking::DriftDetector.new(logger_adapter)
-    sql_executor = RedshiftMasking::SqlExecutor.new(config, logger_adapter)
+    policy_builder = RedshiftMasking::PolicyBuilder.new(config, user_resolver, Rails.logger)
+    drift_detector = RedshiftMasking::DriftDetector.new(Rails.logger)
+    sql_executor = RedshiftMasking::SqlExecutor.new(config, Rails.logger)
 
     sql_executor.create_masking_policies(column_types)
 
@@ -74,17 +74,6 @@ class RedshiftMaskingService
   def extract_columns(config)
     config.columns_config.flat_map do |entry|
       entry.keys.filter_map { |id| RedshiftMasking::Column.parse(id) }
-    end
-  end
-
-  def logger_adapter
-    @logger_adapter ||= Object.new.tap do |obj|
-      obj.define_singleton_method(:log_info)  { |msg| Rails.logger.info(msg) }
-      obj.define_singleton_method(:log_warn)  { |msg| Rails.logger.warn(msg) }
-      obj.define_singleton_method(:log_debug) { |msg| Rails.logger.debug(msg) }
-      obj.define_singleton_method(:info)  { |msg| Rails.logger.info(msg) }
-      obj.define_singleton_method(:warn)  { |msg| Rails.logger.warn(msg) }
-      obj.define_singleton_method(:debug) { |msg| Rails.logger.debug(msg) }
     end
   end
 end
