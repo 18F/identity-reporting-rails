@@ -1,69 +1,6 @@
 # frozen_string_literal: true
 
 module RedshiftMasking
-  # Represents a masking policy attachment to a database column for a specific grantee
-  class PolicyAttachment
-    attr_reader :policy_name, :schema, :table, :column, :grantee, :priority
-
-    def initialize(policy_name:, schema:, table:, column:, grantee:, priority:)
-      @policy_name = policy_name
-      @schema = schema
-      @table = table
-      @column = column
-      @grantee = grantee
-      @priority = priority
-    end
-
-    def key
-      "#{column_id}::#{grantee.upcase}"
-    end
-
-    def column_id
-      "#{schema}.#{table}.#{column}"
-    end
-
-    def matches?(other)
-      policy_name == other.policy_name && priority == other.priority
-    end
-
-    def to_h
-      {
-        policy_name: policy_name,
-        schema: schema,
-        table: table,
-        column: column,
-        grantee: grantee,
-        priority: priority,
-      }
-    end
-  end
-
-  # Represents a database column with schema, table, and column identifiers
-  class Column
-    attr_reader :schema, :table, :column
-
-    def initialize(schema:, table:, column:)
-      @schema = schema
-      @table = table
-      @column = column
-    end
-
-    def id
-      "#{schema}.#{table}.#{column}"
-    end
-
-    def to_h
-      { schema: schema, table: table, column: column }
-    end
-
-    def self.parse(identifier)
-      parts = identifier.split('.')
-      return nil unless parts.length == 3
-
-      new(schema: parts[0], table: parts[1], column: parts[2])
-    end
-  end
-
   # Manages masking policy configuration including user types, column permissions,
   # and policy templates
   class Configuration

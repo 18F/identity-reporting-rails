@@ -3,8 +3,11 @@
 require 'rails_helper'
 
 # Explicitly load RedshiftMasking classes for testing
-load Rails.root.join('app/services/redshift_masking/models.rb')
-load Rails.root.join('app/services/redshift_masking/database.rb')
+load Rails.root.join('app/services/redshift_masking/policy_attachment.rb')
+load Rails.root.join('app/services/redshift_masking/column.rb')
+load Rails.root.join('app/services/redshift_masking/configuration.rb')
+load Rails.root.join('app/services/redshift_masking/database_queries.rb')
+load Rails.root.join('app/services/redshift_masking/sql_executor.rb')
 load Rails.root.join('app/services/redshift_masking/user_resolver.rb')
 load Rails.root.join('app/services/redshift_masking/policy_builder.rb')
 load Rails.root.join('app/services/redshift_masking/drift_detector.rb')
