@@ -2,10 +2,12 @@
 
 require 'rails_helper'
 
-# Load RedshiftMasking classes (bypass Zeitwerk's single-constant-per-file expectation)
+# Explicitly load RedshiftMasking classes for testing
 load Rails.root.join('app/services/redshift_masking/models.rb')
 load Rails.root.join('app/services/redshift_masking/database.rb')
-load Rails.root.join('app/services/redshift_masking/core.rb')
+load Rails.root.join('app/services/redshift_masking/user_resolver.rb')
+load Rails.root.join('app/services/redshift_masking/policy_builder.rb')
+load Rails.root.join('app/services/redshift_masking/drift_detector.rb')
 
 RSpec.describe RedshiftMasking do
   describe RedshiftMasking::PolicyAttachment do

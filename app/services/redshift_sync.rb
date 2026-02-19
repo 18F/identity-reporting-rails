@@ -38,7 +38,7 @@ class RedshiftSync
       sync_user_group(user_group)
     end
 
-    apply_masking_for_new_users(new_users) unless new_users.empty?
+    apply_masking_for_new_users(new_users) if new_users.any?
 
     Rails.logger.info('Redshift user sync completed successfully')
   end
