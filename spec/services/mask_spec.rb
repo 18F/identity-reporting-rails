@@ -18,11 +18,11 @@ RSpec.describe RedshiftMasking do
     end
 
     describe '#key' do
-      it 'combines column_id and uppercased grantee' do
+      it 'combines column_id and upper-cased grantee' do
         expect(policy.key).to eq('public.users.ssn::IAM:ALICE')
       end
 
-      it 'uppercases grantee in key' do
+      it 'converts grantee to uppercase in key' do
         policy_lowercase = described_class.new(
           policy_name: 'test',
           schema: 's',
@@ -256,7 +256,8 @@ RSpec.describe RedshiftMasking do
         context 'with silent: false (default)' do
           it 'logs warning for mismatched policy' do
             expect(logger).to receive(:log_warn).with(
-              'MISMATCH: IAM:alice on public.users.ssn (Expected mask_public_users_ssn Priority 100)',
+              'MISMATCH: IAM:alice on public.users.ssn ' \
+              '(Expected mask_public_users_ssn Priority 100)',
             )
             detector.detect([expected_policy], [mismatched_actual], silent: false)
           end
@@ -364,6 +365,7 @@ RSpec.describe RedshiftMasking do
   end
 
   describe RedshiftMasking::Configuration do
+    # cSpell:ignore dwuser dwadmin
     let(:data_controls) do
       {
         'masking_policies' => {
@@ -448,15 +450,18 @@ RSpec.describe RedshiftMasking do
 
     describe '#policy_priority' do
       it 'returns priority for allowed permission' do
-        expect(config.policy_priority(RedshiftMasking::Configuration::PERMISSION_ALLOWED)).to eq(300)
+        permission = RedshiftMasking::Configuration::PERMISSION_ALLOWED
+        expect(config.policy_priority(permission)).to eq(300)
       end
 
       it 'returns priority for denied permission' do
-        expect(config.policy_priority(RedshiftMasking::Configuration::PERMISSION_DENIED)).to eq(200)
+        permission = RedshiftMasking::Configuration::PERMISSION_DENIED
+        expect(config.policy_priority(permission)).to eq(200)
       end
 
       it 'returns priority for masked permission' do
-        expect(config.policy_priority(RedshiftMasking::Configuration::PERMISSION_MASKED)).to eq(100)
+        permission = RedshiftMasking::Configuration::PERMISSION_MASKED
+        expect(config.policy_priority(permission)).to eq(100)
       end
     end
 

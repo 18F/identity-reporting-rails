@@ -166,7 +166,11 @@ RSpec.describe RedshiftMaskingJob, type: :job do
       end
 
       it 'detects drift between expected and actual policies' do
-        expect(drift_detector).to receive(:detect).with(expected_policies, actual_policies, silent: false)
+        expect(drift_detector).to receive(:detect).with(
+          expected_policies,
+          actual_policies,
+          silent: false,
+        )
         job.perform
       end
 
