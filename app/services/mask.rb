@@ -313,7 +313,7 @@ module RedshiftMasking
       if user_resolver.superuser_allowed?(permissions)
         build_per_user_policies(column_id, column, permissions, db_users)
       else
-        build_public_baseline_policies(column_id, column, permissions)
+        build_public_baseline_policies(column_id, column, permissions, db_users)
       end
     end
 
@@ -323,7 +323,7 @@ module RedshiftMasking
       Configuration::PERMISSION_TYPES.index_with { Set.new }
     end
 
-    def build_public_baseline_policies(column_id, column, permissions)
+    def build_public_baseline_policies(column_id, column, permissions, db_users)
       policies = [
         build_policy_entry(
           config.policy_name(Configuration::PERMISSION_MASKED, column_id),
@@ -338,13 +338,13 @@ module RedshiftMasking
       sets = apply_permission_precedence(resolve_permission_user_sets(permissions))
 
       policies += build_policy_entries_for_users(
-        sets[Configuration::PERMISSION_ALLOWED],
+        sets[Configuration::PERMISSION_ALLOWED] & db_users,
         Configuration::PERMISSION_ALLOWED,
         column_id,
         column,
       )
       policies += build_policy_entries_for_users(
-        sets[Configuration::PERMISSION_DENIED],
+        sets[Configuration::PERMISSION_DENIED] & db_users,
         Configuration::PERMISSION_DENIED,
         column_id,
         column,
