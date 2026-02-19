@@ -97,9 +97,9 @@ module RedshiftMasking
   # Executes SQL commands for creating masking policies and applying policy attachment corrections
   class SqlExecutor
     POLICY_USING_CLAUSES = {
-      Configuration::PERMISSION_MASKED => "('XXXX'::%<type>s)",
-      Configuration::PERMISSION_ALLOWED => '(value)',
-      Configuration::PERMISSION_DENIED => '(NULL::%<type>s)',
+      'masked' => "('XXXX'::%<type>s)",
+      'allowed' => '(value)',
+      'denied' => '(NULL::%<type>s)',
     }.freeze
 
     POLICY_TEMPLATES = POLICY_USING_CLAUSES.transform_values do |using_clause|
