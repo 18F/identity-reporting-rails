@@ -284,7 +284,7 @@ class RedshiftSync
   end
 
   def apply_masking_for_new_users(new_users)
-    Rails.logger.info("Applying masking policies for #{new_users.size} new user(s)")
+    Rails.logger.info("Applying masking policies for new user(s): #{new_users.join(', ')}")
     RedshiftMaskingJob.perform_now(user_filter: new_users)
   rescue StandardError => e
     Rails.logger.warn("Failed to apply masking policies for new users: #{e.message}")
@@ -509,28 +509,5 @@ class RedshiftSync
 end
 
 if $PROGRAM_NAME == __FILE__
-  basename = File.basename($PROGRAM_NAME)
-
-  optparse = OptionParser.new do |opts|
-    opts.banner = <<~EOM
-      usage: #{basename} [OPTIONS] CONFIG_YAML_FILE USERS_YAML_FILE
-    EOM
-  end
-
-  args = optparse.parse!
-
-  unless args.length == 2
-    warn optparse
-    abort
-  end
-
-  config_file_path = args[0]
-  users_yaml_path = args[1]
-
-  sync = RedshiftSync.new(
-    config_file_path: config_file_path,
-    users_yaml_path: users_yaml_path,
-  )
-
-  sync.sync
+  RedshiftSync.new.sync
 end
