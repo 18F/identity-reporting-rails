@@ -119,7 +119,7 @@ module RedshiftMasking
       logger.info('creating masking policies')
 
       sql_parts = column_types.flat_map do |column_id, data_type|
-        Configuration::PERMISSION_TYPES.map do |perm_type|
+        POLICY_TEMPLATES.keys.map do |perm_type|
           build_policy_sql(perm_type, column_id, data_type)
         end
       end
