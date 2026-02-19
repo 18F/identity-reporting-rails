@@ -225,13 +225,16 @@ RSpec.describe RedshiftSync do
 
     context 'when new users are created' do
       let(:new_users) { ['IAM:john.doe'] }
+      let(:masking_service) { instance_double(RedshiftMaskingService) }
 
       before do
         allow(sync).to receive(:create_users).and_return(new_users)
+        allow(RedshiftMaskingService).to receive(:new).and_return(masking_service)
+        allow(masking_service).to receive(:sync)
       end
 
-      it 'calls RedshiftMaskingJob with the new users' do
-        expect(RedshiftMaskingJob).to receive(:perform_now).with(user_filter: new_users)
+      it 'calls RedshiftMaskingService with the new users' do
+        expect(masking_service).to receive(:sync).with(user_filter: new_users)
         sync.sync
       end
     end
@@ -241,18 +244,20 @@ RSpec.describe RedshiftSync do
         allow(sync).to receive(:create_users).and_return([])
       end
 
-      it 'does not call RedshiftMaskingJob' do
-        expect(RedshiftMaskingJob).not_to receive(:perform_now)
+      it 'does not call RedshiftMaskingService' do
+        expect(RedshiftMaskingService).not_to receive(:new)
         sync.sync
       end
     end
 
-    context 'when masking job raises an error' do
+    context 'when masking service raises an error' do
       let(:new_users) { ['IAM:john.doe'] }
+      let(:masking_service) { instance_double(RedshiftMaskingService) }
 
       before do
         allow(sync).to receive(:create_users).and_return(new_users)
-        allow(RedshiftMaskingJob).to receive(:perform_now).and_raise(StandardError, 'AWS error')
+        allow(RedshiftMaskingService).to receive(:new).and_return(masking_service)
+        allow(masking_service).to receive(:sync).and_raise(StandardError, 'AWS error')
       end
 
       it 'does not raise an error' do
