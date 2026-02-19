@@ -37,6 +37,7 @@ module RedshiftMasking
         WHERE #{conditions}
       SQL
 
+      # brakeman:ignore SQLInjection - All values are properly quoted using connection.quote()
       connection.execute(sql).to_a.each_with_object({}) do |row, hash|
         key = "#{row['table_schema']}.#{row['table_name']}.#{row['column_name']}"
         hash[key] = normalize_data_type(
@@ -126,6 +127,7 @@ module RedshiftMasking
       sql = "#{sql_parts.join(";\n")};"
 
       logger.info("created/verified policies for #{column_types.size} columns")
+      # brakeman:ignore SQLInjection - Policy names/types sanitized via tr() and format() from config files
       connection.execute(sql)
     end
 
