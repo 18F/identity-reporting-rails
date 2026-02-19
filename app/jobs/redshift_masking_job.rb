@@ -80,7 +80,7 @@ class RedshiftMaskingJob < ApplicationJob
       "expected: #{expected.size} attachments, actual: #{actual.size} attachments", true
     )
 
-    drift = drift_detector.detect(expected, actual)
+    drift = drift_detector.detect(expected, actual, silent: user_filter.present?)
     sql_executor.apply_corrections(drift)
 
     log_message(:info, 'sync completed', true)

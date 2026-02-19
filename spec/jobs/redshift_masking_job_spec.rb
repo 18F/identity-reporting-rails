@@ -166,7 +166,7 @@ RSpec.describe RedshiftMaskingJob, type: :job do
       end
 
       it 'detects drift between expected and actual policies' do
-        expect(drift_detector).to receive(:detect).with(expected_policies, actual_policies)
+        expect(drift_detector).to receive(:detect).with(expected_policies, actual_policies, silent: false)
         job.perform
       end
 
@@ -254,6 +254,15 @@ RSpec.describe RedshiftMaskingJob, type: :job do
 
       it 'logs the number of users being filtered' do
         expect(Rails.logger).to receive(:info).with(a_string_matching(/filtering sync to/i))
+        job.perform(user_filter: [filtered_user])
+      end
+
+      it 'passes silent: true to drift detector to suppress warnings' do
+        expect(drift_detector).to receive(:detect).with(
+          anything,
+          anything,
+          silent: true,
+        )
         job.perform(user_filter: [filtered_user])
       end
     end
