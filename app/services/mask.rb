@@ -357,7 +357,12 @@ module RedshiftMasking
       implicitly_masked = user_resolver.find_implicitly_masked_users(sets, db_users)
 
       Configuration::PERMISSION_TYPES.flat_map do |type|
-        build_policy_entries_for_users(sets[type], type, column_id, column)
+        build_policy_entries_for_users(
+          sets[type].select { |u| db_users.include?(u.upcase) },
+          type,
+          column_id,
+          column,
+        )
       end + build_policy_entries_for_users(
         implicitly_masked,
         Configuration::PERMISSION_MASKED,
