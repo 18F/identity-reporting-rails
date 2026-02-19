@@ -338,13 +338,13 @@ module RedshiftMasking
       sets = apply_permission_precedence(resolve_permission_user_sets(permissions))
 
       policies += build_policy_entries_for_users(
-        sets[Configuration::PERMISSION_ALLOWED] & db_users,
+        sets[Configuration::PERMISSION_ALLOWED].select { |u| db_users.include?(u.upcase) },
         Configuration::PERMISSION_ALLOWED,
         column_id,
         column,
       )
       policies += build_policy_entries_for_users(
-        sets[Configuration::PERMISSION_DENIED] & db_users,
+        sets[Configuration::PERMISSION_DENIED].select { |u| db_users.include?(u.upcase) },
         Configuration::PERMISSION_DENIED,
         column_id,
         column,
