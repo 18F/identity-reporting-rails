@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 require 'rails_helper'
-require Rails.root.join('lib/common')
-require Rails.root.join('app/services/mask')
+
+# Load RedshiftMasking classes (bypass Zeitwerk's single-constant-per-file expectation)
+load Rails.root.join('app/services/redshift_masking/models.rb')
+load Rails.root.join('app/services/redshift_masking/database.rb')
+load Rails.root.join('app/services/redshift_masking/core.rb')
 
 RSpec.describe RedshiftMasking do
   describe RedshiftMasking::PolicyAttachment do
