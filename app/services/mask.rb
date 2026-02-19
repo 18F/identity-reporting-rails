@@ -440,7 +440,7 @@ module RedshiftMasking
           drift[:mismatched] << { expected: expected, actual: actual }
           logger.log_warn(
             "MISMATCH: #{expected.grantee} on #{expected.column_id} " \
-            "(Expected #{expected.policy_name} P#{expected.priority})",
+            "(Expected #{expected.policy_name} Priority #{expected.priority})",
           )
         end
       end
