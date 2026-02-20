@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_12_30_234345) do
+ActiveRecord::Schema[8.0].define(version: 2025_12_30_234345) do
   create_schema "fraudops"
   create_schema "idp"
   create_schema "logs"
@@ -19,7 +19,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_12_30_234345) do
   create_schema "system_tables"
 
   # These are extensions that must be enabled in order to support this database
-  enable_extension "plpgsql"
+  enable_extension "pg_catalog.plpgsql"
 
   create_table "decrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
     t.jsonb "message"
