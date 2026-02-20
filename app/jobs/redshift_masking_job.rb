@@ -9,6 +9,6 @@ class RedshiftMaskingJob < ApplicationJob
       return
     end
 
-    RedshiftMaskingService.new.sync(user_filter: user_filter)
+    RedshiftMaskingSync.new.sync(user_filter: user_filter)
   end
 end
