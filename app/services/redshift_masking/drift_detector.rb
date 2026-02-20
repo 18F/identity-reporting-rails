@@ -3,14 +3,8 @@
 module RedshiftMasking
   # Detects differences between expected and actual masking policy attachments
   class DriftDetector
-    attr_reader :logger
-
-    def initialize(logger)
-      @logger = logger
-    end
-
     def detect(expected_list, actual_list, silent: false)
-      logger.info('detecting drift in masking policies')
+      Rails.logger.info('detecting drift in masking policies')
 
       expected_map = expected_list.index_by(&:key)
       actual_map = actual_list.index_by(&:key)
@@ -31,12 +25,12 @@ module RedshiftMasking
         if actual.nil?
           drift[:missing] << expected
           unless silent
-            logger.warn("MISSING: #{expected.grantee} on #{expected.column_id}")
+            Rails.logger.warn("MISSING: #{expected.grantee} on #{expected.column_id}")
           end
         elsif !expected.matches?(actual)
           drift[:mismatched] << { expected: expected, actual: actual }
           unless silent
-            logger.warn(
+            Rails.logger.warn(
               "MISMATCH: #{expected.grantee} on #{expected.column_id} " \
               "(Expected #{expected.policy_name} Priority #{expected.priority})",
             )
@@ -49,7 +43,7 @@ module RedshiftMasking
       actual_map.each do |key, actual|
         unless expected_map.key?(key)
           drift[:extra] << actual
-          logger.warn("EXTRA: #{actual.grantee} on #{actual.column_id}") unless silent
+          Rails.logger.warn("EXTRA: #{actual.grantee} on #{actual.column_id}") unless silent
         end
       end
     end

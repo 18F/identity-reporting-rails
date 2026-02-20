@@ -3,7 +3,7 @@
 require 'yaml'
 
 # Service for syncing Redshift masking policies based on configuration files
-class RedshiftMaskingService
+class RedshiftMaskingSync
   DATA_CONTROLS_PATH = IdentityConfig.local_devops_path(
     :identity_devops,
     'bin/data-warehouse/mask.yaml',
@@ -51,9 +51,9 @@ class RedshiftMaskingService
       config, users_yaml, db_user_case_map,
       Rails.logger
     )
-    policy_builder = RedshiftMasking::PolicyBuilder.new(config, user_resolver, Rails.logger)
-    drift_detector = RedshiftMasking::DriftDetector.new(Rails.logger)
-    sql_executor = RedshiftMasking::SqlExecutor.new(config, Rails.logger)
+    policy_builder = RedshiftMasking::PolicyBuilder.new(config, user_resolver)
+    drift_detector = RedshiftMasking::DriftDetector.new
+    sql_executor = RedshiftMasking::SqlExecutor.new(config)
 
     sql_executor.create_masking_policies(column_types)
 

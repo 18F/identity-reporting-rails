@@ -2,16 +2,6 @@
 
 require 'rails_helper'
 
-# Explicitly load RedshiftMasking classes for testing
-load Rails.root.join('app/services/redshift_masking/policy_attachment.rb')
-load Rails.root.join('app/services/redshift_masking/column.rb')
-load Rails.root.join('app/services/redshift_masking/configuration.rb')
-load Rails.root.join('app/services/redshift_masking/database_queries.rb')
-load Rails.root.join('app/services/redshift_masking/sql_executor.rb')
-load Rails.root.join('app/services/redshift_masking/user_resolver.rb')
-load Rails.root.join('app/services/redshift_masking/policy_builder.rb')
-load Rails.root.join('app/services/redshift_masking/drift_detector.rb')
-
 RSpec.describe RedshiftMasking do
   describe RedshiftMasking::PolicyAttachment do
     let(:policy) do
@@ -146,8 +136,7 @@ RSpec.describe RedshiftMasking do
   end
 
   describe RedshiftMasking::DriftDetector do
-    let(:logger) { double('logger', info: nil, warn: nil, debug: nil) }
-    let(:detector) { described_class.new(logger) }
+    let(:detector) { described_class.new }
 
     let(:expected_policy) do
       RedshiftMasking::PolicyAttachment.new(
@@ -181,7 +170,7 @@ RSpec.describe RedshiftMasking do
         end
 
         it 'does not log any warnings' do
-          expect(logger).not_to receive(:warn)
+          expect(Rails.logger).not_to receive(:warn)
           detector.detect([expected_policy], [actual_policy])
         end
       end
@@ -194,7 +183,7 @@ RSpec.describe RedshiftMasking do
 
         context 'with silent: false (default)' do
           it 'logs warning for missing policy' do
-            expect(logger).to receive(:warn).with(
+            expect(Rails.logger).to receive(:warn).with(
               'MISSING: IAM:alice on public.users.ssn',
             )
             detector.detect([expected_policy], [], silent: false)
@@ -203,7 +192,7 @@ RSpec.describe RedshiftMasking do
 
         context 'with silent: true' do
           it 'does not log warning for missing policy' do
-            expect(logger).not_to receive(:warn)
+            expect(Rails.logger).not_to receive(:warn)
             detector.detect([expected_policy], [], silent: true)
           end
 
@@ -222,7 +211,7 @@ RSpec.describe RedshiftMasking do
 
         context 'with silent: false (default)' do
           it 'logs warning for extra policy' do
-            expect(logger).to receive(:warn).with(
+            expect(Rails.logger).to receive(:warn).with(
               'EXTRA: IAM:alice on public.users.ssn',
             )
             detector.detect([], [actual_policy], silent: false)
@@ -231,7 +220,7 @@ RSpec.describe RedshiftMasking do
 
         context 'with silent: true' do
           it 'does not log warning for extra policy' do
-            expect(logger).not_to receive(:warn)
+            expect(Rails.logger).not_to receive(:warn)
             detector.detect([], [actual_policy], silent: true)
           end
 
@@ -263,7 +252,7 @@ RSpec.describe RedshiftMasking do
 
         context 'with silent: false (default)' do
           it 'logs warning for mismatched policy' do
-            expect(logger).to receive(:warn).with(
+            expect(Rails.logger).to receive(:warn).with(
               'MISMATCH: IAM:alice on public.users.ssn ' \
               '(Expected mask_public_users_ssn Priority 100)',
             )
@@ -273,7 +262,7 @@ RSpec.describe RedshiftMasking do
 
         context 'with silent: true' do
           it 'does not log warning for mismatched policy' do
-            expect(logger).not_to receive(:warn)
+            expect(Rails.logger).not_to receive(:warn)
             detector.detect([expected_policy], [mismatched_actual], silent: true)
           end
 
@@ -344,7 +333,7 @@ RSpec.describe RedshiftMasking do
 
         context 'with silent: false' do
           it 'logs all warnings' do
-            expect(logger).to receive(:warn).exactly(3).times
+            expect(Rails.logger).to receive(:warn).exactly(3).times
             detector.detect(
               [missing_policy, mismatched_expected],
               [extra_policy, mismatched_actual],
@@ -355,7 +344,7 @@ RSpec.describe RedshiftMasking do
 
         context 'with silent: true' do
           it 'does not log any warnings' do
-            expect(logger).not_to receive(:warn)
+            expect(Rails.logger).not_to receive(:warn)
             detector.detect(
               [missing_policy, mismatched_expected],
               [extra_policy, mismatched_actual],
@@ -366,7 +355,7 @@ RSpec.describe RedshiftMasking do
       end
 
       it 'always logs info message about detecting drift' do
-        expect(logger).to receive(:info).with('detecting drift in masking policies')
+        expect(Rails.logger).to receive(:info).with('detecting drift in masking policies')
         detector.detect([expected_policy], [actual_policy])
       end
     end

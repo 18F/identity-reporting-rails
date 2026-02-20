@@ -4,12 +4,11 @@ module RedshiftMasking
   # Builds masking policy attachments for database columns based on configuration
   # and user permissions
   class PolicyBuilder
-    attr_reader :config, :user_resolver, :logger
+    attr_reader :config, :user_resolver
 
-    def initialize(config, user_resolver, logger)
+    def initialize(config, user_resolver)
       @config = config
       @user_resolver = user_resolver
-      @logger = logger
     end
 
     def build_expected_state(column_types, db_users)

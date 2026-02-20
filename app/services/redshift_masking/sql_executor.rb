@@ -14,17 +14,16 @@ module RedshiftMasking
       "CREATE MASKING POLICY %<name>s IF NOT EXISTS WITH(value %<type>s) USING #{using_clause}"
     end.freeze
 
-    attr_reader :config, :logger
+    attr_reader :config
 
-    def initialize(config, logger)
+    def initialize(config)
       @config = config
-      @logger = logger
     end
 
     def create_masking_policies(column_types)
       return if column_types.empty?
 
-      logger.info('creating masking policies')
+      Rails.logger.info('creating masking policies')
 
       sql_parts = column_types.flat_map do |column_id, data_type|
         POLICY_TEMPLATES.keys.map do |perm_type|
@@ -34,7 +33,7 @@ module RedshiftMasking
 
       sql = "#{sql_parts.join(";\n")};"
 
-      logger.info("created/verified policies for #{column_types.size} columns")
+      Rails.logger.info("created/verified policies for #{column_types.size} columns")
       # Safe: Policy names/types from config, sanitized via tr() and format()
       connection.execute(sql)
     end
@@ -43,7 +42,7 @@ module RedshiftMasking
       to_detach = drift[:extra] + drift[:mismatched].map { |m| m[:actual] }
       to_attach = drift[:missing] + drift[:mismatched].map { |m| m[:expected] }
 
-      return logger.info('no changes needed') if (to_detach + to_attach).empty?
+      return Rails.logger.info('no changes needed') if (to_detach + to_attach).empty?
 
       to_detach.each do |p|
         execute_correction(detach_sql(p), "Detaching #{p.policy_name} from #{p.grantee}")
@@ -68,11 +67,11 @@ module RedshiftMasking
     end
 
     def execute_correction(sql, description)
-      logger.info(description)
+      Rails.logger.info(description)
       connection.execute(sql)
     rescue ActiveRecord::StatementInvalid => e
-      logger.warn("Failed to apply correction: #{e.message}")
-      logger.debug("Failed SQL: #{sql}")
+      Rails.logger.warn("Failed to apply correction: #{e.message}")
+      Rails.logger.debug { "Failed SQL: #{sql}" }
     end
 
     def detach_sql(policy)
