@@ -49,8 +49,6 @@ module IdentityReporting
   end
 end
 
-puts "[Redshift Adapter] Registering 'redshift' adapter with ActiveRecord"
-
 ActiveRecord::ConnectionAdapters::Redshift::SchemaStatements.
   send(:prepend, IdentityReporting::SchemaStatementsOverride)
 ActiveRecord::ConnectionAdapters::Redshift::ColumnMethods.
