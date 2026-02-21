@@ -95,7 +95,7 @@ module RedshiftMasking
     def quote_grantee(grantee)
       return 'PUBLIC' if grantee.upcase == 'PUBLIC'
 
-      connection.quote_table_name(grantee)
+      connection.quote_column_name(grantee)
     end
   end
 end
