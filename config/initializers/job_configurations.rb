@@ -82,7 +82,7 @@ else
       # Sync Redshift masking policies
       redshift_masking_job: {
         class: 'RedshiftMaskingJob',
-        cron: cron_1d,
+        cron: cron_5m,
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
