@@ -1,0 +1,51 @@
+{
+  "ignored_warnings": [
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "a603d062362b26fc418c957776cee64f177264ffe2ccfc82362478efb5ae2c92",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/redshift_masking/database_queries.rb",
+      "line": 41,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "connection.execute(\"SELECT table_schema, table_name, column_name, data_type, character_maximum_length\\nFROM information_schema.columns\\nWHERE #{columns.map do\n \"(table_schema = #{connection.quote(col.schema)} AND table_name = #{connection.quote(col.table)} AND column_name = #{connection.quote(col.column)})\"\n end.join(\"\\n OR \")}\\n\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "RedshiftMasking::DatabaseQueries",
+        "method": "fetch_column_types"
+      },
+      "user_input": "columns.map do\n \"(table_schema = #{connection.quote(col.schema)} AND table_name = #{connection.quote(col.table)} AND column_name = #{connection.quote(col.column)})\"\n end.join(\"\\n OR \")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": ""
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "f484d00b78f7bf680b72321f5121683f6c093b267aae19cb334262d3c6432edf",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/redshift_masking/sql_executor.rb",
+      "line": 38,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "connection.execute(\"#{column_types.flat_map do\n POLICY_TEMPLATES.keys.map do\n build_policy_sql(perm_type, column_id, data_type)\n end\n end.join(\";\\n\")};\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "RedshiftMasking::SqlExecutor",
+        "method": "create_masking_policies"
+      },
+      "user_input": "column_types.flat_map do\n POLICY_TEMPLATES.keys.map do\n build_policy_sql(perm_type, column_id, data_type)\n end\n end.join(\";\\n\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": ""
+    }
+  ],
+  "brakeman_version": "7.0.0"
+}

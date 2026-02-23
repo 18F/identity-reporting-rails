@@ -79,6 +79,11 @@ else
         class: 'PiiRetentionEnforcementJob',
         cron: cron_1d_morning,
       },
+      # Sync Redshift masking policies
+      redshift_masking_job: {
+        class: 'RedshiftMaskingJob',
+        cron: cron_5m,
+      },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
   end
