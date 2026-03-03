@@ -553,4 +553,207 @@ RSpec.describe RedshiftSchemaUpdater do
       end
     end
   end
+
+  describe '#update_existing_table logging' do
+    let(:table_name) { 'idp.test_table' }
+    let(:existing_columns) do
+      [
+        { 'name' => 'id', 'datatype' => 'integer' },
+        { 'name' => 'name', 'datatype' => 'string' },
+        { 'name' => 'old_column', 'datatype' => 'string' },
+      ]
+    end
+    let(:new_columns) do
+      [
+        { 'name' => 'id', 'datatype' => 'integer' },
+        { 'name' => 'name', 'datatype' => 'string', 'limit' => 200 },
+        { 'name' => 'email', 'datatype' => 'string' },
+      ]
+    end
+    let(:foreign_keys) { [] }
+    let(:primary_key) { 'id' }
+
+    before do
+      allow(redshift_schema_updater).to receive(:log_info)
+      allow(redshift_schema_updater).to receive(:log_error)
+      allow(redshift_schema_updater).to receive(:log_warning)
+
+      redshift_schema_updater.create_table(table_name, existing_columns, primary_key, foreign_keys)
+    end
+
+    context 'when updating table successfully' do
+      it 'logs startup information with table name and columns' do
+        redshift_schema_updater.send(:update_existing_table, table_name, new_columns)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with("Starting update for existing table: #{table_name}")
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Current columns in table:/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Columns from YAML config:/))
+      end
+
+      it 'logs per-column processing information' do
+        redshift_schema_updater.send(:update_existing_table, table_name, new_columns)
+
+        new_columns.each do |column|
+          expect(redshift_schema_updater).to have_received(:log_info).
+            with(match(/Processing column: #{column['name']}/))
+        end
+      end
+
+      it 'logs when adding new columns' do
+        redshift_schema_updater.send(:update_existing_table, table_name, new_columns)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with('Action: Adding new column')
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with("Column 'email' added successfully")
+      end
+
+      it 'logs when removing columns not in YAML config' do
+        redshift_schema_updater.send(:update_existing_table, table_name, new_columns)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Marking column for removal: old_column/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with("Column 'old_column' removed successfully")
+      end
+
+      it 'logs when updating VARCHAR length' do
+        redshift_schema_updater.send(:update_existing_table, table_name, new_columns)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Action: Updating VARCHAR length/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with('VARCHAR length updated successfully')
+      end
+
+      it 'logs when column matches config and no update needed' do
+        columns_no_changes = [{ 'name' => 'id', 'datatype' => 'integer' }]
+
+        redshift_schema_updater.send(:update_existing_table, table_name, columns_no_changes)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with('Action: No updates needed (column matches config)')
+      end
+
+      it 'logs success summary with column counts' do
+        redshift_schema_updater.send(:update_existing_table, table_name, new_columns)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Successfully updated table '#{table_name}'/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Configured columns: \d+, Removed: \d+/))
+      end
+
+      it 'logs that foreign and primary keys are not processed' do
+        redshift_schema_updater.send(:update_existing_table, table_name, new_columns)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with('Foreign keys and Primary_keys are not processed')
+      end
+    end
+
+    context 'when data type needs to be updated' do
+      let(:columns_with_type_change) do
+        [
+          { 'name' => 'id', 'datatype' => 'integer' },
+          { 'name' => 'name', 'datatype' => 'integer' },
+        ]
+      end
+
+      before do
+        # Mock the actual operations to test only the logging
+        allow(redshift_schema_updater).to receive(:rename_column).and_return(true)
+        allow(redshift_schema_updater).to receive(:add_column).and_call_original
+        allow(redshift_schema_updater).to receive(:backfill_column).and_return(true)
+        allow(redshift_schema_updater).to receive(:remove_column).and_call_original
+      end
+
+      it 'logs data type comparison and update action' do
+        redshift_schema_updater.send(:update_existing_table, table_name, columns_with_type_change)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Current types:.*Mapped type:/)).at_least(:once)
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Action: Updating data type to integer/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with('Data type updated successfully')
+      end
+    end
+
+    context 'when timestamp columns need to be added' do
+      let(:table_without_timestamps) { 'idp.test_table_no_ts' }
+      let(:columns_minimal) { [{ 'name' => 'id', 'datatype' => 'integer' }] }
+
+      before do
+        DataWarehouseApplicationRecord.connection.execute(
+          "CREATE TABLE #{table_without_timestamps} (id INTEGER)",
+        )
+      end
+
+      it 'logs adding timestamp columns' do
+        redshift_schema_updater.send(
+          :update_existing_table, table_without_timestamps,
+          columns_minimal
+        )
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Adding timestamp column: dw_created_at/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with("Timestamp column 'dw_created_at' added successfully")
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Adding timestamp column: dw_updated_at/))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with("Timestamp column 'dw_updated_at' added successfully")
+      end
+    end
+
+    context 'when an error occurs during update' do
+      let(:columns_invalid) do
+        [{ 'name' => 'invalid_col', 'datatype' => 'invalid_type' }]
+      end
+
+      before do
+        allow(redshift_schema_updater).to receive(:add_column).
+          and_raise(StandardError.new('Test error'))
+      end
+
+      it 'logs detailed error information with exception class and message' do
+        expect do
+          redshift_schema_updater.send(:update_existing_table, table_name, columns_invalid)
+        end.to raise_error(StandardError)
+
+        expect(redshift_schema_updater).to have_received(:log_error).
+          with("FAILED: Error updating existing table '#{table_name}'")
+        expect(redshift_schema_updater).to have_received(:log_error).
+          with('Exception: StandardError')
+        expect(redshift_schema_updater).to have_received(:log_error).
+          with('Message: Test error')
+      end
+
+      it 're-raises the exception after logging' do
+        expect do
+          redshift_schema_updater.send(:update_existing_table, table_name, columns_invalid)
+        end.to raise_error(StandardError, 'Test error')
+      end
+    end
+
+    context 'when processing string columns with limits' do
+      let(:columns_with_limits) do
+        [
+          { 'name' => 'id', 'datatype' => 'integer' },
+          { 'name' => 'name', 'datatype' => 'string', 'limit' => 150 },
+        ]
+      end
+
+      it 'logs current and configured limits for string columns' do
+        redshift_schema_updater.send(:update_existing_table, table_name, columns_with_limits)
+
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Current limit:.*Configured limit:/))
+      end
+    end
+  end
 end

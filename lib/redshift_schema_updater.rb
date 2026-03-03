@@ -165,7 +165,7 @@ class RedshiftSchemaUpdater
       end
 
       if !column_exists
-        log_info("Action: Adding new column")
+        log_info('Action: Adding new column')
         add_column(
           table_name,
           config_column_name,
@@ -177,7 +177,7 @@ class RedshiftSchemaUpdater
         # Redshift supports altering the length of a VARCHAR column in place.
         log_info("Action: Updating VARCHAR length from #{datatype_metadata.limit} to #{config_column_options[:limit]}")
         update_varchar_length(table_name, config_column_name, config_column_options[:limit])
-        log_info("VARCHAR length updated successfully")
+        log_info('VARCHAR length updated successfully')
       elsif data_type_requires_update
         # Redshift does not support altering data type in place. Therefore, dropping
         # the column and adding it back with the new data type is required.
@@ -186,9 +186,9 @@ class RedshiftSchemaUpdater
           table_name, config_column_name, config_column_data_type,
           config_column_options
         )
-        log_info("Data type updated successfully")
+        log_info('Data type updated successfully')
       else
-        log_info("Action: No updates needed (column matches config)")
+        log_info('Action: No updates needed (column matches config)')
       end
     end
     # rubocop:enable Metrics/BlockLength
@@ -224,13 +224,11 @@ class RedshiftSchemaUpdater
     end
 
     log_info("Successfully updated table '#{table_name}' (Configured columns: #{columns.count}, Removed: #{columns_to_remove.count})")
-    log_info("Foreign keys and Primary_keys are not processed")
+    log_info('Foreign keys and Primary_keys are not processed')
   rescue StandardError => e
     log_error("FAILED: Error updating existing table '#{table_name}'")
     log_error("Exception: #{e.class}")
     log_error("Message: #{e.message}")
-    log_error("Backtrace (first 10 lines):")
-    e.backtrace.first(10).each { |line| log_error("#{line}") }
     raise e
   end
 
@@ -336,7 +334,7 @@ class RedshiftSchemaUpdater
         foreign_key_column,
       )
     end
-    log_info("Foreign keys processed successfully")
+    log_info('Foreign keys processed successfully')
   rescue StandardError => e
     log_error("Error processing foreign keys: #{e.message}")
     raise e
