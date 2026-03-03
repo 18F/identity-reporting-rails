@@ -146,7 +146,10 @@ class RedshiftSchemaUpdater
       config_column_options = get_config_column_options(column_info)
       column_exists = existing_columns.include?(config_column_name)
 
-      log_info("Processing column: #{config_column_name} (datatype: #{config_column_data_type}, exists: #{column_exists})")
+      log_info(
+        "Processing column: #{config_column_name}
+      (datatype: #{config_column_data_type}, exists: #{column_exists})",
+      )
 
       if column_exists
         current_dw_data_types = [
@@ -160,8 +163,16 @@ class RedshiftSchemaUpdater
         limit_changed = datatype_metadata.limit != config_column_options[:limit]
         varchar_requires_update = is_string_data_type && limit_changed
 
-        log_info("Current types: #{current_dw_data_types.join(', ')}, Mapped type: #{redshift_data_type(config_column_data_type)}")
-        log_info("Current limit: #{datatype_metadata.limit}, Configured limit: #{config_column_options[:limit]}") if is_string_data_type
+        log_info(
+          "Current types: #{current_dw_data_types.join(', ')},
+          Mapped type: #{redshift_data_type(config_column_data_type)}",
+        )
+        if is_string_data_type
+          log_info(
+            "Current limit: #{datatype_metadata.limit},
+            Configured limit: #{config_column_options[:limit]}",
+          )
+        end
       end
 
       if !column_exists
@@ -175,7 +186,10 @@ class RedshiftSchemaUpdater
         log_info("Column '#{config_column_name}' added successfully")
       elsif varchar_requires_update
         # Redshift supports altering the length of a VARCHAR column in place.
-        log_info("Action: Updating VARCHAR length from #{datatype_metadata.limit} to #{config_column_options[:limit]}")
+        log_info(
+          "Action: Updating VARCHAR length from
+          #{datatype_metadata.limit} to #{config_column_options[:limit]}",
+        )
         update_varchar_length(table_name, config_column_name, config_column_options[:limit])
         log_info('VARCHAR length updated successfully')
       elsif data_type_requires_update
@@ -223,7 +237,10 @@ class RedshiftSchemaUpdater
       end
     end
 
-    log_info("Successfully updated table '#{table_name}' (Configured columns: #{columns.count}, Removed: #{columns_to_remove.count})")
+    log_info(
+      "Successfully updated table '#{table_name}' (Configured columns: #{columns.count},
+      Removed: #{columns_to_remove.count})",
+    )
     log_info('Foreign keys and Primary_keys are not processed')
   rescue StandardError => e
     log_error("FAILED: Error updating existing table '#{table_name}'")

@@ -644,7 +644,9 @@ RSpec.describe RedshiftSchemaUpdater do
         expect(redshift_schema_updater).to have_received(:log_info).
           with(match(/Successfully updated table '#{table_name}'/))
         expect(redshift_schema_updater).to have_received(:log_info).
-          with(match(/Configured columns: \d+, Removed: \d+/))
+          with(match(/Configured columns: \d+/m))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Removed: \d+/m))
       end
 
       it 'logs that foreign and primary keys are not processed' do
@@ -675,7 +677,9 @@ RSpec.describe RedshiftSchemaUpdater do
         redshift_schema_updater.send(:update_existing_table, table_name, columns_with_type_change)
 
         expect(redshift_schema_updater).to have_received(:log_info).
-          with(match(/Current types:.*Mapped type:/)).at_least(:once)
+          with(match(/Current types:/m)).at_least(:once)
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Mapped type:/m)).at_least(:once)
         expect(redshift_schema_updater).to have_received(:log_info).
           with(match(/Action: Updating data type to integer/))
         expect(redshift_schema_updater).to have_received(:log_info).
@@ -752,7 +756,9 @@ RSpec.describe RedshiftSchemaUpdater do
         redshift_schema_updater.send(:update_existing_table, table_name, columns_with_limits)
 
         expect(redshift_schema_updater).to have_received(:log_info).
-          with(match(/Current limit:.*Configured limit:/))
+          with(match(/Current limit:/m))
+        expect(redshift_schema_updater).to have_received(:log_info).
+          with(match(/Configured limit:/m))
       end
     end
   end
