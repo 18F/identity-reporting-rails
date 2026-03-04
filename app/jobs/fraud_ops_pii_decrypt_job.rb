@@ -36,7 +36,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
   def fetch_encrypted_events(limit:)
     query = <<~SQL.squish
       SELECT event_key, message
-      FROM fraudops.encrypted_events
+      FROM fraudops.frd_encrypted_events
       WHERE processed_timestamp IS NULL
       ORDER BY event_key
       LIMIT ?
@@ -103,7 +103,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     end
 
     insert_sql = <<~SQL.squish
-      INSERT INTO fraudops.decrypted_events (event_key, message, import_timestamp)
+      INSERT INTO fraudops.frd_events (event_key, message, import_timestamp)
       VALUES #{placeholders}
     SQL
 
@@ -118,7 +118,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
 
     placeholders = (['?'] * event_ids.size).join(', ')
     update_sql = <<~SQL.squish
-      UPDATE fraudops.encrypted_events
+      UPDATE fraudops.frd_encrypted_events
       SET processed_timestamp = CURRENT_TIMESTAMP
       WHERE event_key IN (#{placeholders})
     SQL
