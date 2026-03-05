@@ -18,7 +18,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
     end
 
     @schema_name = 'fraudops'
-    @target_table_name = 'encrypted_events'
+    @target_table_name = 'frd_encrypted_events'
     @redis_client = FraudOps::RedisClient.new
     log_message(:info, 'Job started.', true)
 
@@ -136,17 +136,41 @@ class IdvRedisToRedshiftJob < ApplicationJob
   end
 
   def merge_temp_with_target_query
-    format(<<~SQL, build_params)
-      MERGE INTO %{schema_name}.%{target_table_name}
-      USING %{source_table_name_temp} source
-      ON %{schema_name}.%{target_table_name}.event_key = source.event_key
-      AND %{schema_name}.%{target_table_name}.partition_dt = source.partition_dt
-      WHEN MATCHED THEN
-        UPDATE SET message = source.message
-      WHEN NOT MATCHED THEN
-        INSERT (event_key, message, partition_dt, import_timestamp)
-        VALUES (source.event_key, source.message, source.partition_dt, CURRENT_TIMESTAMP)
-      ;
-    SQL
+    if using_redshift_adapter?
+      # Redshift-specific MERGE syntax
+      format(<<~SQL, build_params)
+        MERGE INTO %{schema_name}.%{target_table_name}
+        USING %{source_table_name_temp} source
+        ON %{schema_name}.%{target_table_name}.event_key = source.event_key
+        AND %{schema_name}.%{target_table_name}.partition_dt = source.partition_dt
+        WHEN MATCHED THEN
+          UPDATE SET message = source.message
+        WHEN NOT MATCHED THEN
+          INSERT (event_key, message, partition_dt, import_timestamp)
+          VALUES (source.event_key, source.message, source.partition_dt, CURRENT_TIMESTAMP)
+        ;
+      SQL
+    else
+      # PostgreSQL-specific INSERT ON CONFLICT syntax
+      # event_key is the primary key, so we conflict on that
+      format(<<~SQL, build_params)
+        INSERT INTO %{schema_name}.%{target_table_name}
+          (event_key, message, partition_dt, import_timestamp)
+        SELECT
+          source.event_key,
+          source.message,
+          source.partition_dt,
+          CURRENT_TIMESTAMP
+        FROM %{source_table_name_temp} source
+        ON CONFLICT (event_key)
+        DO UPDATE SET
+          message = EXCLUDED.message,
+          partition_dt = EXCLUDED.partition_dt;
+      SQL
+    end
+  end
+
+  def using_redshift_adapter?
+    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
   end
 end
