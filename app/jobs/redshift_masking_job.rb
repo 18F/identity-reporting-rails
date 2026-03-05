@@ -4,7 +4,8 @@ class RedshiftMaskingJob < ApplicationJob
   queue_as :default
 
   def perform(user_filter: nil)
-    unless IdentityConfig.store.fraud_ops_tracker_enabled || IdentityConfig.store.dw_fraudops_email_enabled
+    unless IdentityConfig.store.fraud_ops_tracker_enabled ||
+           IdentityConfig.store.dw_fraudops_email_enabled
       Rails.logger.info('RedshiftMasking job is disabled, skipping')
       return
     end
