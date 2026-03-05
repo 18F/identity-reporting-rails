@@ -47,6 +47,7 @@ class IdentityConfig
     config.add(:database_worker_jobs_password, type: :string)
     config.add(:database_worker_jobs_sslmode, type: :string)
     config.add(:database_worker_jobs_username, type: :string)
+    config.add(:extractor_row_checker_enqueue_cron, type: :string)
     config.add(:good_job_max_threads, type: :integer)
     config.add(:good_job_queue_select_limit, type: :integer)
     config.add(:good_job_queues, type: :string)
