@@ -49,6 +49,7 @@ test:
     user: <%= ENV['POSTGRES_USER'] %>
     password: <%= ENV['POSTGRES_PASSWORD'] %>
     migrations_paths: db/primary_migrate
+    schema_dump: false
   read_replica:
     <<: *test
     adapter: postgresql
@@ -132,3 +133,4 @@ production:
     password: "<%= Identity::Hostdata.config.redshift_password %>"
     encoding: utf8
     migrations_paths: db/data_warehouse_migrate
+    schema_dump: false

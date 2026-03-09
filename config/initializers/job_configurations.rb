@@ -1,4 +1,5 @@
 cron_30m = '*/30 * * * *'
+cron_15m = '*/15 * * * *'
 cron_5m = '0/5 * * * *'
 # cron_10m = '0/10 * * * *'
 cron_1d = '0 6 * * *' # 6:00am UTC or 2:00am EST
@@ -83,6 +84,11 @@ else
       redshift_masking_job: {
         class: 'RedshiftMaskingJob',
         cron: cron_5m,
+      },
+      # Sync Redshift users - runs every 15 minutes
+      redshift_sync_job: {
+        class: 'RedshiftSyncJob',
+        cron: cron_15m,
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
