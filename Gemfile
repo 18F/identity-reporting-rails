@@ -12,7 +12,7 @@ gem 'identity-hostdata', github: '18F/identity-hostdata', tag: 'v4.4.2'
 gem 'identity-logging', github: '18F/identity-logging', tag: 'v0.1.1'
 gem 'identity_validations', github: '18F/identity-validations', tag: 'v0.7.2'
 gem 'puma', '~> 6.0'
-gem 'pg', '1.5.9'
+gem 'pg', '1.5.9' # Pinned to maintain redshift compatiblity < pgsql 10
 gem 'rack', '~> 3.1.12'
 gem 'redacted_struct'
 gem 'tzinfo-data', platforms: %i[ windows jruby ]
