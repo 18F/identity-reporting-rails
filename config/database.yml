@@ -49,6 +49,7 @@ test:
     user: <%= ENV['POSTGRES_USER'] %>
     password: <%= ENV['POSTGRES_PASSWORD'] %>
     migrations_paths: db/primary_migrate
+    schema_dump: false
   read_replica:
     <<: *test
     adapter: postgresql
