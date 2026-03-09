@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_12_30_234345) do
+ActiveRecord::Schema[8.0].define(version: 2026_03_04_220235) do
   create_schema "fraudops"
   create_schema "idp"
   create_schema "logs"
@@ -20,18 +20,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_30_234345) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
-
-  create_table "decrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
-    t.jsonb "message"
-    t.datetime "import_timestamp", precision: nil
-  end
-
-  create_table "encrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
-    t.string "message", limit: 65535
-    t.date "partition_dt"
-    t.datetime "processed_timestamp", precision: nil
-    t.datetime "import_timestamp", precision: nil
-  end
 
   create_table "events", id: false, force: :cascade do |t|
     t.jsonb "message"
@@ -62,6 +50,18 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_30_234345) do
     t.boolean "browser_mobile"
     t.boolean "browser_bot"
     t.boolean "success"
+  end
+
+  create_table "frd_encrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
+    t.string "message", limit: 65535
+    t.date "partition_dt"
+    t.datetime "processed_timestamp", precision: nil
+    t.datetime "import_timestamp", precision: nil
+  end
+
+  create_table "frd_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
+    t.jsonb "message"
+    t.datetime "import_timestamp", precision: nil
   end
 
   create_table "production", id: false, force: :cascade do |t|
