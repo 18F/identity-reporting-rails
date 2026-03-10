@@ -225,13 +225,11 @@ class LogsColumnExtractorJob < ApplicationJob
           ;
       SQL
     else
-      # PostgreSQL-specific INSERT ON CONFLICT syntax
       format(<<~SQL, build_params)
         INSERT INTO %{schema_name}.%{target_table_name}
           (#{vars[:insert_columns]})
         SELECT #{vars[:insert_values]}
-        FROM %{source_table_name_temp}
-        #{conflict_update_set};
+        FROM %{source_table_name_temp};
       SQL
     end
   end
@@ -268,17 +266,6 @@ class LogsColumnExtractorJob < ApplicationJob
       merge_temp_with_target_query,
       drop_merged_records_from_source_table_query,
     ]
-  end
-
-  def conflict_update_set
-    match_column_mappings = @column_map.map do |c|
-      "#{c[:column]} = EXCLUDED.#{c[:column]}"
-    end.join(' ,')
-    <<~SQL.chomp
-      ON CONFLICT (#{@merge_key})
-      DO UPDATE SET
-          message = EXCLUDED.message ,cloudwatch_timestamp = EXCLUDED.cloudwatch_timestamp ,#{match_column_mappings}
-    SQL
   end
 
   def source_table_count_query
