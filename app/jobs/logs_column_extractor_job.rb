@@ -210,18 +210,30 @@ class LogsColumnExtractorJob < ApplicationJob
     @source_table_name_temp = "#{@source_table_name}_temp"
     vars = build_merge_variables(@source_table_name_temp, @column_map)
 
-    format(<<~SQL, build_params)
-      MERGE INTO %{schema_name}.%{target_table_name}
-      USING %{source_table_name_temp}
-      ON %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
-      WHEN MATCHED THEN
-        UPDATE SET
-          #{vars[:update_set]}
-      WHEN NOT MATCHED THEN
-        INSERT (#{vars[:insert_columns]})
-        VALUES (#{vars[:insert_values]} )
-        ;
-    SQL
+    if using_redshift_adapter?
+      # Redshift-specific MERGE syntax
+      format(<<~SQL, build_params)
+        MERGE INTO %{schema_name}.%{target_table_name}
+        USING %{source_table_name_temp}
+        ON %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
+        WHEN MATCHED THEN
+          UPDATE SET
+            #{vars[:update_set]}
+        WHEN NOT MATCHED THEN
+          INSERT (#{vars[:insert_columns]})
+          VALUES (#{vars[:insert_values]} )
+          ;
+      SQL
+    else
+      # PostgreSQL-specific INSERT ON CONFLICT syntax
+      format(<<~SQL, build_params)
+        INSERT INTO %{schema_name}.%{target_table_name}
+          (#{vars[:insert_columns]})
+        SELECT #{vars[:insert_values]}
+        FROM %{source_table_name_temp}
+        #{conflict_update_set};
+      SQL
+    end
   end
 
   def drop_merged_records_from_source_table_query
@@ -323,5 +335,9 @@ class LogsColumnExtractorJob < ApplicationJob
       end
       keep_parenthesis ? final_key : final_key[1..-2]
     end
+  end
+
+  def using_redshift_adapter?
+    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
   end
 end
