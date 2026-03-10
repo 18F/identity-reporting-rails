@@ -8,7 +8,7 @@ RSpec.describe Reports::BaseReport do
   describe '#generate_s3_paths' do
     let(:name) { 'test-report' }
     let(:extension) { 'json' }
-    let(:now) { Time.zone.parse('2026-02-12T12:00:00Z') }
+    let(:now) { Time.zone.local(2026, 2, 12, 12, 0, 0) }
     let(:host_data_env) { 'prod' }
 
     before do
