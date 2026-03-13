@@ -135,12 +135,21 @@ class RedshiftSchemaUpdater
     columns_objs = DataWarehouseApplicationRecord.connection.columns(table_name)
     existing_columns = columns_objs.map(&:name)
 
+    log_info("Starting update for existing table: #{table_name}")
+    log_info("Current columns in table: #{existing_columns.join(', ')}")
+    log_info("Columns from YAML config: #{columns.map { |c| c['name'] }.join(', ')}")
+
     # rubocop:disable Metrics/BlockLength
     columns.each do |column_info|
       config_column_name, config_column_data_type = column_info.values_at('name', 'datatype')
       datatype_metadata = columns_objs.find { |x| x.name == config_column_name }
       config_column_options = get_config_column_options(column_info)
       column_exists = existing_columns.include?(config_column_name)
+
+      log_info(
+        "Processing column: #{config_column_name}
+      (datatype: #{config_column_data_type}, exists: #{column_exists})",
+      )
 
       if column_exists
         current_dw_data_types = [
@@ -153,25 +162,47 @@ class RedshiftSchemaUpdater
         is_string_data_type = (current_dw_data_types & ['string', 'text']).any?
         limit_changed = datatype_metadata.limit != config_column_options[:limit]
         varchar_requires_update = is_string_data_type && limit_changed
+
+        log_info(
+          "Current types: #{current_dw_data_types.join(', ')},
+          Mapped type: #{redshift_data_type(config_column_data_type)}",
+        )
+        if is_string_data_type
+          log_info(
+            "Current limit: #{datatype_metadata.limit},
+            Configured limit: #{config_column_options[:limit]}",
+          )
+        end
       end
 
       if !column_exists
+        log_info('Action: Adding new column')
         add_column(
           table_name,
           config_column_name,
           config_column_data_type,
           config_column_options,
         )
+        log_info("Column '#{config_column_name}' added successfully")
       elsif varchar_requires_update
         # Redshift supports altering the length of a VARCHAR column in place.
+        log_info(
+          "Action: Updating VARCHAR length from
+          #{datatype_metadata.limit} to #{config_column_options[:limit]}",
+        )
         update_varchar_length(table_name, config_column_name, config_column_options[:limit])
+        log_info('VARCHAR length updated successfully')
       elsif data_type_requires_update
         # Redshift does not support altering data type in place. Therefore, dropping
         # the column and adding it back with the new data type is required.
+        log_info("Action: Updating data type to #{config_column_data_type}")
         update_column_data_type(
           table_name, config_column_name, config_column_data_type,
           config_column_options
         )
+        log_info('Data type updated successfully')
+      else
+        log_info('Action: No updates needed (column matches config)')
       end
     end
     # rubocop:enable Metrics/BlockLength
@@ -179,28 +210,42 @@ class RedshiftSchemaUpdater
     # Create dw insert and update timestamp columns with default values for existing tables
     dw_timestamps.each do |ts_column|
       unless existing_columns.include?(ts_column)
+        log_info("Adding timestamp column: #{ts_column}")
         add_column(
           table_name,
           ts_column,
           'timestamp',
           default: -> { 'CURRENT_TIMESTAMP' },
         )
+        log_info("Timestamp column '#{ts_column}' added successfully")
       end
     end
 
+    # Remove columns that are in DB but not in YAML config
+    columns_to_remove = []
     existing_columns.each do |existing_col_name|
       column_names = columns.map { |item| item['name'] }
       skip = column_names.include?(existing_col_name) || dw_timestamps.include?(existing_col_name)
       unless skip
+        columns_to_remove << existing_col_name
+        log_info("Marking column for removal: #{existing_col_name} (not in YAML config)")
         remove_column(
           table_name,
           existing_col_name,
         )
+        log_info("Column '#{existing_col_name}' removed successfully")
       end
     end
+
+    log_info(
+      "Successfully updated table '#{table_name}' (Configured columns: #{columns.count},
+      Removed: #{columns_to_remove.count})",
+    )
     log_info('Foreign keys and Primary_keys are not processed')
   rescue StandardError => e
-    log_error("Error updating existing table: #{e.message}")
+    log_error("FAILED: Error updating existing table '#{table_name}'")
+    log_error("Exception: #{e.class}")
+    log_error("Message: #{e.message}")
     raise e
   end
 
