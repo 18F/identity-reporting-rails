@@ -13,7 +13,9 @@ extractor_row_checker_enqueue_cron_config =
   Fugit.parse_cron(IdentityConfig.store.extractor_row_checker_enqueue_cron).presence&.original
 if extractor_row_checker_enqueue_cron_config.blank?
   Rails.logger.warn(
-    "job_configurations: invalid extractor_row_checker_enqueue_cron='#{IdentityConfig.store.extractor_row_checker_enqueue_cron}', defaulting to #{cron_1d}",
+    "job_configurations: invalid extractor_row_checker_enqueue_cron=" \
+    "'#{IdentityConfig.store.extractor_row_checker_enqueue_cron}', " \
+    "defaulting to #{cron_1d}",
   )
 end
 
