@@ -35,7 +35,7 @@ s3_reports_enabled: false
 s3_report_bucket_prefix: login-gov-dw-reports
 fraud_ops_private_key: ''
 fraud_ops_tracker_enabled: false
-extractor_row_checker_enqueue_cron: ''
+extractor_row_checker_enqueue_cron: '0 6 * * *'
 aws_region: 'us-west-2'
 
 development:

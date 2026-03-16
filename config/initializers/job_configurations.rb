@@ -10,14 +10,7 @@ cron_24h = '0 0 * * *'
 cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever else runs at 0000 UTC
 
 extractor_row_checker_enqueue_cron_config =
-  Fugit.parse_cron(IdentityConfig.store.extractor_row_checker_enqueue_cron).presence&.original
-if extractor_row_checker_enqueue_cron_config.blank?
-  Rails.logger.warn(
-    "job_configurations: invalid extractor_row_checker_enqueue_cron=" \
-    "'#{IdentityConfig.store.extractor_row_checker_enqueue_cron}', " \
-    "defaulting to #{cron_1d}",
-  )
-end
+  Fugit.parse_cron(IdentityConfig.store.extractor_row_checker_enqueue_cron).original
 
 if defined?(Rails::Console)
   Rails.logger.info 'job_configurations: console detected, skipping schedule'
@@ -50,7 +43,7 @@ else
       # Queue schema service job to GoodJob
       extractor_row_checker_enqueue_job: {
         class: 'ExtractorRowCheckerEnqueueJob',
-        cron: extractor_row_checker_enqueue_cron_config || cron_1d,
+        cron: extractor_row_checker_enqueue_cron_config,
       },
       # Queue redshift system tables sync
       redshift_system_table_sync: {
