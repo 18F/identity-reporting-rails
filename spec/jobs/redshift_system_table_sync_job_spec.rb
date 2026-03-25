@@ -276,10 +276,11 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
   end
 
   describe 'redshift_data_type' do
-    context 'when datatype is :json or :jsonb' do
-      it 'returns :super' do
+    context 'when datatype is json, jsonb, or array' do
+      it 'returns super' do
         expect(job.send(:redshift_data_type, 'json')).to eq('super')
         expect(job.send(:redshift_data_type, 'jsonb')).to eq('super')
+        expect(job.send(:redshift_data_type, 'array')).to eq('super')
       end
     end
 
@@ -307,7 +308,7 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
       end
     end
 
-    context 'when datatype is not :json or :jsonb or :text or :character or :char' do
+    context 'when datatype is not a mapped semi-structured or string type' do
       it 'returns the input datatype symbol' do
         expect(job.send(:redshift_data_type, 'integer')).to eq('integer')
         expect(job.send(:redshift_data_type, 'string')).to eq('string')

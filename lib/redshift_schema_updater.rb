@@ -526,7 +526,7 @@ class RedshiftSchemaUpdater
 
   def redshift_data_type(datatype)
     case datatype
-    when 'json', 'jsonb'
+    when 'json', 'jsonb', 'array'
       'super'
     when 'text'
       'string'

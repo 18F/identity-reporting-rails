@@ -539,14 +539,15 @@ RSpec.describe RedshiftSchemaUpdater do
   end
 
   describe 'redshift_data_type' do
-    context 'when datatype is :json or :jsonb' do
-      it 'returns :super' do
+    context 'when datatype is json, jsonb, or array' do
+      it 'returns super' do
         expect(redshift_schema_updater.redshift_data_type('json')).to eq('super')
         expect(redshift_schema_updater.redshift_data_type('jsonb')).to eq('super')
+        expect(redshift_schema_updater.redshift_data_type('array')).to eq('super')
       end
     end
 
-    context 'when datatype is not :json or :jsonb' do
+    context 'when datatype is not a semi-structured Redshift type' do
       it 'returns the input datatype symbol' do
         expect(redshift_schema_updater.redshift_data_type('integer')).to eq('integer')
         expect(redshift_schema_updater.redshift_data_type('string')).to eq('string')
