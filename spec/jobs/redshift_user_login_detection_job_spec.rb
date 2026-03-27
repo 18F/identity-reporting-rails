@@ -29,7 +29,11 @@ RSpec.describe RedshiftUserLoginDetectionJob, type: :job do
       DataWarehouseApplicationRecord.connection.execute(query)
     end
 
-    context 'when users_to_check is set for a single user who logged in recently' do
+    context 'when users_to_check is set for a pii_reader who logged in recently' do
+      before do
+        allow(rails_job).to receive(:users_to_check).and_return(['pii_reader'])
+      end
+
       it 'then logs the user login detected' do
         expect(log_entry).to receive(:info).with(
           {
@@ -38,6 +42,22 @@ RSpec.describe RedshiftUserLoginDetectionJob, type: :job do
           }.to_json,
         )
         rails_job.perform
+      end
+
+      context 'when users_to_check is set for a superuser who logged in recently' do
+        before do
+          allow(rails_job).to receive(:users_to_check).and_return(['superuser'])
+        end
+
+        it 'then logs the user login detected' do
+          expect(log_entry).to receive(:info).with(
+            {
+              name: 'RedshiftUserLoginDetectionJob',
+              detected_user: 'superuser',
+            }.to_json,
+          )
+          rails_job.perform
+        end
       end
     end
 
