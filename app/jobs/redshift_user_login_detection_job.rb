@@ -25,7 +25,7 @@ class RedshiftUserLoginDetectionJob < ApplicationJob
   end
 
   def users_to_check
-    ['pii_reader']
+    ['pii_reader', 'superuser']
   end
 
   def user_logins_detected_from_redshift
