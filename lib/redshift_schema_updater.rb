@@ -161,7 +161,8 @@ class RedshiftSchemaUpdater
         )
         is_string_data_type = (current_dw_data_types & ['string', 'text']).any?
         limit_changed = datatype_metadata.limit != config_column_options[:limit]
-        varchar_requires_update = is_string_data_type && limit_changed
+        target_super = redshift_data_type(config_column_data_type) == 'super'
+        varchar_requires_update = is_string_data_type && limit_changed && !target_super
 
         log_info(
           "Current types: #{current_dw_data_types.join(', ')},
