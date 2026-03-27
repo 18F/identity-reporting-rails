@@ -20,10 +20,6 @@ class RedshiftUserLoginDetectionJob < ApplicationJob
 
   private
 
-  def using_redshift_adapter?
-    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
-  end
-
   def users_to_check
     ['pii_reader', 'superuser']
   end
