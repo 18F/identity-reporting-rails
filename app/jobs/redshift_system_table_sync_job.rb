@@ -260,7 +260,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
 
   def redshift_data_type(data_type)
     case data_type
-    when 'json', 'jsonb'
+    when 'json', 'jsonb', 'array'
       'super'
     when 'text'
       'VARCHAR(MAX)'
