@@ -114,6 +114,44 @@ lambda_users:
       - logs
 
 system_users:
+  - user_name: rails_worker
+    syslog_access: true
+    secret_id: "redshift/%{env_name}-analytics-rails-worker"
+    schemas:
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: system_tables
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+      - schema_name: marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+      - schema_name: fraudops_qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+
   - user_name: security_audit
     secret_id: "redshift/%{env_name}-analytics-security-audit"
     schemas:
