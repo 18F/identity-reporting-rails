@@ -17,14 +17,15 @@ RSpec.describe RedshiftUserLoginDetectionJob, type: :job do
         CREATE TABLE SYS_CONNECTION_LOG (
           user_name VARCHAR(256),
           event VARCHAR(50),
-          record_time TIMESTAMP
+          record_time TIMESTAMP,
+          driver_version VARCHAR(256)
         );
-        INSERT INTO SYS_CONNECTION_LOG (user_name, event, record_time) VALUES
-        ('IAM:kobe.bryant', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '10 MINUTES'),
-        ('IAM:steph.curry', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '5 MINUTES'),
-        ('pii_reader', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '2 MINUTES'),
-        ('superuser', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '1 MINUTE'),
-        ('old_user', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '20 MINUTES');
+        INSERT INTO SYS_CONNECTION_LOG (user_name, event, record_time, driver_version) VALUES
+        ('IAM:kobe.bryant', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '10 MINUTES', 'Redshift JDBC Driver 2.1.0.34'),
+        ('IAM:steph.curry', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '5 MINUTES', 'Redshift JDBC Driver 2.1.0.34'),
+        ('pii_reader', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '2 MINUTES', 'Redshift JDBC Driver 2.2.5'),
+        ('superuser', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '1 MINUTE', 'Redshift JDBC Driver 2.1.0.30'),
+        ('old_user', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '20 MINUTES', 'Redshift JDBC Driver 2.2.5');
       SQL
       DataWarehouseApplicationRecord.connection.execute(query)
     end
