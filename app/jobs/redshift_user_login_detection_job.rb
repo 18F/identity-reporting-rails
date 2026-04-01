@@ -10,7 +10,7 @@
 require 'yaml'
 
 class RedshiftUserLoginDetectionJob < ApplicationJob
-  queue_as :default
+  queue_as :redshift_admin  # Requires superuser to read SYS_CONNECTION_LOG
 
   def perform
     log_user_logins
