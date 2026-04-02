@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class RedshiftMaskingJob < ApplicationJob
-  queue_as :redshift_admin  # Requires superuser for CREATE/ATTACH MASKING POLICY
+  queue_as :rails_superuser  # Requires superuser for CREATE/ATTACH MASKING POLICY
 
   def perform(user_filter: nil)
     unless IdentityConfig.store.fraud_ops_tracker_enabled ||

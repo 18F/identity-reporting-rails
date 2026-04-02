@@ -1,5 +1,5 @@
 class RedshiftSystemTableSyncJob < ApplicationJob
-  queue_as :redshift_admin  # May require superuser to read pg_table_def table
+  queue_as :rails_superuser  # May require superuser to read pg_table_def table
 
   def perform
     error_msgs = []

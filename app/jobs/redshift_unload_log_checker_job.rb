@@ -1,5 +1,5 @@
 class RedshiftUnloadLogCheckerJob < ApplicationJob
-  queue_as :redshift_admin  # Requires superuser to read STL_UNLOAD_LOG
+  queue_as :rails_superuser  # Requires superuser to read STL_UNLOAD_LOG
 
   def perform
     fetch_data_from_redshift

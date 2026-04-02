@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class RedshiftSyncJob < ApplicationJob
-  queue_as :redshift_admin  # Requires superuser for CREATE USER, GRANT/REVOKE
+  queue_as :rails_superuser  # Requires superuser for CREATE USER, GRANT/REVOKE
 
   def perform
     RedshiftSync.new.sync
