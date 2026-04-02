@@ -118,6 +118,11 @@ system_users:
     syslog_access: true
     secret_id: "redshift/%{env_name}-analytics-rails-worker"
     schemas:
+      - schema_name: pg_catalog
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - pg_user
       - schema_name: idp
         schema_privileges: USAGE
         table_privileges: SELECT
@@ -126,10 +131,10 @@ system_users:
         table_privileges: SELECT
       - schema_name: logs
         schema_privileges: USAGE
-        table_privileges: SELECT
+        table_privileges: SELECT, INSERT, UPDATE, DELETE
       - schema_name: fraudops
-        schema_privileges: USAGE
-        table_privileges: SELECT
+        schema_privileges: USAGE, CREATE
+        table_privileges: SELECT, INSERT, UPDATE, DELETE
         feature_flag:
           - fraud_ops_tracker_enabled
           - dw_fraudops_email_enabled
