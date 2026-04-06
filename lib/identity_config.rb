@@ -47,6 +47,7 @@ class IdentityConfig
     config.add(:database_worker_jobs_password, type: :string)
     config.add(:database_worker_jobs_sslmode, type: :string)
     config.add(:database_worker_jobs_username, type: :string)
+    config.add(:demographics_metrics_report_configs, type: :json)
     config.add(:domain_name, type: :string)
     config.add(:dw_fraudops_email_enabled, type: :boolean)
     config.add(:extractor_row_checker_enqueue_cron, type: :string)

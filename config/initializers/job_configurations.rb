@@ -8,6 +8,7 @@ cron_1d = '0 6 * * *' # 6:00am UTC or 2:00am EST
 cron_1d_morning = '0 11 * * *' # 11:00am UTC or 6:00am EST
 cron_24h = '0 0 * * *'
 cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever else runs at 0000 UTC
+cron_quarterly = 'TBD'
 
 extractor_row_checker_enqueue_cron_config =
   Fugit.parse_cron(IdentityConfig.store.extractor_row_checker_enqueue_cron).presence&.original
@@ -70,6 +71,11 @@ else
       fraud_metrics_report: {
         class: 'Reports::FraudMetricsReport',
         cron: cron_24h_and_a_bit,
+        args: -> { [Time.zone.yesterday.end_of_day] },
+      },
+      demographics_metrics_report: {
+        class: 'Reports::DemographicsMetricsReport',
+        cron: cron_quarterly,
         args: -> { [Time.zone.yesterday.end_of_day] },
       },
       # Idv Legacy Conversion Supplement Report to S3
