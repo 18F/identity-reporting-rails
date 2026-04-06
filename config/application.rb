@@ -59,9 +59,6 @@ module IdentityReportingRails
     config.good_job.queue_select_limit = Identity::Hostdata.config.good_job_queue_select_limit
     # see config/initializers/job_configurations.rb for cron schedule
 
-    queues = config.good_job.queues.split(';').map { |q| q.split(':').first }
-    Rails.logger.info("GoodJob configured with queues: #{queues.join(', ')}")
-
     GoodJob.active_record_parent_class = 'WorkerJobApplicationRecord'
     GoodJob.retry_on_unhandled_error = false
     GoodJob.on_thread_error = ->(exception) { NewRelic::Agent.notice_error(exception) }
