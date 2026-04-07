@@ -8,16 +8,12 @@ class RedshiftMaskingSync
     :identity_devops,
     'bin/data-warehouse/mask.yaml',
   )
-  USERS_YAML_PATH = IdentityConfig.local_devops_path(
-    :identity_devops,
-    'terraform/master/global/users.yaml',
-  )
 
   def sync(user_filter: nil)
     Rails.logger.info('starting data controls sync')
 
     data_controls = YAML.safe_load(File.read(DATA_CONTROLS_PATH))
-    users_yaml = YAML.safe_load(File.read(USERS_YAML_PATH))['users']
+    users_yaml = YAML.safe_load(File.read(IdentityConfig.identity_devops_users_yaml_path))['users']
 
     sync_masking_policies(data_controls, users_yaml, user_filter: user_filter)
   end
