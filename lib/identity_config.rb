@@ -88,4 +88,11 @@ class IdentityConfig
     root_dir = REPO_PATHS[devops_dir]
     File.join(root_dir, relative_path)
   end
+
+  def self.identity_devops_users_yaml_path
+    relative_path = 'terraform/master/global/users.yaml'
+    user_sync_path = local_devops_path(:user_sync_identity_devops, relative_path)
+    identity_devops_path = local_devops_path(:identity_devops, relative_path)
+    File.exist?(user_sync_path) ? user_sync_path : identity_devops_path
+  end
 end

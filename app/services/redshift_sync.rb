@@ -78,10 +78,7 @@ class RedshiftSync
   end
 
   def users_yaml_path
-    @users_yaml_path ||= IdentityConfig.local_devops_path(
-      :identity_devops,
-      'terraform/master/global/users.yaml',
-    )
+    @users_yaml_path ||= IdentityConfig.identity_devops_users_yaml_path
   end
 
   def interpolate_env_name(str)

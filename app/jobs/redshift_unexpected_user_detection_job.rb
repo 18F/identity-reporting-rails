@@ -19,18 +19,7 @@ class RedshiftUnexpectedUserDetectionJob < ApplicationJob
     if !path.nil?
       path
     else
-      user_yml_relative_path = 'terraform/master/global/users.yaml'
-      user_sync_devops_yaml = IdentityConfig.local_devops_path(
-        :user_sync_identity_devops, user_yml_relative_path
-      )
-      devops_yaml = IdentityConfig.local_devops_path(
-        :identity_devops, user_yml_relative_path
-      )
-      if File.exist?(user_sync_devops_yaml)
-        user_sync_devops_yaml
-      else
-        devops_yaml
-      end
+      IdentityConfig.identity_devops_users_yaml_path
     end
   end
 
