@@ -72,7 +72,8 @@ class IdentityConfig
     #   - Admin worker: 'superuser'
     #   - Data worker: 'rails-worker'
     redshift_secret_suffix = ENV['REDSHIFT_SECRET_SUFFIX'] || 'superuser'
-    redshift_secrets_manager_key = "redshift/#{Identity::Hostdata.env || 'local'}-analytics-#{redshift_secret_suffix}"
+    redshift_secrets_manager_key = "redshift/#{Identity::Hostdata.env || 'local'}" \
+      "-analytics-#{redshift_secret_suffix}"
     redshift_secrets_manager_key.then do |key|
       config.add(
         :redshift_password,
