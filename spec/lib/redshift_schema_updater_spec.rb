@@ -555,6 +555,44 @@ RSpec.describe RedshiftSchemaUpdater do
     end
   end
 
+  describe '#backfill_column' do
+    context 'when new_data_type is array' do
+      it 'uses JSON_PARSE with PG array literal converted to JSON on Redshift' do
+        allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_return(true)
+        expect(DataWarehouseApplicationRecord.connection).to receive(:execute) do |sql|
+          expect(sql).to include('JSON_PARSE')
+          expect(sql).to include(
+            "REPLACE(REPLACE(CAST(profile_ids_copy AS VARCHAR(MAX)), '{', '['), '}', ']')",
+          )
+        end
+        redshift_schema_updater.send(
+          :backfill_column, 'idp.t', 'profile_ids_copy', 'profile_ids', 'array'
+        )
+      end
+
+      it 'casts via jsonb on PostgreSQL' do
+        allow(redshift_schema_updater).to receive(:using_redshift_adapter?).and_return(false)
+        expect(DataWarehouseApplicationRecord.connection).to receive(:execute) do |sql|
+          expect(sql).to include(
+            "REPLACE(REPLACE(CAST(profile_ids_copy AS TEXT), '{', '['), '}', ']')::jsonb",
+          )
+        end
+        redshift_schema_updater.send(
+          :backfill_column, 'idp.t', 'profile_ids_copy', 'profile_ids', 'array'
+        )
+      end
+    end
+
+    context 'when new_data_type is nil' do
+      it 'copies the column value directly' do
+        expect(DataWarehouseApplicationRecord.connection).to receive(:execute).with(
+          'UPDATE idp.t SET name = name_copy;',
+        )
+        redshift_schema_updater.send(:backfill_column, 'idp.t', 'name_copy', 'name', nil)
+      end
+    end
+  end
+
   describe '#update_existing_table logging' do
     let(:table_name) { 'idp.test_table' }
     let(:existing_columns) do
