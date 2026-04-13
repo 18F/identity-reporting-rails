@@ -1,11 +1,12 @@
 # frozen_string_literal: true
+
 require 'csv'
 
 module Reporting
   class DemographicsMetricsReport
     attr_reader :issuers, :time_range, :agency_abbreviation
 
-    # Log event names used in SQL queries
+    # Log event names used in SQL query
     SP_REDIRECT_EVENT = 'SP redirect initiated'
     DOC_AUTH_EVENT = 'IdV: doc auth verify proofing results'
 
@@ -69,8 +70,8 @@ module Reporting
 
     def age_metrics_table
       rows = [['Age Range', 'User Count']]
-      age_data.each do |row|
-        rows << [row['age_range'], row['user_count'].to_s]
+      age_bins.each do |range, count|
+        rows << [range, count.to_s]
       end
       rows
     rescue StandardError => err
@@ -82,8 +83,8 @@ module Reporting
 
     def state_metrics_table
       rows = [['State', 'User Count']]
-      state_data.each do |row|
-        rows << [row['state'], row['user_count'].to_s]
+      state_counts.each do |state, count|
+        rows << [state, count.to_s]
       end
       rows
     rescue StandardError => err
@@ -95,96 +96,78 @@ module Reporting
 
     private
 
-    def age_data
-      @age_data ||= Event.connection.execute(age_demographics_query).to_a
+    def user_data
+      @user_data ||= Event.connection.execute(demographics_query).to_a
     end
 
-    def state_data
-      @state_data ||= Event.connection.execute(state_demographics_query).to_a
+    # Ruby processing: Group by age ranges and count
+    def age_bins
+      current_year = Time.zone.today.year
+      bins = Hash.new(0)
+
+      user_data.each do |row|
+        birth_year = row['birth_year']&.to_i
+        next unless birth_year
+        age = current_year - birth_year
+        next if age < 0
+
+        bin_start = (age / 10) * 10
+        bin_label = "#{bin_start}-#{bin_start + 9}"
+        bins[bin_label] += 1
+      end
+
+      # Sort by age range (e.g., 20-29, 30-39, 40-49)
+      bins.sort_by { |range, _| range.split('-').first.to_i }.to_h
     end
 
-    def age_demographics_query
+    # Ruby processing: Group by state and count
+    def state_counts
+      counts = Hash.new(0)
+
+      user_data.each do |row|
+        state = row['state']&.upcase
+        next unless state.present? && state != ''
+
+        counts[state] += 1
+      end
+
+      # Sort alphabetically by state
+      counts.sort.to_h
+    end
+
+    # Single SQL query that gets raw user demographic data
+    def demographics_query
       <<~SQL
         WITH sp_redirects AS (
-          SELECT DISTINCT user_id as user_id
+          SELECT DISTINCT user_id
           FROM logs.events 
           WHERE name = '#{SP_REDIRECT_EVENT}'
-            AND message.service_provider IN (#{formatted_issuers})
-            AND message.event_properties.ial = 2
+            AND service_provider IN (#{formatted_issuers})
+            AND message.properties.event_properties.ial = 2
             AND message.properties.sp_request.facial_match = TRUE
-            AND message.event_properties.ial IS NOT NULL
             AND message.properties.sp_request.facial_match IS NOT NULL
+            AND message.properties.event_properties.ial IS NOT NULL
             AND cloudwatch_timestamp BETWEEN '#{formatted_start_time}' AND '#{formatted_end_time}'
         ), 
         doc_auth_success AS (
           SELECT DISTINCT
             user_id,
-            message.event_properties.proofing_results.biographical_info.birth_year::int as birth_year,
-            UPPER(message.event_properties.proofing_results.biographical_info.state_id_jurisdiction::text) as state
+            message.properties.event_properties.proofing_results.biographical_info.birth_year as birth_year,
+            UPPER(message.event_properties.proofing_results.biographical_info.state_id_jurisdiction) as state
           FROM logs.events
           WHERE name = '#{DOC_AUTH_EVENT}'
-            AND message.service_provider IN (#{formatted_issuers})
+            AND service_provider IN (#{formatted_issuers})
             AND message.event_properties.success = TRUE
             AND message.event_properties.success IS NOT NULL
-            AND message.event_properties.proofing_results.biographical_info.birth_year IS NOT NULL
             AND cloudwatch_timestamp BETWEEN '#{formatted_start_time}' AND '#{formatted_end_time}'
-        ),
-        joined_data AS (
-          SELECT d.user_id, d.birth_year, d.state
-          FROM doc_auth_success d
-          INNER JOIN sp_redirects s ON d.user_id = s.user_id
         )
         SELECT 
-          FLOOR((EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) / 10) * 10 || '-' || 
-          (FLOOR((EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) / 10) * 10 + 9) as age_range,
-          COUNT(user_id) as user_count
-        FROM joined_data 
-        WHERE birth_year IS NOT NULL
-          AND birth_year > 1900
-        GROUP BY age_range
-        ORDER BY FLOOR((EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) / 10) * 10;
-      SQL
-    end
-
-    def state_demographics_query
-      <<~SQL
-        WITH sp_redirects AS (
-          SELECT DISTINCT user_id as user_id
-          FROM logs.events 
-          WHERE name = '#{SP_REDIRECT_EVENT}'
-            AND message.service_provider IN (#{formatted_issuers})
-            AND message.event_properties.ial = 2
-            AND message.properties.sp_request.facial_match = TRUE
-            AND message.event_properties.ial IS NOT NULL
-            AND message.properties.sp_request.facial_match IS NOT NULL
-            AND cloudwatch_timestamp BETWEEN '#{formatted_start_time}' AND '#{formatted_end_time}'
-        ), 
-        doc_auth_success AS (
-          SELECT DISTINCT
-            user_id,
-            message.event_properties.proofing_results.biographical_info.birth_year::int as birth_year,
-            UPPER(message.event_properties.proofing_results.biographical_info.state_id_jurisdiction::text) as state
-          FROM logs.events
-          WHERE name = '#{DOC_AUTH_EVENT}'
-            AND message.service_provider IN (#{formatted_issuers})
-            AND message.event_properties.success = TRUE
-            AND message.event_properties.success IS NOT NULL
-            AND message.event_properties.proofing_results.biographical_info.state_id_jurisdiction IS NOT NULL
-            AND cloudwatch_timestamp BETWEEN '#{formatted_start_time}' AND '#{formatted_end_time}'
-        ),
-        joined_data AS (
-          SELECT d.user_id, d.birth_year, d.state
-          FROM doc_auth_success d
-          INNER JOIN sp_redirects s ON d.user_id = s.user_id
-        )
-        SELECT 
-          state,
-          COUNT(user_id) as user_count
-        FROM joined_data
-        WHERE state IS NOT NULL 
-          AND state != ''
-        GROUP BY state
-        ORDER BY state;
+          d.user_id,
+          d.birth_year,
+          d.state
+        FROM doc_auth_success d
+        INNER JOIN sp_redirects s ON d.user_id = s.user_id
+        ORDER BY d.user_id;
       SQL
     end
 
