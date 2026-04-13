@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'reporting/demographics_metrics_report'
 
 module Reports
@@ -57,7 +58,7 @@ module Reports
       _latest, path = generate_s3_paths(
         report_name_with_agency,
         'csv',
-        directory: 'idp', # This ensures it goes to the right S3 bucket for replication
+        directory: 'idp',
         subname: report_name,
         now: report_date,
       )
@@ -74,8 +75,6 @@ module Reports
     end
 
     def report_configs
-      # TODO: This config needs to be created in IdentityConfig
-      # Should return array of hashes with 'issuers' and 'agency_abbreviation'
       IdentityConfig.store.demographics_metrics_report_configs
     end
 

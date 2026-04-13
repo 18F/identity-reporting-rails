@@ -1,4 +1,7 @@
+require 'reporting/json_path_helper'
+
 class LogsColumnExtractorJob < ApplicationJob
+  include Reporting::JsonPathHelper
   queue_as :default
 
   # THE ORDER OF THE FIELDS IN THE SELECT QUERY SHOULD MATCH THE ORDER OF THE FIELDS
@@ -163,9 +166,9 @@ class LogsColumnExtractorJob < ApplicationJob
   end
 
   def create_temp_source_table_query
-    duplicate_key = extract_json_key(
-      column: 'message',
-      key: @merge_key,
+    duplicate_key = extract_json_path(
+      'message',
+      @merge_key,
       type: 'VARCHAR',
     )
     format(<<~SQL, build_params)
@@ -247,9 +250,9 @@ class LogsColumnExtractorJob < ApplicationJob
   end
 
   def drop_merged_records_from_source_table_query
-    merge_key_from_json = extract_json_key(
-      column: 'message',
-      key: @merge_key,
+    merge_key_from_json = extract_json_path(
+      'message',
+      @merge_key,
       type: 'VARCHAR',
       keep_parenthesis: false,
     )
@@ -300,9 +303,9 @@ class LogsColumnExtractorJob < ApplicationJob
 
   def select_message_fields
     extract_and_cast_statements = @column_map.map do |col|
-      col_name = extract_json_key(
-        column: 'message',
-        key: col[:key],
+      col_name = extract_json_path(
+        'message',
+        col[:key],
         type: col[:type],
       )
 
@@ -322,32 +325,6 @@ class LogsColumnExtractorJob < ApplicationJob
       'id'
     elsif @source_table_name in 'unextracted_production'
       'uuid'
-    end
-  end
-
-  def using_redshift_adapter?
-    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
-  end
-
-  def extract_json_key(column:, key:, type:, keep_parenthesis: true)
-    if using_redshift_adapter?
-      # Redshift environment using SUPER Column type
-      "#{column}.#{key}"
-    else
-      # Local/Test environment using JSONB Column type
-      key_parts = key.split('.')
-      key_parts.map! { |part| DataWarehouseApplicationRecord.connection.quote(part) }
-      to_string = TYPES_TO_EXTRACT_AS_TEXT.include?(type) || type.include?('VARCHAR') ? true : false
-      if to_string
-        if key_parts.length == 1
-          final_key = "(#{column}->>'#{key}')"
-        else
-          final_key = "(#{column}->#{key_parts[0..-2].join('->') + '->>' + key_parts[-1]})"
-        end
-      else
-        final_key = "(#{column}->#{key_parts.join('->')})"
-      end
-      keep_parenthesis ? final_key : final_key[1..-2]
     end
   end
 end

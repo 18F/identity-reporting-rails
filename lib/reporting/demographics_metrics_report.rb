@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 require 'csv'
+require 'reporting/json_path_helper'
 
 module Reporting
   class DemographicsMetricsReport
+    include Reporting::JsonPathHelper
     attr_reader :issuers, :time_range, :agency_abbreviation
 
     # Log event names used in SQL query
@@ -143,22 +145,22 @@ module Reporting
           FROM logs.events 
           WHERE name = '#{SP_REDIRECT_EVENT}'
             AND service_provider IN (#{formatted_issuers})
-            AND message.properties.event_properties.ial = 2
-            AND message.properties.sp_request.facial_match = TRUE
-            AND message.properties.sp_request.facial_match IS NOT NULL
-            AND message.properties.event_properties.ial IS NOT NULL
+            AND #{extract_json_path('message', 'properties.event_properties.ial', type: 'INTEGER')} = 2
+            AND #{extract_json_path('message', 'properties.sp_request.facial_match', type: 'BOOLEAN')} = TRUE
+            AND #{extract_json_path('message', 'properties.sp_request.facial_match')} IS NOT NULL
+            AND #{extract_json_path('message', 'properties.event_properties.ial')} IS NOT NULL
             AND cloudwatch_timestamp BETWEEN '#{formatted_start_time}' AND '#{formatted_end_time}'
         ), 
         doc_auth_success AS (
           SELECT DISTINCT
-            user_id,
-            message.properties.event_properties.proofing_results.biographical_info.birth_year as birth_year,
-            UPPER(message.event_properties.proofing_results.biographical_info.state_id_jurisdiction) as state
+            user_id, 
+            #{extract_json_path('message', 'properties.event_properties.proofing_results.biographical_info.birth_year', type: 'INTEGER')} as birth_year,
+            UPPER(#{extract_json_path('message', 'properties.event_properties.proofing_results.biographical_info.state_id_jurisdiction')}) as state
           FROM logs.events
           WHERE name = '#{DOC_AUTH_EVENT}'
             AND service_provider IN (#{formatted_issuers})
-            AND message.event_properties.success = TRUE
-            AND message.event_properties.success IS NOT NULL
+            AND #{extract_json_path('message', 'properties.event_properties.success', type: 'BOOLEAN')} = TRUE
+            AND #{extract_json_path('message', 'properties.event_properties.success')} IS NOT NULL
             AND cloudwatch_timestamp BETWEEN '#{formatted_start_time}' AND '#{formatted_end_time}'
         )
         SELECT 
