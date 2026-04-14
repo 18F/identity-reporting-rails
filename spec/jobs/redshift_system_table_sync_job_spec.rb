@@ -65,7 +65,7 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
     it 'executes a MERGE statement with proper conditions' do
       job.send(:create_target_table)
 
-      expected_query = <<-QUERY.squish
+      expected_query = <<~QUERY.squish
         MERGE INTO system_tables.stl_query
         USING(
           SELECT * FROM (
