@@ -101,11 +101,11 @@ else
         class: 'RedshiftMaskingJob',
         cron: cron_5m,
       },
-      # # Sync Redshift users - runs every 15 minutes
-      # redshift_sync_job: {
-      #   class: 'RedshiftSyncJob',
-      #   cron: cron_15m,
-      # },
+      # Sync Redshift users - runs every 15 minutes
+      redshift_sync_job: {
+        class: 'RedshiftSyncJob',
+        cron: cron_15m,
+      },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
   end

@@ -34,10 +34,6 @@ class RedshiftSync
     drop_users
     new_users = create_users
 
-    user_groups.each do |user_group|
-      sync_user_group(user_group)
-    end
-
     apply_masking_for_new_users(new_users) if new_users.any?
 
     Rails.logger.info('Redshift user sync completed successfully')
@@ -460,48 +456,6 @@ class RedshiftSync
     end
 
     sql
-  end
-
-  def sync_user_group(group)
-    Rails.logger.info("Syncing users for #{group['name']}")
-
-    current_group_users_statement = <<~SQL
-      SELECT usename FROM pg_user, pg_group
-      WHERE pg_user.usesysid = ANY(pg_group.grolist)
-      AND pg_group.groname='#{group['name']}'
-    SQL
-
-    result = execute_query(current_group_users_statement)
-    user_group_sql = []
-
-    if result.any?
-      current_group_users = result.map { |row| row['usename'] }
-      user_group_sql.append(
-        "ALTER GROUP #{group['name']} DROP USER #{current_group_users.map do |v|
-          "\"#{v}\""
-        end.join(', ')};",
-      )
-    end
-
-    new_group_users = canonical_users.select do |user|
-      users_yaml[user.gsub('IAM:', '')]['aws_groups'].any? do |aws_group|
-        group['aws_groups'][env_type].include?(aws_group)
-      end
-    end
-
-    if new_group_users.any?
-      user_group_sql.append(
-        "ALTER GROUP #{group['name']} ADD USER #{new_group_users.map do |v|
-          "\"#{v}\""
-        end.join(', ')}",
-      )
-    end
-
-    if user_group_sql.any?
-      execute_query(user_group_sql.join("\n"))
-    else
-      Rails.logger.info("User group #{group['name']} is empty")
-    end
   end
 end
 
