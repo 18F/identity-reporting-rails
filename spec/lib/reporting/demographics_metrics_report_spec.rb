@@ -18,7 +18,7 @@ RSpec.describe Reporting::DemographicsMetricsReport do
          "the reporting period, grouped by state."],
     ]
   end
-  
+
   let(:expected_overview_table) do
     [
       ['Report Timeframe', "#{time_range.begin} to #{time_range.end}"],
@@ -26,7 +26,7 @@ RSpec.describe Reporting::DemographicsMetricsReport do
       ['Issuer', issuer],
     ]
   end
-  
+
   let(:expected_age_metrics_table) do
     [
       ['Age Range', 'User Count'],
@@ -35,7 +35,7 @@ RSpec.describe Reporting::DemographicsMetricsReport do
       ['30-39', '2'],
     ]
   end
-  
+
   let(:expected_state_metrics_table) do
     [
       ['State', 'User Count'],
@@ -48,14 +48,14 @@ RSpec.describe Reporting::DemographicsMetricsReport do
   subject(:report) do
     Reporting::DemographicsMetricsReport.new(
       issuers: [issuer],
-      agency_abbreviation: agency_abbreviation, 
-      time_range: time_range
+      agency_abbreviation: agency_abbreviation,
+      time_range: time_range,
     )
   end
 
   before do
     travel_to Time.zone.now.beginning_of_day
-    
+
     # Create SP redirect events for 6 users
     6.times do |i|
       Event.create!(
@@ -67,14 +67,14 @@ RSpec.describe Reporting::DemographicsMetricsReport do
         message: {
           properties: {
             event_properties: {
-              ial: 2
+              ial: 2,
             },
             sp_request: {
-              facial_match: true
-            }
-          }
+              facial_match: true,
+            },
+          },
         }.to_json,
-        new_event: true
+        new_event: true,
       )
     end
 
@@ -85,7 +85,7 @@ RSpec.describe Reporting::DemographicsMetricsReport do
       { user_id: 'user3', birth_year: current_year - 25, state: 'DE' },
       { user_id: 'user4', birth_year: current_year - 26, state: 'DE' },
       { user_id: 'user5', birth_year: current_year - 35, state: 'VA' },
-      { user_id: 'user6', birth_year: current_year - 36, state: 'VA' }
+      { user_id: 'user6', birth_year: current_year - 36, state: 'VA' },
     ]
 
     demo_data.each_with_index do |data, i|
@@ -106,11 +106,11 @@ RSpec.describe Reporting::DemographicsMetricsReport do
                   state_id_jurisdiction: data[:state],
                 },
               },
-            }
-          }
+            },
+          },
         }.to_json,
         new_event: true,
-        success: true
+        success: true,
       )
     end
   end
@@ -150,10 +150,12 @@ RSpec.describe Reporting::DemographicsMetricsReport do
       end
 
       it 'returns an error table' do
-        expect(report.age_metrics_table).to eq([
-          ['Error', 'Message'],
-          ['StandardError', 'Test error'],
-        ])
+        expect(report.age_metrics_table).to eq(
+          [
+            ['Error', 'Message'],
+            ['StandardError', 'Test error'],
+          ],
+        )
       end
     end
   end
@@ -173,10 +175,12 @@ RSpec.describe Reporting::DemographicsMetricsReport do
       end
 
       it 'returns an error table' do
-        expect(report.state_metrics_table).to eq([
-          ['Error', 'Message'],
-          ['StandardError', 'Test error'],
-        ])
+        expect(report.state_metrics_table).to eq(
+          [
+            ['Error', 'Message'],
+            ['StandardError', 'Test error'],
+          ],
+        )
       end
     end
   end
@@ -216,10 +220,10 @@ RSpec.describe Reporting::DemographicsMetricsReport do
     it 'executes the demographics query successfully' do
       query_results = Event.connection.execute(report.send(:demographics_query)).to_a
       expect(query_results.length).to eq(6)
-      
+
       # Verify data structure
       expect(query_results.first.keys).to contain_exactly('user_id', 'birth_year', 'state')
-      
+
       # Verify we have the expected users
       user_ids = query_results.map { |row| row['user_id'] }.sort
       expect(user_ids).to eq(['user1', 'user2', 'user3', 'user4', 'user5', 'user6'])
@@ -230,7 +234,7 @@ RSpec.describe Reporting::DemographicsMetricsReport do
     before do
       # Clear existing data
       Event.delete_all
-      
+
       # Create SP redirect events
       4.times do |i|
         Event.create!(
@@ -242,10 +246,10 @@ RSpec.describe Reporting::DemographicsMetricsReport do
           message: {
             properties: {
               event_properties: { ial: 2 },
-              sp_request: { facial_match: true }
-            }
+              sp_request: { facial_match: true },
+            },
           }.to_json,
-          new_event: true
+          new_event: true,
         )
       end
 
@@ -254,7 +258,7 @@ RSpec.describe Reporting::DemographicsMetricsReport do
         { user_id: 'edge_user1', birth_year: current_year - 15, state: 'MD' }, # Normal
         { user_id: 'edge_user2', birth_year: nil, state: 'VA' }, # Missing birth year
         { user_id: 'edge_user3', birth_year: current_year - 35, state: '' }, # Empty state
-        { user_id: 'edge_user4', birth_year: current_year + 10, state: 'CA' } # Future birth year
+        { user_id: 'edge_user4', birth_year: current_year + 10, state: 'CA' }, # Future birth year
       ]
 
       edge_cases.each_with_index do |data, i|
@@ -272,14 +276,14 @@ RSpec.describe Reporting::DemographicsMetricsReport do
                 proofing_results: {
                   biographical_info: {
                     birth_year: data[:birth_year]&.to_s,
-                    state_id_jurisdiction: data[:state]
-                  }
+                    state_id_jurisdiction: data[:state],
+                  },
                 },
               },
-            }
+            },
           }.to_json,
           new_event: true,
-          success: true
+          success: true,
         )
       end
     end
@@ -299,12 +303,12 @@ RSpec.describe Reporting::DemographicsMetricsReport do
 
   describe 'multiple issuers' do
     let(:issuers) { ['issuer1', 'issuer2', 'issuer3'] }
-    
+
     subject(:report) do
       Reporting::DemographicsMetricsReport.new(
         issuers: issuers,
         agency_abbreviation: agency_abbreviation,
-        time_range: time_range
+        time_range: time_range,
       )
     end
 

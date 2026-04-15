@@ -45,7 +45,8 @@ module Reports
 
       Rails.logger.info "Completed demographics report for #{agency_abbreviation}"
     rescue StandardError => err
-      Rails.logger.error "Failed to generate demographics report for #{agency_abbreviation}: #{err.message}"
+      Rails.logger.error "Failed to generate demographics report "\
+                         "for #{agency_abbreviation}: #{err.message}"
       raise err
     end
 
