@@ -54,6 +54,11 @@ RSpec.describe IdvRedisToRedshiftJob, type: :job do
         ).to_a
         expect(result.length).to eq(1)
         expect(result.first['count']).to eq(event_size)
+
+        bucket_names = DataWarehouseApplicationRecord.connection.execute(
+          'SELECT DISTINCT bucket_name FROM fraudops.frd_encrypted_events',
+        ).to_a.map { |row| row['bucket_name'] }
+        expect(bucket_names).to all(match(/^fraud-ops-events:/))
       end
 
       it 'Reruns the full load without duplicating records' do

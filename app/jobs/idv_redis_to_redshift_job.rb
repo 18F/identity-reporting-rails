@@ -119,8 +119,8 @@ class IdvRedisToRedshiftJob < ApplicationJob
   def load_batch_into_temp_table_query
     values_list = @events_payload.map do |key, value|
       # Extract in the exact same order as your INSERT statement
-      # key: event_key, value[0]: message, value[1]: partition_dt
-      cols = [key, value[0], value[1]]
+      # key: event_key, value[0]: message, value[1]: partition_dt, value[2]: bucket_name
+      cols = [key, value[0], value[1], value[2]]
 
       # Quote each value for SQL
       quoted = cols.map { |val| DataWarehouseApplicationRecord.connection.quote(val) }
@@ -129,7 +129,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
     end.join(",\n")
 
     format(<<~SQL, build_params.merge(values_list: values_list))
-      INSERT INTO %{source_table_name_temp} (event_key, message, partition_dt)
+      INSERT INTO %{source_table_name_temp} (event_key, message, partition_dt, bucket_name)
       VALUES
       %{values_list};
     SQL
@@ -144,10 +144,10 @@ class IdvRedisToRedshiftJob < ApplicationJob
         ON %{schema_name}.%{target_table_name}.event_key = source.event_key
         AND %{schema_name}.%{target_table_name}.partition_dt = source.partition_dt
         WHEN MATCHED THEN
-          UPDATE SET message = source.message
+          UPDATE SET message = source.message, bucket_name = source.bucket_name
         WHEN NOT MATCHED THEN
-          INSERT (event_key, message, partition_dt, import_timestamp)
-          VALUES (source.event_key, source.message, source.partition_dt, CURRENT_TIMESTAMP)
+          INSERT (event_key, message, partition_dt, import_timestamp, bucket_name)
+          VALUES (source.event_key, source.message, source.partition_dt, CURRENT_TIMESTAMP, source.bucket_name)
         ;
       SQL
     else
@@ -155,17 +155,19 @@ class IdvRedisToRedshiftJob < ApplicationJob
       # event_key is the primary key, so we conflict on that
       format(<<~SQL, build_params)
         INSERT INTO %{schema_name}.%{target_table_name}
-          (event_key, message, partition_dt, import_timestamp)
+          (event_key, message, partition_dt, import_timestamp, bucket_name)
         SELECT
           source.event_key,
           source.message,
           source.partition_dt,
-          CURRENT_TIMESTAMP
+          CURRENT_TIMESTAMP,
+          source.bucket_name
         FROM %{source_table_name_temp} source
         ON CONFLICT (event_key)
         DO UPDATE SET
           message = EXCLUDED.message,
-          partition_dt = EXCLUDED.partition_dt;
+          partition_dt = EXCLUDED.partition_dt,
+          bucket_name = EXCLUDED.bucket_name;
       SQL
     end
   end

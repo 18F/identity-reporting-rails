@@ -14,8 +14,8 @@ module FraudOps
           client.hscan_each(bucket_key, count: batch_size) do |k, v|
             break if events.keys.count == batch_size
 
-            # key is event_key, value is JWE, and we also capture partition_dt for Redshift
-            events[k] = [v, get_partition_dt(bucket_key)]
+            # key is event_key, value is JWE, and we also capture partition_dt and bucket_key
+            events[k] = [v, get_partition_dt(bucket_key), bucket_key]
           end
         end
       end

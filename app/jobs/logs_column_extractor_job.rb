@@ -210,18 +210,40 @@ class LogsColumnExtractorJob < ApplicationJob
     @source_table_name_temp = "#{@source_table_name}_temp"
     vars = build_merge_variables(@source_table_name_temp, @column_map)
 
-    format(<<~SQL, build_params)
-      MERGE INTO %{schema_name}.%{target_table_name}
-      USING %{source_table_name_temp}
-      ON %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
-      WHEN MATCHED THEN
-        UPDATE SET
-          #{vars[:update_set]}
-      WHEN NOT MATCHED THEN
-        INSERT (#{vars[:insert_columns]})
-        VALUES (#{vars[:insert_values]} )
-        ;
-    SQL
+    if using_redshift_adapter?
+      format(<<~SQL, build_params)
+        MERGE INTO %{schema_name}.%{target_table_name}
+        USING %{source_table_name_temp}
+        ON %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
+        WHEN MATCHED THEN
+          UPDATE SET
+            #{vars[:update_set]}
+        WHEN NOT MATCHED THEN
+          INSERT (#{vars[:insert_columns]})
+          VALUES (#{vars[:insert_values]} )
+          ;
+      SQL
+    else
+      # PostgreSQL < 15 does not support MERGE and the target tables have no unique
+      # constraint, so ON CONFLICT cannot be used either. Use a CTE-based upsert:
+      # first UPDATE matched rows, then INSERT unmatched rows.
+      format(<<~SQL, build_params)
+        WITH updated AS (
+          UPDATE %{schema_name}.%{target_table_name}
+          SET #{vars[:update_set]}
+          FROM %{source_table_name_temp}
+          WHERE %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
+          RETURNING %{schema_name}.%{target_table_name}.#{@merge_key}
+        )
+        INSERT INTO %{schema_name}.%{target_table_name} (#{vars[:insert_columns]})
+        SELECT #{vars[:insert_values]}
+        FROM %{source_table_name_temp}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM updated
+          WHERE updated.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
+        );
+      SQL
+    end
   end
 
   def drop_merged_records_from_source_table_query
@@ -303,8 +325,12 @@ class LogsColumnExtractorJob < ApplicationJob
     end
   end
 
+  def using_redshift_adapter?
+    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
+  end
+
   def extract_json_key(column:, key:, type:, keep_parenthesis: true)
-    if DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
+    if using_redshift_adapter?
       # Redshift environment using SUPER Column type
       "#{column}.#{key}"
     else
