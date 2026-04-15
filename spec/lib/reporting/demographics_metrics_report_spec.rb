@@ -6,7 +6,6 @@ RSpec.describe Reporting::DemographicsMetricsReport do
   let(:time_range) { Date.new(2022, 1, 1).in_time_zone('UTC').all_quarter }
   let(:agency_abbreviation) { 'Test_Agency' }
   let(:current_year) { Time.zone.today.year }
-  
   let(:expected_definitions_table) do
     [
       ['Metric', 'Unit', 'Definition'],
