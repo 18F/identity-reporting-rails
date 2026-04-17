@@ -99,7 +99,7 @@ module Reporting
     private
 
     def user_data
-      @user_data ||= Event.connection.execute(demographics_query).to_a
+      @user_data ||= connection.execute(demographics_query).to_a  # ← Use helper's connection
     end
 
     # Ruby processing: Group by age ranges and count
