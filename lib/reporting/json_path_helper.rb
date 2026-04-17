@@ -2,8 +2,10 @@ module Reporting
   module JsonPathHelper
     def extract_json_path(column, path, type: 'VARCHAR', keep_parenthesis: true)
       if connection.adapter_name.downcase.include?('redshift')
+        Rails.logger.info 'Detected redshift'
         "#{column}.#{path}"
       else
+        Rails.logger.info 'Detected PostgreSQL'
         # PostgreSQL JSON operators - cast to JSONB first
         parts = path.split('.')
         quoted_parts = parts.map { |part| "'#{part}'" }

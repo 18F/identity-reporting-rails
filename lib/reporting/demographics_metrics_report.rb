@@ -139,6 +139,11 @@ module Reporting
 
     # Single SQL query that gets raw user demographic data
     def demographics_query
+      Rails.logger.warn '=== CONNECTION DEBUG ==='
+      Rails.logger.warn "Adapter name: #{connection.adapter_name}"
+      Rails.logger.warn "Connection class: #{connection.class}"
+      Rails.logger.warn '========================'
+
       <<~SQL
         WITH sp_redirects AS (
           SELECT DISTINCT user_id
