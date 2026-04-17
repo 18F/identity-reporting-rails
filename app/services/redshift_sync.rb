@@ -360,7 +360,23 @@ class RedshiftSync
   end
 
   def should_create_schema?(user_name, schema_name, schema_privileges)
-    dbt_user?(user_name) && dbt_user_schema?(schema_name) && schema_privileges == 'ALL PRIVILEGES'
+    if dbt_user?(user_name)
+      dbt_user_schema?(schema_name) && schema_privileges == 'ALL PRIVILEGES'
+    elsif dev_user?(user_name)
+      dev_user_schema?(schema_name, user_name) && schema_privileges == 'ALL PRIVILEGES'
+    else
+      false
+    end
+  end
+
+  def dev_user?(user_name)
+    users_yaml[user_name]['aws_groups'].any? do |aws_group|
+      redshift_config['dev_groups'][env_type].include?(aws_group)
+    end
+  end
+
+  def dev_user_schema?(schema_name, user_name)
+    schema_name == 'dev_' + user_name.to_str
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
@@ -395,6 +411,22 @@ class RedshiftSync
     end
 
     create_schema_privileges_for_group(user_group)
+  end
+
+  def create_dev_schemas(canonical_users)
+    canonical_users.each do |user|
+      user_name = user.gsub('IAM:', '')
+      schema_name = redshift_config['enabled_aws_groups'][env_type] + user_name.to_str
+      schema_creation = should_create_schema?(
+        user_name, schema_name,
+        schema_privileges
+      ) ? "CREATE SCHEMA IF NOT EXISTS #{schema_name};\n" : ''
+    end
+
+    <<~SQL
+      #{schema_creation}GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO #{user_name};
+      GRANT #{table_privileges} ON #{table_list} TO #{user_name};
+    SQL
   end
 
   def revoke_all_privileges_for_group(group_name, schema_name)

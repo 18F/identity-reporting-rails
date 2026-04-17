@@ -12,6 +12,26 @@ enabled_aws_groups:
     - dwadmin
     - dwadminnonprod
 
+dev_aws_groups:
+  prod:
+    - dwpoweruser
+    - dwadmin
+  sandbox:
+    - dwpoweruser
+    - dwpowerusernonprod
+    - dwadmin
+    - dwadminnonprod
+
+dev_schemas:
+  prod:
+    - schema_prefix: dev_
+      schema_privileges: ALL PRIVILEGES
+      table_privileges: ALL PRIVILEGES
+  sandbox:
+    - schema_prefix: dev_
+      schema_privileges: ALL PRIVILEGES
+      table_privileges: ALL PRIVILEGES
+  
 user_groups:
   - name: lg_users
     aws_groups:
@@ -44,7 +64,7 @@ user_groups:
       sandbox:
         - dwpoweruser
         - dwpowerusernonprod
-    schemas:
+    schemas:      
       - schema_name: idp
         schema_privileges: USAGE
         table_privileges: SELECT
