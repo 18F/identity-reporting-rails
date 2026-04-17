@@ -67,20 +67,26 @@ class IdentityConfig
     config.add(:s3_report_public_bucket_prefix, type: :string)
     config.add(:unload_line_count_threshold, type: :integer)
 
-    "redshift/#{Identity::Hostdata.env || 'local'}-analytics-superuser".
-      then do |redshift_secrets_manager_key|
-        config.add(
-          :redshift_password,
-          secrets_manager_name: redshift_secrets_manager_key,
-          type: :string,
-        ) { |raw| JSON.parse(raw).fetch('password') }
-        config.add(
-          :redshift_username,
-          secrets_manager_name: redshift_secrets_manager_key,
-          type: :string,
-        ) { |raw| JSON.parse(raw).fetch('username') }
-        config.add(:secret_key_base, type: :string)
-      end
+    # Allow override via environment variable for worker-specific credentials
+    # Two-worker setup:
+    #   - Admin worker: 'superuser'
+    #   - Data worker: 'rails-worker'
+    redshift_secret_suffix = ENV['REDSHIFT_SECRET_SUFFIX'] || 'superuser'
+    redshift_secrets_manager_key = "redshift/#{Identity::Hostdata.env || 'local'}" \
+      "-analytics-#{redshift_secret_suffix}"
+    redshift_secrets_manager_key.then do |key|
+      config.add(
+        :redshift_password,
+        secrets_manager_name: key,
+        type: :string,
+      ) { |raw| JSON.parse(raw).fetch('password') }
+      config.add(
+        :redshift_username,
+        secrets_manager_name: key,
+        type: :string,
+      ) { |raw| JSON.parse(raw).fetch('username') }
+      config.add(:secret_key_base, type: :string)
+    end
   end.freeze
   # rubocop:enable Metrics/BlockLength
 

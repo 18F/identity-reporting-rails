@@ -1,5 +1,5 @@
 class RedshiftSystemTableSyncJob < ApplicationJob
-  queue_as :default
+  queue_as :admin # May require superuser to read pg_table_def table
 
   def perform
     error_msgs = []
@@ -121,7 +121,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       )
       SELECT src.column_name
       FROM source src
-      LEFT JOIN target tgt 
+      LEFT JOIN target tgt
       ON tgt.table_name = src.table_name AND tgt.column_name = src.column_name
       WHERE tgt.table_name IS NULL;
     SQL

@@ -10,7 +10,7 @@
 require 'yaml'
 
 class RedshiftUserLoginDetectionJob < ApplicationJob
-  queue_as :default
+  queue_as :admin # Requires superuser to read SYS_CONNECTION_LOG
 
   def perform
     log_user_logins
@@ -32,8 +32,8 @@ class RedshiftUserLoginDetectionJob < ApplicationJob
     query = <<~SQL
       SELECT DISTINCT user_name AS users
       FROM SYS_CONNECTION_LOG
-      WHERE event = 'authenticated' 
-      AND user_name IN (#{users_to_check.map { |s| "'#{s}'" }.join(", ")}) 
+      WHERE event = 'authenticated'
+      AND user_name IN (#{users_to_check.map { |s| "'#{s}'" }.join(", ")})
       AND record_time >= CURRENT_TIMESTAMP - INTERVAL '15 MINUTES';
     SQL
     result = DataWarehouseApplicationRecord.connection.execute(

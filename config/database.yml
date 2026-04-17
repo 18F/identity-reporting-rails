@@ -128,6 +128,7 @@ production:
     adapter: redshift
     host: <%= URI.parse("redshift://#{Identity::Hostdata.config.redshift_host}").host %>
     port: 5439
+    pool: 10
     database: "<%= Identity::Hostdata.config.redshift_database_name %>"
     username: "<%= Identity::Hostdata.config.redshift_username %>"
     password: "<%= Identity::Hostdata.config.redshift_password %>"
