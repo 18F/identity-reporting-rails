@@ -139,12 +139,6 @@ module Reporting
 
     # Single SQL query that gets raw user demographic data
     def demographics_query
-      Rails.logger.warn '=== FULL CONNECTION DEBUG ==='
-      Rails.logger.warn "Adapter name: #{connection.adapter_name}"
-      Rails.logger.warn "Connection role: #{DataWarehouseApplicationRecord.current_role}"
-      Rails.logger.warn "Connection shard: #{DataWarehouseApplicationRecord.current_shard}"
-      Rails.logger.warn '========================'
-
       <<~SQL
         WITH sp_redirects AS (
           SELECT DISTINCT user_id
