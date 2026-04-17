@@ -376,7 +376,7 @@ class RedshiftSync
   end
 
   def dev_user_schema?(schema_name, user_name)
-    schema_name == 'dev_' + user_name.to_str
+    schema_name == redshift_config['dev_schemas'][env_type][schema_prefix] + user_name.to_str
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
@@ -423,9 +423,14 @@ class RedshiftSync
       ) ? "CREATE SCHEMA IF NOT EXISTS #{schema_name};\n" : ''
     end
 
+    table_list = "ALL TABLES IN SCHEMA #{schema_name}"
+
     <<~SQL
-      #{schema_creation}GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO #{user_name};
-      GRANT #{table_privileges} ON #{table_list} TO #{user_name};
+      #{schema_creation}
+      GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{lg_admins};
+      GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{lg_powerusers};
+      GRANT #{table_privileges} ON #{table_list} TO GROUP #{lg_admins};
+      GRANT #{table_privileges} ON #{table_list} TO GROUP #{lg_powerusers};
     SQL
   end
 
