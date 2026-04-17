@@ -139,9 +139,10 @@ module Reporting
 
     # Single SQL query that gets raw user demographic data
     def demographics_query
-      Rails.logger.warn '=== CONNECTION DEBUG ==='
+      Rails.logger.warn '=== FULL CONNECTION DEBUG ==='
       Rails.logger.warn "Adapter name: #{connection.adapter_name}"
-      Rails.logger.warn "Connection class: #{connection.class}"
+      Rails.logger.warn "Connection role: #{DataWarehouseApplicationRecord.current_role}"
+      Rails.logger.warn "Connection shard: #{DataWarehouseApplicationRecord.current_shard}"
       Rails.logger.warn '========================'
 
       <<~SQL
@@ -160,7 +161,7 @@ module Reporting
           SELECT DISTINCT
             user_id, 
             #{extract_json_path('message', 'properties.event_properties.proofing_results.biographical_info.birth_year', type: 'INTEGER')} as birth_year,
-            UPPER(#{extract_json_path('message', 'properties.event_properties.proofing_results.biographical_info.state_id_jurisdiction')}) as state
+            UPPER(#{extract_json_path('message', 'properties.event_properties.proofing_results.biographical_info.state_id_jurisdiction')}::TEXT) as state
           FROM logs.events
           WHERE name = '#{DOC_AUTH_EVENT}'
             AND service_provider IN (#{formatted_issuers})
