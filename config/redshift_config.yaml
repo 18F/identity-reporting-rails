@@ -221,6 +221,9 @@ system_users:
       - schema_name: system_tables
         schema_privileges: USAGE
         table_privileges: SELECT
+      - schema_name: marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
 
   - user_name: idp_connector
     secret_id: "redshift/%{env_name}-analytics-idp-connector"
