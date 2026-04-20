@@ -47,14 +47,12 @@ RSpec.describe Reports::DemographicsMetricsReport do
   end
 
   before do
-    # Mock the config store - borrowed pattern from other specs
     allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(true)
     allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
     allow(IdentityConfig.store).to receive(:demographics_metrics_report_configs).and_return(
       mock_report_configs,
     )
 
-    # Mock the S3 upload methods - based on BaseReport pattern from other specs
     allow(report).to receive(:bucket_name).and_return('test-bucket')
     allow(report).to receive(:generate_s3_paths).and_return(['latest_path', 'full_path'])
     allow(report).to receive(:upload_file_to_s3_bucket)
@@ -67,7 +65,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'logs warning and returns false' do
-        # Borrowed pattern from FraudMetricsReport spec
         expect(Rails.logger).to receive(:warn).with('Redshift SIA V3 is disabled')
         expect(report.perform(report_date)).to eq(false)
       end
@@ -79,7 +76,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'returns early without processing' do
-        # Based on intuition - should exit early if S3 reports disabled
         expect(report).not_to receive(:generate_and_upload_report)
         report.perform(report_date)
       end
@@ -89,7 +85,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
       let(:mock_demographics_report) { instance_double(Reporting::DemographicsMetricsReport) }
 
       before do
-        # Mock the demographics report generation - based on intuition of how the classes interact
         allow(Reporting::DemographicsMetricsReport).to receive(:new).and_return(
           mock_demographics_report,
         )
@@ -97,7 +92,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'processes all configured agencies' do
-        # Based on intuition - should call the report generation for each config
         expect(Reporting::DemographicsMetricsReport).to receive(:new).with(
           issuers: ['urn:gov:gsa:openidconnect.profiles:sp:sso:ssa:sample_app'],
           agency_abbreviation: 'SSA',
@@ -114,7 +108,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'uploads reports to S3 for each agency' do
-        # Based on intuition - should upload each report file to S3
         expect(report).to receive(:upload_file_to_s3_bucket).exactly(8).times
 
         report.perform(report_date)
@@ -143,7 +136,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'logs error and re-raises exception' do
-        # Based on the error handling pattern in the wrapper
         expect(Rails.logger).to receive(:error).with(
           "Failed to generate demographics report for SSA: #{error_message}",
         )
@@ -163,7 +155,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
     end
 
     it 'converts array to CSV format' do
-      # Borrowed test pattern from other report specs - testing CSV generation
       csv_output = report.send(:csv_file, test_array)
       parsed_csv = CSV.parse(csv_output)
 
@@ -174,7 +165,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
   describe 'private methods' do
     describe '#report_configs' do
       it 'returns demographics metrics report configs from IdentityConfig' do
-        # Based on intuition - simple delegation to config store
         expect(report.send(:report_configs)).to eq(mock_report_configs)
       end
     end
@@ -193,7 +183,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'creates DemographicsMetricsReport with correct parameters' do
-        # Based on intuition - testing the parameter passing
         expect(Reporting::DemographicsMetricsReport).to receive(:new).with(
           issuers: issuers,
           agency_abbreviation: agency,
