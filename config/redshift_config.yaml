@@ -24,13 +24,13 @@ dev_aws_groups:
 
 dev_schemas:
   prod:
-    - schema_prefix: dev_
-      schema_privileges: ALL PRIVILEGES
-      table_privileges: ALL PRIVILEGES
+    schema_prefix: dev_
+    schema_privileges: ALL PRIVILEGES
+    table_privileges: ALL PRIVILEGES
   sandbox:
-    - schema_prefix: dev_
-      schema_privileges: ALL PRIVILEGES
-      table_privileges: ALL PRIVILEGES
+    schema_prefix: dev_
+    schema_privileges: ALL PRIVILEGES
+    table_privileges: ALL PRIVILEGES
   
 user_groups:
   - name: lg_users

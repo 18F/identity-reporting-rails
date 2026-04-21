@@ -6,11 +6,13 @@ require 'aws-sdk-secretsmanager'
 require 'optparse'
 require 'digest'
 require 'json'
+require 'debugger'
 
 require_relative '../../config/environment'
 class RedshiftSync
   def sync
     Rails.logger.info('Starting Redshift user sync')
+    create_dev_schemas
 
     lambda_users.each do |lambda_user|
       create_lambda_user(lambda_user['user_name'], lambda_user['schemas'])
@@ -376,7 +378,8 @@ class RedshiftSync
   end
 
   def dev_user_schema?(schema_name, user_name)
-    schema_name == redshift_config['dev_schemas'][env_type][schema_prefix] + user_name.to_str
+    schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
+    schema_name == schema_prefix + user_name
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
@@ -413,25 +416,36 @@ class RedshiftSync
     create_schema_privileges_for_group(user_group)
   end
 
-  def create_dev_schemas(canonical_users)
+  def create_dev_schemas
+    dev_schema_config = redshift_config['dev_schemas'][env_type]
+    schema_prefix = dev_schema_config['schema_prefix']
+    schema_privileges = dev_schema_config['schema_privileges']
+    table_privileges = dev_schema_config['table_privileges']
+
+    Rails.logger.info("Creating dev schemas with prefix: #{schema_prefix}")
+
     canonical_users.each do |user|
       user_name = user.gsub('IAM:', '')
-      schema_name = redshift_config['enabled_aws_groups'][env_type] + user_name.to_str
-      schema_creation = should_create_schema?(
-        user_name, schema_name,
-        schema_privileges
-      ) ? "CREATE SCHEMA IF NOT EXISTS #{schema_name};\n" : ''
+      schema_name = schema_prefix + user_name
+
+      if should_create_schema?(user_name, schema_name, schema_privileges)
+        sql = "CREATE SCHEMA IF NOT EXISTS #{schema_name};"
+        Rails.logger.info("Creating schema: #{schema_name}")
+        execute_query(sql)
+
+        # Grant privileges to admin and poweruser groups
+        grant_sql = <<~SQL
+          GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP lg_admins;
+          GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP lg_powerusers;
+          GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP lg_admins;
+          GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP lg_powerusers;
+        SQL
+
+        execute_query(grant_sql)
+      end
     end
 
-    table_list = "ALL TABLES IN SCHEMA #{schema_name}"
-
-    <<~SQL
-      #{schema_creation}
-      GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{lg_admins};
-      GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{lg_powerusers};
-      GRANT #{table_privileges} ON #{table_list} TO GROUP #{lg_admins};
-      GRANT #{table_privileges} ON #{table_list} TO GROUP #{lg_powerusers};
-    SQL
+    Rails.logger.info('Dev schemas creation completed')
   end
 
   def revoke_all_privileges_for_group(group_name, schema_name)
