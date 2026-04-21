@@ -1,3 +1,6 @@
+# logic copied from lib/reporting/json_path_helper.rb
+# lib/reporting/json_path_helper.rb should eventually be refactored to use this helper
+
 module Reporting
   module JsonPathHelper
     def extract_json_path(column, path, type: 'VARCHAR', keep_parenthesis: true)
