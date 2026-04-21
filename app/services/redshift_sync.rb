@@ -12,7 +12,6 @@ require_relative '../../config/environment'
 class RedshiftSync
   def sync
     Rails.logger.info('Starting Redshift user sync')
-    # create_dev_schemas
 
     lambda_users.each do |lambda_user|
       create_lambda_user(lambda_user['user_name'], lambda_user['schemas'])
