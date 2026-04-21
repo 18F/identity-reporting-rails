@@ -507,7 +507,7 @@ class RedshiftSchemaUpdater
     old_column_name = "#{column_name}_copy"
     rename_column(table_name, column_name, old_column_name)
     add_column(table_name, column_name, new_data_type, keyword_options)
-    backfill_column(table_name, old_column_name, column_name)
+    backfill_column(table_name, old_column_name, column_name, new_data_type)
     remove_column(table_name, old_column_name)
   end
 
@@ -517,11 +517,23 @@ class RedshiftSchemaUpdater
     )
   end
 
-  def backfill_column(table_name, from_column, to_column)
+  def backfill_column(table_name, from_column, to_column, new_data_type = nil)
+    sql =
+      if new_data_type == 'array'
+        if using_redshift_adapter?
+          pg_array_to_json =
+            "REPLACE(REPLACE(CAST(#{from_column} AS VARCHAR(MAX)), '{', '['), '}', ']')"
+          "UPDATE #{table_name} SET #{to_column} = JSON_PARSE(#{pg_array_to_json});"
+        else
+          pg_array_to_jsonb =
+            "REPLACE(REPLACE(CAST(#{from_column} AS TEXT), '{', '['), '}', ']')::jsonb"
+          "UPDATE #{table_name} SET #{to_column} = #{pg_array_to_jsonb};"
+        end
+      else
+        "UPDATE #{table_name} SET #{to_column} = #{from_column};"
+      end
     DataWarehouseApplicationRecord.connection.execute(
-      DataWarehouseApplicationRecord.sanitize_sql(
-        "UPDATE #{table_name} SET #{to_column} = #{from_column};",
-      ),
+      DataWarehouseApplicationRecord.sanitize_sql(sql),
     )
   end
 
