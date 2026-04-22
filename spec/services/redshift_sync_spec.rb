@@ -185,6 +185,18 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe 'SQL generation for dev schema creation' do
+    it 'includes CREATE SCHEMA for devs' do
+      it 'generates correct privilege SQL with for DWPowerUsers' do
+      end
+      it 'generates correct privilege SQL with for DWAdmins' do
+      end
+
+      it 'does not generate SQL for any other user type' do
+      end
+    end
+  end
+
   describe '#sync execution order' do
     it 'executes all steps in correct sequence' do
       call_order = []
@@ -198,6 +210,7 @@ RSpec.describe RedshiftSync do
         []
       end
       allow(sync).to receive(:sync_user_group) { call_order << :sync_user_group }
+      allow(sync).to receive(:create_dev_schemas) { call_order << :create_dev_schemas }
 
       sync.sync
 
@@ -209,6 +222,7 @@ RSpec.describe RedshiftSync do
           :drop_users,
           :create_users,
           :sync_user_group,
+          :create_dev_schemas,
         ],
       )
     end

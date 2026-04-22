@@ -234,7 +234,7 @@ class RedshiftSync
 
     if dev_user?(redshift_username)
       dev_schema = dev_schema_name(redshift_username)
-      schema_list.append(dev_schema)
+      schema_list.append(dev_schema) && dev_schema
       remove_dev_schemas =
         <<~SQL
           DROP SCHEMA IF EXISTS #{dev_schema};
@@ -387,8 +387,14 @@ class RedshiftSync
 
   def dev_schema_name(aws_user)
     schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
-    ec2_name = users_yaml[aws_user]['ec2_name']
-    return schema_prefix + ec2_name
+    ec2_name = users_yaml[aws_user]['ec2_username'].first
+
+    if ec2_name.empty?
+      Rails.logger.warn("Missing ec2_name for user #{aws_user}; skipping dev schema")
+      return nil
+    end
+
+    schema_prefix + ec2_name
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
@@ -436,6 +442,8 @@ class RedshiftSync
     canonical_users.each do |redshift_username|
       if dev_user?(redshift_username)
         schema_name = dev_schema_name(redshift_username)
+        next if schema_name.nil?
+
         sql = "CREATE SCHEMA IF NOT EXISTS #{schema_name};"
         Rails.logger.info("Creating schema: #{schema_name}")
         execute_query(sql)
