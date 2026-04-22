@@ -237,9 +237,16 @@ class RedshiftSync
       SQL
     end.join("\n")
 
+    remove_dev_schemas = 
+      if dev_user?(user_name)
+      <<~SQL
+        DROP SCHEMA 
+      SQL
+
     <<~SQL
       REVOKE ALL ON DATABASE analytics FROM "#{user_name}";
       #{revoke_statements}
+      #{remove_dev_schemas}
       DROP USER "#{user_name}";
     SQL
   end
@@ -360,13 +367,7 @@ class RedshiftSync
   end
 
   def should_create_schema?(user_name, schema_name, schema_privileges)
-    if dbt_user?(user_name)
-      dbt_user_schema?(schema_name) && schema_privileges == 'ALL PRIVILEGES'
-    elsif dev_user?(user_name)
-      dev_user_schema?(schema_name, user_name) && schema_privileges == 'ALL PRIVILEGES'
-    else
-      false
-    end
+    dbt_user?(user_name) && dbt_user_schema?(schema_name) && schema_privileges == 'ALL PRIVILEGES'
   end
 
   def dev_user?(user_name)
@@ -375,9 +376,13 @@ class RedshiftSync
     end
   end
 
-  def dev_user_schema?(schema_name, user_name)
+  def dev_user_schema?(schema_name, user_name)    
+    schema_name == dev_schema_name(user_name)
+  end
+
+  def dev_schema_name(user_name)
     schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
-    schema_name == schema_prefix + user_name.tr('.-', '_')
+    return schema_prefix + user_name.tr('.-', '_')
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
@@ -424,9 +429,9 @@ class RedshiftSync
 
     canonical_users.each do |user|
       user_name = user.gsub('IAM:', '')
-      schema_name = schema_prefix + user_name.tr('.-', '_')
+      schema_name = dev_schema_name(user_name)
 
-      if should_create_schema?(user_name, schema_name, schema_privileges)
+      if dev_user?(user_name)
         sql = "CREATE SCHEMA IF NOT EXISTS #{schema_name};"
         Rails.logger.info("Creating schema: #{schema_name}")
         execute_query(sql)
