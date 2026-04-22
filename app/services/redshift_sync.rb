@@ -376,7 +376,7 @@ class RedshiftSync
   end
 
   def aws_username(redshift_username)
-    redshift_user.gsub('IAM:', '')
+    redshift_username.gsub('IAM:', '')
   end
 
   def dev_user?(redshift_username)
@@ -433,9 +433,8 @@ class RedshiftSync
     Rails.logger.info("Creating dev schemas with prefix: #{schema_prefix}")
 
     canonical_users.each do |redshift_username|
-      schema_name = dev_schema_name(redshift_username)
-
-      if dev_user?(user_name)
+      if dev_user?(redshift_username)
+        schema_name = dev_schema_name(redshift_username)
         sql = "CREATE SCHEMA IF NOT EXISTS #{schema_name};"
         Rails.logger.info("Creating schema: #{schema_name}")
         execute_query(sql)
