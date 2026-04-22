@@ -385,9 +385,10 @@ class RedshiftSync
     end
   end
 
-  def dev_schema_name(aws_user)
+  def dev_schema_name(redshift_username)
     schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
-    ec2_name = users_yaml[aws_user]['ec2_username'].first
+    aws_user = aws_username(redshift_username)
+    ec2_name = users_yaml.dig(aws_user, 'ec2_username')&.first.to_s.strip
 
     if ec2_name.empty?
       Rails.logger.warn("Missing ec2_name for user #{aws_user}; skipping dev schema")
