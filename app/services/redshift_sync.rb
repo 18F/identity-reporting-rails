@@ -376,10 +376,6 @@ class RedshiftSync
     end
   end
 
-  def dev_user_schema?(schema_name, user_name)    
-    schema_name == dev_schema_name(user_name)
-  end
-
   def dev_schema_name(user_name)
     schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
     return schema_prefix + user_name.tr('.-', '_')
