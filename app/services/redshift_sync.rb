@@ -229,26 +229,30 @@ class RedshiftSync
     get_existing_configured_schemas.reject { |schema| ['idp', 'pg_catalog'].include?(schema) }
   end
 
-  def build_drop_user_sql(user_name, schemas)
-    revoke_statements = schemas.map do |schema|
+  def build_drop_user_sql(redshift_username, schemas)
+    schema_list = schemas.dup
+
+    if dev_user?(redshift_username)
+      dev_schema = dev_schema_name(redshift_username)
+      schema_list.append(dev_schema)
+      remove_dev_schemas =
+        <<~SQL
+          DROP SCHEMA IF EXISTS #{dev_schema};
+        SQL
+    end
+
+    revoke_statements = schema_list.map do |schema|
       <<~SQL
-        REVOKE ALL ON SCHEMA #{schema} FROM "#{user_name}";
-        REVOKE ALL ON ALL TABLES IN SCHEMA #{schema} FROM "#{user_name}";
+        REVOKE ALL ON SCHEMA #{schema} FROM "#{redshift_username}";
+        REVOKE ALL ON ALL TABLES IN SCHEMA #{schema} FROM "#{redshift_username}";
       SQL
     end.join("\n")
 
-    remove_dev_schemas =
-      if dev_user?(user_name)
-        <<~SQL
-          DROP SCHEMA IF EXISTS #{dev_schema_name(user_name)};
-        SQL
-      end
-
     <<~SQL
-      REVOKE ALL ON DATABASE analytics FROM "#{user_name}";
+      REVOKE ALL ON DATABASE analytics FROM "#{redshift_username}";
       #{revoke_statements}
       #{remove_dev_schemas}
-      DROP USER "#{user_name}";
+      DROP USER "#{redshift_username}";
     SQL
   end
 
@@ -371,15 +375,19 @@ class RedshiftSync
     dbt_user?(user_name) && dbt_user_schema?(schema_name) && schema_privileges == 'ALL PRIVILEGES'
   end
 
-  def dev_user?(user_name)
-    users_yaml[user_name]['aws_groups'].any? do |aws_group|
+  def aws_username(redshift_username)
+    redshift_user.gsub('IAM:', '')
+  end
+
+  def dev_user?(redshift_username)
+    users_yaml[aws_username(redshift_username)]['aws_groups'].any? do |aws_group|
       redshift_config['dev_aws_groups'][env_type]&.include?(aws_group)
     end
   end
 
-  def dev_schema_name(user_name)
+  def dev_schema_name(redshift_user)
     schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
-    return schema_prefix + user_name.tr('.-', '_')
+    return schema_prefix + aws_username(redshift_user).tr('.-', '_')
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
@@ -424,9 +432,8 @@ class RedshiftSync
 
     Rails.logger.info("Creating dev schemas with prefix: #{schema_prefix}")
 
-    canonical_users.each do |user|
-      user_name = user.gsub('IAM:', '')
-      schema_name = dev_schema_name(user_name)
+    canonical_users.each do |redshift_username|
+      schema_name = dev_schema_name(redshift_username)
 
       if dev_user?(user_name)
         sql = "CREATE SCHEMA IF NOT EXISTS #{schema_name};"
@@ -532,8 +539,8 @@ class RedshiftSync
       )
     end
 
-    new_group_users = canonical_users.select do |user|
-      users_yaml[user.gsub('IAM:', '')]['aws_groups'].any? do |aws_group|
+    new_group_users = canonical_users.select do |redshift_username|
+      users_yaml[aws_username(redshift_username)]['aws_groups'].any? do |aws_group|
         group['aws_groups'][env_type].include?(aws_group)
       end
     end
