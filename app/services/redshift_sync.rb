@@ -371,7 +371,7 @@ class RedshiftSync
 
   def dev_user?(user_name)
     users_yaml[user_name]['aws_groups'].any? do |aws_group|
-      redshift_config['dev_groups'][env_type].include?(aws_group)
+      redshift_config['dev_aws_groups'][env_type]&.include?(aws_group)
     end
   end
 
