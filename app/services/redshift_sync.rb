@@ -237,11 +237,12 @@ class RedshiftSync
       SQL
     end.join("\n")
 
-    remove_dev_schemas = 
+    remove_dev_schemas =
       if dev_user?(user_name)
-      <<~SQL
-        DROP SCHEMA 
-      SQL
+        <<~SQL
+          DROP SCHEMA IF EXISTS #{dev_schema_name(user_name)};
+        SQL
+      end
 
     <<~SQL
       REVOKE ALL ON DATABASE analytics FROM "#{user_name}";
