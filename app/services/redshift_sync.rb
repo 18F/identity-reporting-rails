@@ -370,7 +370,6 @@ class RedshiftSync
   end
 
   def dev_user?(user_name)
-    Rails.logger.info("#{env_type}")
     users_yaml[user_name]['aws_groups'].any? do |aws_group|
       redshift_config['dev_aws_groups'][env_type]&.include?(aws_group)
     end
@@ -378,7 +377,7 @@ class RedshiftSync
 
   def dev_user_schema?(schema_name, user_name)
     schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
-    schema_name == schema_prefix + user_name
+    schema_name == schema_prefix + user_name.tr('.-', '_')
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
@@ -425,7 +424,7 @@ class RedshiftSync
 
     canonical_users.each do |user|
       user_name = user.gsub('IAM:', '')
-      schema_name = schema_prefix + user_name.tr('.', '_')
+      schema_name = schema_prefix + user_name.tr('.-', '_')
 
       if should_create_schema?(user_name, schema_name, schema_privileges)
         sql = "CREATE SCHEMA IF NOT EXISTS #{schema_name};"
