@@ -22,6 +22,7 @@ database_sslmode: 'verify-full'
 database_statement_timeout: 2_500
 database_timeout: 5_000
 database_worker_jobs_sslmode: 'verify-full'
+demographics_metrics_report_configs: '[]'
 good_job_max_threads: 5
 data_freshness_threshold_hours: 31
 good_job_queues: 'default:5;low:1;*'
