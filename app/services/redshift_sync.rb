@@ -6,7 +6,6 @@ require 'aws-sdk-secretsmanager'
 require 'optparse'
 require 'digest'
 require 'json'
-require 'debugger'
 
 require_relative '../../config/environment'
 class RedshiftSync
