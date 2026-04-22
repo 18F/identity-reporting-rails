@@ -385,9 +385,10 @@ class RedshiftSync
     end
   end
 
-  def dev_schema_name(redshift_user)
+  def dev_schema_name(aws_user)
     schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
-    return schema_prefix + aws_username(redshift_user).tr('.-', '_')
+    ec2_name = users_yaml[aws_user]['ec2_name']
+    return schema_prefix + ec2_name
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
