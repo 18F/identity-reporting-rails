@@ -442,8 +442,6 @@ class RedshiftSync
         execute_query(grant_sql)
       end
     end
-
-    Rails.logger.info('Dev schemas creation completed')
   end
 
   def revoke_all_privileges_for_group(group_name, schema_name)
