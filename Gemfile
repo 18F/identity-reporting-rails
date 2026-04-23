@@ -16,7 +16,7 @@ gem 'pg', '1.5.9' # Pinned to maintain redshift compatiblity < pgsql 10
 gem 'rack', '~> 3.1.12'
 gem 'redacted_struct'
 gem 'tzinfo-data', platforms: %i[ windows jruby ]
-gem 'caxlsx', require: false
+gem 'caxlsx', '>= 4.3.0', require: false
 gem 'simple_xlsx_reader', require: false
 gem 'connection_pool'
 gem 'redis', '>= 3.2.0'
