@@ -384,7 +384,7 @@ class RedshiftSync
 
     schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
 
-    schema_prefix + ec2_name
+    schema_prefix + ec2_name.tr('.-', '_')
   end
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
