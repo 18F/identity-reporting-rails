@@ -48,15 +48,13 @@ module Reporting
           AND sp_data.month_start_calendar_id = p.month_start_calendar_id
     SQL
 
-    attr_reader :service_provider_id, :month_start_calendar_id, :connection
+    attr_reader :service_provider_id, :month_start_calendar_id
 
     # @param [Integer] service_provider_id
     # @param [Integer] month_start_calendar_id
-    # @param [#execute,#quote] connection DB connection (ActiveRecord connection, etc)
-    def initialize(service_provider_id:, month_start_calendar_id:, connection:)
+    def initialize(service_provider_id:, month_start_calendar_id:)
       @service_provider_id = service_provider_id
       @month_start_calendar_id = month_start_calendar_id
-      @connection = connection
     end
 
     # @return [String] JSON string of query results
@@ -72,10 +70,17 @@ module Reporting
     private
 
     def sql
-      # Substitute safely using the adapter's quoting
       REDSHIFT_QUERY.
         gsub(':service_provider_id', connection.quote(service_provider_id.to_i)).
         gsub(':month_start_calendar_id', connection.quote(month_start_calendar_id.to_i))
+    end
+
+    def connection
+      @connection ||= if defined?(DataWarehouseApplicationRecord)
+                        DataWarehouseApplicationRecord.connection
+                      else
+                        ActiveRecord::Base.connection
+                      end
     end
   end
 end

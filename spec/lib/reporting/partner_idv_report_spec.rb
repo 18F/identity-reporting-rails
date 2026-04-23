@@ -23,12 +23,11 @@ RSpec.describe Reporting::PartnerIdvReport do
     described_class.new(
       service_provider_id: service_provider_id,
       month_start_calendar_id: month_start_calendar_id,
-      connection: connection,
     )
   end
 
   before do
-    # Quote should produce something deterministic for our SQL expectations.
+    allow(ActiveRecord::Base).to receive(:connection).and_return(connection)
     allow(connection).to receive(:quote) { |value| value.to_s }
     allow(connection).to receive(:execute).and_return(result)
   end

@@ -116,9 +116,6 @@ GEM
     aws-sdk-kms (1.98.0)
       aws-sdk-core (~> 3, >= 3.216.0)
       aws-sigv4 (~> 1.5)
-    aws-sdk-redshiftdataapiservice (1.41.0)
-      aws-sdk-core (~> 3, >= 3.201.0)
-      aws-sigv4 (~> 1.1)
     aws-sdk-s3 (1.181.0)
       aws-sdk-core (~> 3, >= 3.216.0)
       aws-sdk-kms (~> 1)
@@ -469,6 +466,7 @@ PLATFORMS
   arm-linux-gnu
   arm-linux-musl
   arm64-darwin
+  ruby
   x86-linux
   x86-linux-gnu
   x86-linux-musl
@@ -479,7 +477,6 @@ PLATFORMS
 
 DEPENDENCIES
   activerecord-redshift-adapter
-  aws-sdk-redshiftdataapiservice
   better_errors (>= 2.5.1)
   bootsnap (~> 1.0)
   brakeman
