@@ -230,18 +230,7 @@ class RedshiftSync
   end
 
   def build_drop_user_sql(redshift_username, schemas)
-    schema_list = schemas.dup
-
-    if dev_user?(redshift_username)
-      dev_schema = dev_schema_name(redshift_username)
-      schema_list.append(dev_schema) && dev_schema
-      remove_dev_schemas =
-        <<~SQL
-          DROP SCHEMA IF EXISTS #{dev_schema};
-        SQL
-    end
-
-    revoke_statements = schema_list.map do |schema|
+    revoke_statements = schemas do |schema|
       <<~SQL
         REVOKE ALL ON SCHEMA #{schema} FROM "#{redshift_username}";
         REVOKE ALL ON ALL TABLES IN SCHEMA #{schema} FROM "#{redshift_username}";
@@ -251,7 +240,6 @@ class RedshiftSync
     <<~SQL
       REVOKE ALL ON DATABASE analytics FROM "#{redshift_username}";
       #{revoke_statements}
-      #{remove_dev_schemas}
       DROP USER "#{redshift_username}";
     SQL
   end
@@ -386,14 +374,15 @@ class RedshiftSync
   end
 
   def dev_schema_name(redshift_username)
-    schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
     aws_user = aws_username(redshift_username)
-    ec2_name = users_yaml.dig(aws_user, 'ec2_username')&.first.to_s.strip
+    ec2_name = users_yaml.dig(aws_user, 'ec2_username') || []
 
     if ec2_name.empty?
       Rails.logger.warn("Missing ec2_name for user #{aws_user}; skipping dev schema")
       return nil
     end
+
+    schema_prefix = redshift_config['dev_schemas'][env_type]['schema_prefix']
 
     schema_prefix + ec2_name
   end
