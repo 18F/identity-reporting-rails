@@ -5,11 +5,11 @@ RSpec.describe Reports::PartnerIdvReportJob do
   let(:service_provider_id) { 42 }
   let(:month_start_calendar_id) { 202401 }
 
-  let(:s3_data_warehouse_replica_bucket_prefix) { 'login-gov-dw-reports' }
+  let(:s3_report_bucket_prefix) { 'login-gov-dw-reports' }
   let(:aws_account_id) { '123456789012' }
   let(:aws_region) { 'us-west-2' }
   let(:expected_bucket) do
-    "#{s3_data_warehouse_replica_bucket_prefix}-#{aws_account_id}-#{aws_region}"
+    "#{s3_report_bucket_prefix}-#{aws_account_id}-#{aws_region}"
   end
 
   let(:expected_s3_path) do
@@ -24,8 +24,8 @@ RSpec.describe Reports::PartnerIdvReportJob do
     allow(Identity::Hostdata).to receive(:env).and_return('int')
     allow(Identity::Hostdata).to receive(:aws_account_id).and_return(aws_account_id)
     allow(Identity::Hostdata).to receive(:aws_region).and_return(aws_region)
-    allow(IdentityConfig.store).to receive(:s3_data_warehouse_replica_bucket_prefix).
-      and_return(s3_data_warehouse_replica_bucket_prefix)
+    allow(IdentityConfig.store).to receive(:s3_report_bucket_prefix).
+      and_return(s3_report_bucket_prefix)
 
     Aws.config[:s3] = {
       stub_responses: {
