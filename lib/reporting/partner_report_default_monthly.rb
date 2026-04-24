@@ -32,14 +32,30 @@ module Reporting
 
     def slice_by_issuer_and_month(raw_data)
       results = {}
+      duplicate_entries = []
+
       raw_data.each do |row|
         issuer = row['issuer']
         next if should_exclude_issuer?(issuer)
 
         month_start_date = format_month_start_date(row['month_start_date_actual'])
         results[issuer] ||= {}
+
+        if results[issuer][month_start_date]
+          duplicate_entries << "#{issuer}/#{month_start_date}"
+          Rails.logger.error "Duplicate data detected for #{issuer} / #{month_start_date} "\
+          "- setting to nil to prevent upload."
+          results[issuer][month_start_date] = nil
+          next
+        end
+
         results[issuer][month_start_date] = format_row_as_json(row)
       end
+
+      if duplicate_entries.any?
+        Rails.logger.error "Found #{duplicate_entries.size} duplicate issuer/month combinations. Affected entries: #{duplicate_entries.join(', ')}"
+      end
+
       results
     end
 
@@ -126,10 +142,17 @@ module Reporting
 
       integer_fields.each_with_object({}) do |field, hash|
         value = row[field]
-        hash[field.to_sym] = value.nil? ? nil : value.to_i
-      rescue StandardError => e
-        Rails.logger.warn "Failed to convert field #{field} with value #{value}: #{e.message}"
-        hash[field.to_sym] = nil
+        if value.nil? || value.to_s.strip.empty?
+          hash[field.to_sym] = nil
+        else
+          begin
+            converted_value = Integer(value)
+            hash[field.to_sym] = converted_value
+          rescue ArgumentError, TypeError => e
+            Rails.logger.warn "Failed to convert field #{field} with value #{value}: #{e.message}"
+            hash[field.to_sym] = nil
+          end
+        end
       end
     end
 

@@ -3,9 +3,8 @@
 require 'reporting/partner_report_default_monthly'
 
 module Reports
-  class PartnerDefaultReportMonthly < BaseReport
+  class PartnerReportDefaultMonthly < BaseReport
     REPORT_NAME = 'partner-default-report-monthly'
-
     attr_reader :report_date
 
     def initialize(report_date = nil, *args, **rest)
@@ -21,17 +20,13 @@ module Reports
         Rails.logger.warn 'Redshift SIA V3 is disabled'
         return false
       end
-
       return unless IdentityConfig.store.s3_reports_enabled
 
       @report_date = date
       time_range = report_date.all_month
-
-      Rails.logger.info "Generating partner default monthly reports for " \
-                        " #{time_range.begin.strftime('%B %Y')}"
+      Rails.logger.info "Generating partner default monthly reports for #{time_range.begin.strftime('%B %Y')}"
 
       generate_and_upload_reports(time_range)
-
       Rails.logger.info 'Completed partner default monthly report'
     end
 
@@ -39,14 +34,32 @@ module Reports
 
     def generate_and_upload_reports(time_range)
       nested_reports = partner_reports(time_range)
+      uploaded_count = 0
+      skipped_count = 0
 
       nested_reports.each do |issuer, monthly_data|
         Rails.logger.info "Processing reports for issuer: #{issuer}"
 
+        if monthly_data.nil?
+          Rails.logger.warn "Skipping upload for #{issuer}: no report data available"
+          skipped_count += 1
+          next
+        end
+
         monthly_data.each do |month_start_date, json_data|
+          if json_data.nil?
+            Rails.logger.warn "Skipping upload for #{issuer} month #{month_start_date}: "\
+            " no report data available"
+            skipped_count += 1
+            next
+          end
+
           upload_to_s3(json_data, issuer: issuer, month: month_start_date)
+          uploaded_count += 1
         end
       end
+
+      Rails.logger.info "Upload summary: #{uploaded_count} successful, #{skipped_count} skipped"
     rescue StandardError => err
       Rails.logger.error "Failed to generate partner default monthly reports: #{err.message}"
       raise err
@@ -61,7 +74,6 @@ module Reports
     def upload_to_s3(json_data, issuer:, month:)
       # S3 path structure: issuer/monthly/2025-01-01.json
       path = "#{issuer}/monthly/#{month}.json"
-
       if bucket_name.present?
         upload_file_to_s3_bucket(
           path: path,
