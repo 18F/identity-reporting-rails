@@ -15,7 +15,7 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       'issuer' => issuer1,
       'service_provider_name' => 'Agency 1 Application',
       'agency_name' => 'Test Agency 1',
-      'start_service_provider_id' => 123,
+      'service_provider_id' => 123,
       'month_start_date_actual' => '2024-01-01',
       'month_start_calendar_id' => 20240101,
       'total_active_users' => 1000,
@@ -80,7 +80,7 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       'issuer' => issuer2,
       'service_provider_name' => nil, # Missing required field
       'agency_name' => 'Test Agency 2',
-      'start_service_provider_id' => 456,
+      'service_provider_id' => 456,
       'month_start_date_actual' => '2024-01-01',
       'month_start_calendar_id' => 20240101,
       'total_active_users' => 500,
@@ -93,7 +93,7 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       'issuer' => issuer3,
       'service_provider_name' => 'Agency 3 Application',
       'agency_name' => 'Test Agency 3',
-      'start_service_provider_id' => 789,
+      'service_provider_id' => 789,
       'month_start_date_actual' => 'invalid-date',
       'month_start_calendar_id' => 20240101,
       'total_active_users' => 200,
@@ -214,6 +214,8 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
     end
 
     context 'with duplicate issuer/month combinations' do
+      # Note: With cartesian product approach in SQL query, duplicates should be impossible
+      # but this test validates our safety check still works
       let(:duplicate_row_data) do
         # Same issuer and month as complete_row_data
         complete_row_data.merge('total_active_users' => 2000) # Different metrics
@@ -227,10 +229,10 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
 
       it 'sets duplicate entries to nil and logs error with specific issuer info' do
         expect(Rails.logger).to receive(:error).with(
-          /Duplicate data detected for #{Regexp.escape(issuer1)} \/ 2024-01-01 - setting to nil/,
+          /Unexpected duplicate data detected for #{Regexp.escape(issuer1)} \/ 2024-01-01 - setting to nil/,
         )
         expect(Rails.logger).to receive(:error).with(
-          "Found 1 duplicate issuer/month combinations. Affected entries: #{issuer1}/2024-01-01",
+          "Found 1 unexpected duplicate combinations: #{issuer1}/2024-01-01",
         )
 
         result = report.generate_reports
@@ -260,8 +262,8 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
           allow(Rails.logger).to receive(:error)
 
           expect(Rails.logger).to receive(:error).with(
-            "Found 2 duplicate issuer/month combinations. "\
-            "Affected entries: #{issuer1}/2024-01-01, #{issuer2}/2024-01-01",
+            "Found 2 unexpected duplicate combinations: "\
+            "#{issuer1}/2024-01-01, #{issuer2}/2024-01-01",
           )
 
           result = report.generate_reports
@@ -307,6 +309,43 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
     it 'returns nil for non-existent combination' do
       result = report.generate_report_for_issuer_and_month('non-existent', '2024-01-01')
       expect(result).to be_nil
+    end
+  end
+
+  describe 'cartesian product behavior' do
+    let(:multi_month_range) { Date.new(2024, 1, 1)..Date.new(2024, 2, 1) }
+    let(:report_multi_month) do
+      described_class.new(
+        time_range: multi_month_range,
+        included_issuers: nil,
+        excluded_issuers: [],
+      )
+    end
+
+    let(:jan_row) do
+      complete_row_data.merge(
+        'month_start_calendar_id' => 20240101,
+        'month_start_date_actual' => '2024-01-01',
+      )
+    end
+    let(:feb_row) do
+      complete_row_data.merge(
+        'month_start_calendar_id' => 20240201,
+        'month_start_date_actual' => '2024-02-01',
+      )
+    end
+
+    before do
+      allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return(
+        [jan_row,
+         feb_row],
+      )
+    end
+
+    it 'returns data for all month combinations' do
+      result = report_multi_month.generate_reports
+      expect(result[issuer1]).to have_key('2024-01-01')
+      expect(result[issuer1]).to have_key('2024-02-01')
     end
   end
 
