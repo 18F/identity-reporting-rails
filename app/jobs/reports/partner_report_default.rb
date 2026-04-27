@@ -75,7 +75,8 @@ module Reports
 
     def upload_to_s3(json_data, issuer:, period_date:)
       # S3 path structure: issuer/REPORT_CADENCE/2025-01-01.json
-      path = "#{issuer}/#{REPORT_CADENCE}/#{period_date}.json"
+      base_path = generate_base_s3_path(directory: 'portal')
+      path = "#{base_path}#{issuer}/#{REPORT_CADENCE}/#{period_date}.json"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(

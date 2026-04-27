@@ -68,6 +68,11 @@ module Reports
       [latest, dated]
     end
 
+    def generate_base_s3_path(directory: nil)
+      host_data_env = Identity::Hostdata.env
+      [host_data_env, directory].compact.join('/') + '/'
+    end
+
     def logger
       Rails.logger
     end
