@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 require 'rails_helper'
-require 'reporting/partner_report_default_monthly'
+require 'reporting/partner_report_default'
 
-RSpec.describe Reporting::PartnerReportDefaultMonthly do
-  let(:time_range) { Date.new(2024, 1, 1).in_time_zone('UTC').all_month }
+RSpec.describe Reporting::PartnerReportDefault do
+  let(:calendar_id) { 20240101 }
+  let(:report_date) { '2024-01-15' }
+  let(:report_cadence) { 'monthly' }
   let(:issuer1) { 'urn:gov:gsa:openidconnect.profiles:sp:test:agency1' }
   let(:issuer2) { 'urn:gov:gsa:openidconnect.profiles:sp:test:agency2' }
   let(:issuer3) { 'urn:gov:gsa:openidconnect.profiles:sp:test:agency3' }
@@ -15,9 +17,9 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       'issuer' => issuer1,
       'service_provider_name' => 'Agency 1 Application',
       'agency_name' => 'Test Agency 1',
-      'service_provider_id' => 123,
-      'month_start_date_actual' => '2024-01-01',
-      'month_start_calendar_id' => 20240101,
+      'start_service_provider_id' => 123,
+      'period_start_date' => '2024-01-01',
+      'period_calendar_id' => 20240101,
       'total_active_users' => 1000,
       'newly_created_accounts' => 50,
       'existing_accounts' => 950,
@@ -70,7 +72,6 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       'successful_creation_count' => 45,
       'failed_creation_count' => 5,
       'registered_blocked_fraud_count' => 2,
-
     }
   end
 
@@ -80,9 +81,9 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       'issuer' => issuer2,
       'service_provider_name' => nil, # Missing required field
       'agency_name' => 'Test Agency 2',
-      'service_provider_id' => 456,
-      'month_start_date_actual' => '2024-01-01',
-      'month_start_calendar_id' => 20240101,
+      'start_service_provider_id' => 456,
+      'period_start_date' => '2024-01-01',
+      'period_calendar_id' => 20240101,
       'total_active_users' => 500,
     }
   end
@@ -93,16 +94,18 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       'issuer' => issuer3,
       'service_provider_name' => 'Agency 3 Application',
       'agency_name' => 'Test Agency 3',
-      'service_provider_id' => 789,
-      'month_start_date_actual' => 'invalid-date',
-      'month_start_calendar_id' => 20240101,
+      'start_service_provider_id' => 789,
+      'period_start_date' => 'invalid-date', # Invalid date
+      'period_calendar_id' => 20240101,
       'total_active_users' => 200,
     }
   end
 
   subject(:report) do
     described_class.new(
-      time_range: time_range,
+      calendar_id: calendar_id,
+      report_date: report_date,
+      report_cadence: report_cadence,
       included_issuers: nil,
       excluded_issuers: [],
     )
@@ -116,22 +119,38 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
   end
 
   describe '#initialize' do
-    it 'sets time_range correctly' do
-      expect(report.time_range).to eq(time_range)
+    it 'sets parameters correctly' do
+      expect(report.calendar_id).to eq(calendar_id)
+      expect(report.report_date).to eq(report_date)
+      expect(report.report_cadence).to eq('monthly')
     end
 
-    it 'defaults included_issuers to nil' do
-      expect(report.included_issuers).to be_nil
+    it 'validates report_cadence' do
+      expect do
+        described_class.new(
+          calendar_id: calendar_id,
+          report_date: report_date,
+          report_cadence: 'invalid',
+        )
+      end.to raise_error(ArgumentError, /Invalid report_cadence/)
     end
 
-    it 'defaults excluded_issuers to empty array' do
-      expect(report.excluded_issuers).to eq([])
+    it 'validates calendar_id' do
+      expect do
+        described_class.new(
+          calendar_id: 'invalid',
+          report_date: report_date,
+          report_cadence: 'monthly',
+        )
+      end.to raise_error(ArgumentError, /calendar_id must be a positive integer/)
     end
 
     context 'with custom filters' do
       subject(:filtered_report) do
         described_class.new(
-          time_range: time_range,
+          calendar_id: calendar_id,
+          report_date: report_date,
+          report_cadence: report_cadence,
           included_issuers: [issuer1, issuer2],
           excluded_issuers: [issuer3],
         )
@@ -152,30 +171,21 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
         )
       end
 
-      it 'returns nested hash structure' do
+      it 'returns flat hash structure' do
         result = report.generate_reports
         expect(result).to be_a(Hash)
         expect(result[issuer1]).to be_a(Hash)
-        expect(result[issuer1]['2024-01-01']).to be_a(Hash)
+        expect(result[issuer1][:issuer]).to eq(issuer1)
       end
 
       it 'formats data correctly' do
         result = report.generate_reports
-        data = result[issuer1]['2024-01-01']
-
+        data = result[issuer1]
         expect(data[:issuer]).to eq(issuer1)
         expect(data[:provider_information][:service_provider_name]).to eq('Agency 1 Application')
-        expect(data[:report_information][:month_start_date_actual]).to eq('2024-01-01')
+        expect(data[:report_information][:period_start_date]).to eq('2024-01-01')
+        expect(data[:report_information][:report_cadence]).to eq('monthly')
         expect(data[:data][:total_active_users]).to eq(1000)
-      end
-
-      it 'converts integer fields correctly' do
-        result = report.generate_reports
-        data = result[issuer1]['2024-01-01'][:data]
-
-        expect(data[:total_active_users]).to be_an(Integer)
-        expect(data[:newly_created_accounts]).to be_an(Integer)
-        expect(data[:successful_creation_count]).to be_an(Integer)
       end
     end
 
@@ -193,159 +203,42 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       end
     end
 
-    context 'with invalid date format' do
-      before do
-        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return(
-          [invalid_date_row],
-        )
-      end
-
-      it 'raises Date::Error for invalid date' do
-        expect { report.generate_reports }.to raise_error(Date::Error)
-      end
-    end
-
-    context 'with mixed data quality' do
-      it 'processes valid rows and raises error on first invalid row' do
-        expect { report.generate_reports }.to raise_error(
-          /Missing required fields: service_provider_name/,
-        )
-      end
-    end
-
-    context 'with duplicate issuer/month combinations' do
-      # Note: With cartesian product approach in SQL query, duplicates should be impossible
-      # but this test validates our safety check still works
+    context 'with duplicate issuers' do
       let(:duplicate_row_data) do
-        # Same issuer and month as complete_row_data
-        complete_row_data.merge('total_active_users' => 2000) # Different metrics
+        complete_row_data.merge('total_active_users' => 2000)
       end
 
       before do
         allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return(
-          [complete_row_data, duplicate_row_data], # Two rows for same issuer/month
+          [complete_row_data, duplicate_row_data],
         )
       end
 
-      it 'sets duplicate entries to nil and logs error with specific issuer info' do
+      it 'sets duplicate entries to nil and logs error' do
         expect(Rails.logger).to receive(:error).with(
-          /Unexpected duplicate data detected for #{Regexp.escape(issuer1)} \/ 2024-01-01 - setting to nil/,
+          /Duplicate data detected for #{Regexp.escape(issuer1)} - setting to nil/,
         )
         expect(Rails.logger).to receive(:error).with(
-          "Found 1 unexpected duplicate combinations: #{issuer1}/2024-01-01",
+          "Found 1 unexpected duplicate issuers: #{issuer1}",
         )
 
         result = report.generate_reports
-        expect(result[issuer1]['2024-01-01']).to be_nil
-      end
-
-      context 'with multiple duplicates across different issuers' do
-        let(:duplicate_row_data_2) do
-          complete_row_data.merge('issuer' => issuer2, 'total_active_users' => 3000)
-        end
-        let(:duplicate_row_data_2_again) do
-          complete_row_data.merge('issuer' => issuer2, 'total_active_users' => 4000)
-        end
-
-        before do
-          allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return(
-            [
-              complete_row_data,           # First entry for issuer1/2024-01-01
-              duplicate_row_data,          # Duplicate for issuer1/2024-01-01
-              duplicate_row_data_2,        # First entry for issuer2/2024-01-01
-              duplicate_row_data_2_again,  # Duplicate for issuer2/2024-01-01
-            ],
-          )
-        end
-
-        it 'logs all affected issuers in summary' do
-          allow(Rails.logger).to receive(:error)
-
-          expect(Rails.logger).to receive(:error).with(
-            "Found 2 unexpected duplicate combinations: "\
-            "#{issuer1}/2024-01-01, #{issuer2}/2024-01-01",
-          )
-
-          result = report.generate_reports
-          expect(result[issuer1]['2024-01-01']).to be_nil
-          expect(result[issuer2]['2024-01-01']).to be_nil
-        end
+        expect(result[issuer1]).to be_nil
       end
     end
-  end
 
-  describe '#generate_report_for_issuer' do
-    before do
-      allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return(
-        [complete_row_data],
-      )
-    end
+    context 'with empty results' do
+      before do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return([])
+      end
 
-    it 'returns data for specific issuer' do
-      result = report.generate_report_for_issuer(issuer1)
-      expect(result).to be_a(Hash)
-      expect(result['2024-01-01']).to be_present
-    end
-
-    it 'returns nil for non-existent issuer' do
-      result = report.generate_report_for_issuer('non-existent')
-      expect(result).to be_nil
-    end
-  end
-
-  describe '#generate_report_for_issuer_and_month' do
-    before do
-      allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return(
-        [complete_row_data],
-      )
-    end
-
-    it 'returns data for specific issuer and month' do
-      result = report.generate_report_for_issuer_and_month(issuer1, '2024-01-01')
-      expect(result).to be_a(Hash)
-      expect(result[:issuer]).to eq(issuer1)
-    end
-
-    it 'returns nil for non-existent combination' do
-      result = report.generate_report_for_issuer_and_month('non-existent', '2024-01-01')
-      expect(result).to be_nil
-    end
-  end
-
-  describe 'cartesian product behavior' do
-    let(:multi_month_range) { Date.new(2024, 1, 1)..Date.new(2024, 2, 1) }
-    let(:report_multi_month) do
-      described_class.new(
-        time_range: multi_month_range,
-        included_issuers: nil,
-        excluded_issuers: [],
-      )
-    end
-
-    let(:jan_row) do
-      complete_row_data.merge(
-        'month_start_calendar_id' => 20240101,
-        'month_start_date_actual' => '2024-01-01',
-      )
-    end
-    let(:feb_row) do
-      complete_row_data.merge(
-        'month_start_calendar_id' => 20240201,
-        'month_start_date_actual' => '2024-02-01',
-      )
-    end
-
-    before do
-      allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return(
-        [jan_row,
-         feb_row],
-      )
-    end
-
-    it 'returns data for all month combinations' do
-      result = report_multi_month.generate_reports
-      expect(result[issuer1]).to have_key('2024-01-01')
-      expect(result[issuer1]).to have_key('2024-02-01')
+      it 'returns empty hash and logs warning' do
+        expect(Rails.logger).to receive(:warn).with(
+          /No data returned for monthly report with calendar_id: #{calendar_id}/,
+        )
+        result = report.generate_reports
+        expect(result).to eq({})
+      end
     end
   end
 
@@ -353,7 +246,8 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
     context 'with included_issuers specified' do
       subject(:filtered_report) do
         described_class.new(
-          time_range: time_range,
+          calendar_id: calendar_id,
+          report_date: report_date,
           included_issuers: [issuer1, issuer2],
         )
       end
@@ -370,7 +264,8 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
     context 'with excluded_issuers specified' do
       subject(:filtered_report) do
         described_class.new(
-          time_range: time_range,
+          calendar_id: calendar_id,
+          report_date: report_date,
           excluded_issuers: [issuer3],
         )
       end
@@ -394,18 +289,12 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
   end
 
   describe 'SQL query methods' do
-    describe '#start_calendar_id and #end_calendar_id' do
-      it 'formats dates correctly for SQL' do
-        expect(report.send(:start_calendar_id)).to eq('20240101')
-        expect(report.send(:end_calendar_id)).to eq('20240101')
-      end
-    end
-
     describe '#issuer_filter_clause' do
       context 'with included issuers' do
         subject(:filtered_report) do
           described_class.new(
-            time_range: time_range,
+            calendar_id: calendar_id,
+            report_date: report_date,
             included_issuers: [issuer1, issuer2],
           )
         end
@@ -421,7 +310,8 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
       context 'with excluded issuers' do
         subject(:filtered_report) do
           described_class.new(
-            time_range: time_range,
+            calendar_id: calendar_id,
+            report_date: report_date,
             excluded_issuers: [issuer3],
           )
         end
@@ -466,9 +356,8 @@ RSpec.describe Reporting::PartnerReportDefaultMonthly do
         expect(Rails.logger).to receive(:warn).with(
           /Failed to convert field total_active_users with value invalid_number/,
         )
-
         result = report.generate_reports
-        expect(result[issuer1]['2024-01-01'][:data][:total_active_users]).to be_nil
+        expect(result[issuer1][:data][:total_active_users]).to be_nil
       end
     end
   end
