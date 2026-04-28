@@ -1,3 +1,11 @@
+# Log actual columns in the DB using direct SQL
+def log_actual_columns(table_name)
+  schema, tbl = table_name.split('.')
+  columns = DataWarehouseApplicationRecord.connection.exec_query(
+    "SELECT column_name FROM information_schema.columns WHERE table_name = '#{tbl}' AND table_schema = '#{schema}'",
+  ).rows.flatten
+  log_info("Actual columns in DB for #{table_name}: #{columns.join(', ')}")
+end
 require 'yaml'
 
 class RedshiftSchemaUpdater
@@ -136,6 +144,7 @@ class RedshiftSchemaUpdater
     existing_columns = columns_objs.map(&:name)
 
     log_info("Starting update for existing table: #{table_name}")
+    log_actual_columns(table_name)
     log_info("Current columns in table: #{existing_columns.join(', ')}")
     log_info("Columns from YAML config: #{columns.map { |c| c['name'] }.join(', ')}")
 
@@ -294,7 +303,10 @@ class RedshiftSchemaUpdater
       return
     end
 
-    unless column_has_unique_constraint?(foreign_key_reference_table, foreign_key_reference_column)
+    unless column_has_unique_constraint?(
+      foreign_key_reference_table,
+      foreign_key_reference_column,
+    )
       log_warning(
         "Referenced column #{foreign_key_reference_column} in table #{foreign_key_reference_table}
       must have a unique constraint or primary key.",
@@ -370,7 +382,10 @@ class RedshiftSchemaUpdater
     SQL
 
     result = DataWarehouseApplicationRecord.connection.exec_query(
-      DataWarehouseApplicationRecord.sanitize_sql([query, table_name.split('.').last, column_name]),
+      DataWarehouseApplicationRecord.sanitize_sql(
+        [query, table_name.split('.').last,
+         column_name],
+      ),
     ).to_a
 
     result.any? { |row| row['1'] == 1 }
@@ -466,12 +481,22 @@ class RedshiftSchemaUpdater
   end
 
   def add_column(table_name, column_name, data_type, column_options = {})
-    DataWarehouseApplicationRecord.connection.add_column(
-      table_name,
-      column_name,
-      redshift_data_type(data_type),
-      **column_options,
-    )
+    begin
+      DataWarehouseApplicationRecord.connection.add_column(
+        table_name,
+        column_name,
+        redshift_data_type(data_type),
+        **column_options,
+      )
+    rescue => e
+      if e.message.include?('ALTER TABLE ADD COLUMN defined as NOT NULL must have a non-null default expression') || # rubocop:disable Layout/LineLength
+         e.message.include?('PG::FeatureNotSupported')
+        log_error("ERROR: #{e.class}: #{e.message} (table: #{table_name}, column: #{column_name})")
+      else
+        log_error("Error adding column '#{column_name}' to table '#{table_name}': #{e.message}")
+      end
+      raise e
+    end
   end
 
   def revoke_table_select_permissions(group, table_name)
