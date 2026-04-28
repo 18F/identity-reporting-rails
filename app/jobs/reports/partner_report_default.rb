@@ -28,21 +28,17 @@ module Reports
 
       @report_date = date
 
-      # Convert report date to appropriate calendar_id for the cadence
-      calendar_id = calculate_calendar_id(report_date)
-      period_date = calculate_period_start_date(report_date)
+      Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports for report date: "\
+                        "#{report_date} (#{REPORT_CADENCE} report period starting on #{period_date}"
 
-      Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports for calendar_id:"\
-                        " #{calendar_id} (#{period_date})"
-
-      generate_and_upload_reports(calendar_id, period_date)
+      generate_and_upload_reports(report_date)
       Rails.logger.info "Completed partner default #{REPORT_CADENCE} report"
     end
 
     private
 
-    def generate_and_upload_reports(calendar_id, period_date)
-      issuer_reports = partner_reports(calendar_id, report_date)
+    def generate_and_upload_reports(report_date)
+      issuer_reports = partner_reports(report_date)
       uploaded_count = 0
       skipped_count = 0
 
@@ -65,10 +61,9 @@ module Reports
       raise err
     end
 
-    def partner_reports(calendar_id, target_date)
+    def partner_reports(report_date)
       Reporting::PartnerReportDefault.new(
-        calendar_id: calendar_id,
-        target_date: target_date,
+        report_date: report_date,
         report_cadence: REPORT_CADENCE,
       ).generate_reports
     end
@@ -76,7 +71,7 @@ module Reports
     def upload_to_s3(json_data, issuer:, period_date:)
       # S3 path structure: issuer/REPORT_CADENCE/2025-01-01.json
       base_path = generate_base_s3_path(directory: 'portal')
-      path = "#{base_path}#{issuer}/#{REPORT_CADENCE}/#{period_date}.json"
+      path = "#{base_path}#{issuer}/#{REPORT_CADENCE}/#{period_date.strftime('%Y-%m-%d')}.json"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(
@@ -93,29 +88,12 @@ module Reports
       JSON.pretty_generate(data)
     end
 
-    # Convert date to calendar_id based on cadence
-    def calculate_calendar_id(date)
-      case REPORT_CADENCE
-      when 'monthly'
-        date.beginning_of_month.strftime('%Y%m01').to_i
-      when 'daily'
-        date.strftime('%Y%m%d').to_i
-      when 'weekly'
-        # TODO: determine week start logic
-        raise NotImplementedError, 'Weekly calendar_id calculation not yet implemented'
-      end
-    end
-
-    # Get the period start date for S3 path naming
-    def calculate_period_start_date(date)
-      case REPORT_CADENCE
-      when 'monthly'
-        date.beginning_of_month.strftime('%Y-%m-%d')
-      when 'daily'
-        date.strftime('%Y-%m-%d')
-      when 'weekly'
-        # TODO: determine week start logic
-        raise NotImplementedError, 'Weekly period date calculation not yet implemented'
+    def period_date
+      @period_date ||= begin
+        Reporting::PartnerReportDefault.get_period_date_from_report_date(
+          REPORT_CADENCE,
+          report_date,
+        )
       end
     end
   end
