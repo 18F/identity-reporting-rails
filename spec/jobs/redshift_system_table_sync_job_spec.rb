@@ -187,16 +187,6 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
           ['new_column1',
            'new_column2'],
         )
-        allow(job).to receive(:get_source_table_ddl).and_return(
-          'CREATE TABLE test_pg_catalog.stl_some_table (
-            userid integer,
-            query integer,
-            starttime timestamp without time zone,
-            endtime timestamp without time zone,
-            new_column1 integer,
-            new_column2 varchar(130)
-          );',
-        )
         allow(Rails.logger).to receive(:info).and_call_original
         msg = {
           job: 'RedshiftSystemTableSyncJob',
@@ -205,6 +195,7 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
           added_columns: ['new_column1', 'new_column2'],
         }
         expect(Rails.logger).to receive(:info).with(msg.to_json)
+        expect(DataWarehouseApplicationRecord.connection).to receive(:execute).twice
 
         job.send(:sync_target_and_source_table_schemas)
       end
@@ -272,6 +263,56 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
       expect(sync_metadata).not_to be_nil
       expect(sync_metadata.last_sync_time).to be_within(1.second).of(Time.zone.now)
       expect(sync_metadata.table_name).to eq target_table
+    end
+  end
+
+  describe '#add_missing_column_statements' do
+    it 'builds ADD COLUMN from source metadata and redshift_data_type' do
+      allow(job).to receive(:fetch_source_columns).and_return([
+        { 'column' => 'new_column1', 'type' => 'integer' },
+        { 'column' => 'new_column2', 'type' => 'character varying' },
+      ])
+      stmts = job.send(:add_missing_column_statements, %w[new_column1 new_column2])
+      expect(stmts.size).to eq(2)
+      expect(stmts[0]).to include('new_column1', 'integer')
+      expect(stmts[1]).to include('new_column2', 'VARCHAR(MAX)')
+    end
+  end
+
+  describe '#mirror_char_type?' do
+    it 'is false for varchar and character varying' do
+      expect(job.send(:mirror_char_type?, 'character varying')).to be false
+      expect(job.send(:mirror_char_type?, 'varchar(40)')).to be false
+    end
+
+    it 'is true for fixed-width char family types' do
+      expect(job.send(:mirror_char_type?, 'character(3)')).to be true
+      expect(job.send(:mirror_char_type?, 'character')).to be true
+      expect(job.send(:mirror_char_type?, 'bpchar')).to be true
+    end
+  end
+
+  describe '#widen_mirror_char_columns' do
+    before do
+      allow(DataWarehouseApplicationRecord.connection).to receive(:adapter_name).and_return('redshift')
+      allow(job).to receive(:target_table_exists?).and_return(true)
+      allow(job).to receive(:fetch_mirror_columns).and_return(
+        [{ 'column' => 'legacy_col', 'type' => 'character(5)' }],
+        [{ 'column' => 'legacy_col', 'type' => 'character varying' }],
+      )
+    end
+
+    it 'replaces char columns with varchar via add, copy, drop, rename' do
+      conn = DataWarehouseApplicationRecord.connection
+      calls = []
+      allow(conn).to receive(:execute) { |sql| calls << sql }
+      allow(Rails.logger).to receive(:info)
+      job.send(:widen_mirror_char_columns)
+      expect(calls.size).to eq(4)
+      expect(calls[0]).to include('ADD COLUMN', 'VARCHAR(5)')
+      expect(calls[1]).to match(/UPDATE .* SET .*legacy_col/)
+      expect(calls[2]).to include('DROP COLUMN')
+      expect(calls[3]).to include('RENAME COLUMN')
     end
   end
 
