@@ -122,7 +122,8 @@ RSpec.describe Reports::PartnerReportDefault do
       it 'logs start message with calendar_id and period_date' do
         allow(Rails.logger).to receive(:info)
         expect(Rails.logger).to receive(:info).with(
-          "Generating partner default monthly reports for calendar_id: #{calendar_id} (#{period_date})",
+          "Generating partner default monthly reports for calendar_id: "\
+          "#{calendar_id} (#{period_date})",
         )
         job.perform(report_date)
       end
@@ -202,12 +203,11 @@ RSpec.describe Reports::PartnerReportDefault do
       result = job.send(:calculate_calendar_id, test_date)
       expect(result).to eq(20260301)
     end
-
-    # Remove the daily test since REPORT_CADENCE is hardcoded as 'monthly'
   end
 
   it 'calculates daily calendar_id correctly' do
-    # This would only work if REPORT_CADENCE was 'daily'
+    # REPORT_CADENCE currently hardcoded as monthly, but eventually we will implement
+    # daily and weekly
     allow(job.class).to receive(:const_get).with(:REPORT_CADENCE).and_return('daily')
     test_date = Time.zone.parse('2026-03-15')
     result = job.send(:calculate_calendar_id, test_date)

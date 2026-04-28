@@ -4,8 +4,8 @@ require 'rails_helper'
 require 'reporting/partner_report_default'
 
 RSpec.describe Reporting::PartnerReportDefault do
-  let(:calendar_id) { 20240101 }
-  let(:report_date) { '2024-01-15' }
+  let(:calendar_id) { 20260301 }
+  let(:report_date) { '2026-03-15' }
   let(:report_cadence) { 'monthly' }
   let(:issuer1) { 'urn:gov:gsa:openidconnect.profiles:sp:test:agency1' }
   let(:issuer2) { 'urn:gov:gsa:openidconnect.profiles:sp:test:agency2' }
@@ -18,8 +18,8 @@ RSpec.describe Reporting::PartnerReportDefault do
       'service_provider_name' => 'Agency 1 Application',
       'agency_name' => 'Test Agency 1',
       'start_service_provider_id' => 123,
-      'period_start_date' => '2024-01-01',
-      'period_calendar_id' => 20240101,
+      'period_start_date' => '2026-03-01',
+      'period_calendar_id' => 20260301,
       'total_active_users' => 1000,
       'newly_created_accounts' => 50,
       'existing_accounts' => 950,
@@ -82,8 +82,8 @@ RSpec.describe Reporting::PartnerReportDefault do
       'service_provider_name' => nil, # Missing required field
       'agency_name' => 'Test Agency 2',
       'start_service_provider_id' => 456,
-      'period_start_date' => '2024-01-01',
-      'period_calendar_id' => 20240101,
+      'period_start_date' => '2026-03-01',
+      'period_calendar_id' => 20260301,
       'total_active_users' => 500,
     }
   end
@@ -96,7 +96,7 @@ RSpec.describe Reporting::PartnerReportDefault do
       'agency_name' => 'Test Agency 3',
       'start_service_provider_id' => 789,
       'period_start_date' => 'invalid-date', # Invalid date
-      'period_calendar_id' => 20240101,
+      'period_calendar_id' => 20260301,
       'total_active_users' => 200,
     }
   end
@@ -183,7 +183,7 @@ RSpec.describe Reporting::PartnerReportDefault do
         data = result[issuer1]
         expect(data[:issuer]).to eq(issuer1)
         expect(data[:provider_information][:service_provider_name]).to eq('Agency 1 Application')
-        expect(data[:report_information][:period_start_date]).to eq('2024-01-01')
+        expect(data[:report_information][:period_start_date]).to eq('2026-03-01')
         expect(data[:report_information][:report_cadence]).to eq('monthly')
         expect(data[:data][:total_active_users]).to eq(1000)
       end
