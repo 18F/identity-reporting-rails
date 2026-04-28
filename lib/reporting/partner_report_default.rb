@@ -54,13 +54,13 @@ module Reporting
     end
 
     def self.get_period_date_from_report_date(report_date:, cadence: 'monthly')
+      # Given a date, retrieves the corresponding date for the start of its month/week/day
       unless ['monthly', 'weekly', 'daily'].include?(cadence)
         raise ArgumentError, "Invalid cadence: #{cadence}. Must be one of: monthly, weekly, daily"
       end
 
       query = <<~SQL
         SELECT 
-          cal.calendar_id AS report_date_id,
           -- Dynamic period_date_actual based on cadence  
           CASE 
             WHEN '#{cadence}' = 'monthly' THEN month_start_date_actual
@@ -78,7 +78,7 @@ module Reporting
         return nil
       end
 
-      result
+      result['period_date_actual']
     rescue StandardError => e
       Rails.logger.error "Failed to get period_date for #{report_date}, #{cadence}: #{e.message}"
       nil
