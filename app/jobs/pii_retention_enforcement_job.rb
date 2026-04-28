@@ -121,7 +121,7 @@ class PiiRetentionEnforcementJob < ApplicationJob
 
     # Check standard timestamp columns in priority order
     columns = fetch_columns_for_table(schema_name, table_name)
-    ['import_timestamp', 'updated_at', 'created_at'].find { |col| columns.include?(col) }
+    ['dw_created_at', 'updated_at', 'created_at'].find { |col| columns.include?(col) }
   end
 
   def fetch_tables_in_schema(schema_name)

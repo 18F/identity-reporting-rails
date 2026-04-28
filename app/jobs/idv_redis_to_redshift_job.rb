@@ -146,7 +146,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
         WHEN MATCHED THEN
           UPDATE SET message = source.message, bucket_name = source.bucket_name
         WHEN NOT MATCHED THEN
-          INSERT (event_key, message, partition_dt, import_timestamp, bucket_name)
+          INSERT (event_key, message, partition_dt, dw_created_at, bucket_name)
           VALUES (source.event_key, source.message, source.partition_dt, CURRENT_TIMESTAMP, source.bucket_name)
         ;
       SQL
@@ -155,7 +155,7 @@ class IdvRedisToRedshiftJob < ApplicationJob
       # event_key is the primary key, so we conflict on that
       format(<<~SQL, build_params)
         INSERT INTO %{schema_name}.%{target_table_name}
-          (event_key, message, partition_dt, import_timestamp, bucket_name)
+          (event_key, message, partition_dt, dw_created_at, bucket_name)
         SELECT
           source.event_key,
           source.message,

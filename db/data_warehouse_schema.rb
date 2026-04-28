@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_06_214455) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_27_152552) do
   create_schema "fraudops"
   create_schema "idp"
   create_schema "logs"
@@ -55,14 +55,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_214455) do
   create_table "frd_encrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
     t.string "message", limit: 65535
     t.date "partition_dt"
-    t.datetime "processed_timestamp", precision: nil
-    t.datetime "import_timestamp", precision: nil
+    t.datetime "dw_processed_at", precision: nil
+    t.datetime "dw_created_at", precision: nil
     t.string "bucket_name", limit: 256
   end
 
   create_table "frd_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
     t.jsonb "message"
-    t.datetime "import_timestamp", precision: nil
+    t.datetime "dw_created_at", precision: nil
   end
 
   create_table "production", id: false, force: :cascade do |t|
