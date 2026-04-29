@@ -46,7 +46,9 @@ module Reporting
         raise ArgumentError, "Invalid report_cadence: #{report_cadence}. "\
                              "Must be one of: monthly, weekly, daily"
       end
-
+      if included_issuers&.any? && excluded_issuers.any?
+        raise ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
+      end
       @report_date = report_date.to_s # Ensure report date is a string
       @report_cadence = report_cadence
       @included_issuers = included_issuers
@@ -57,7 +59,15 @@ module Reporting
       # Given a date, retrieves the corresponding date for the start of its month/week/day
       # Returns string in format 'YYYY-MM-DD' or nil on failure
       unless ['monthly', 'weekly', 'daily'].include?(cadence)
-        raise ArgumentError, "Invalid cadence: #{cadence}. Must be one of: monthly, weekly, daily"
+        Rails.logger.error "Invalid cadence: #{cadence}. Must be one of: monthly, weekly, daily"
+        return nil
+      end
+
+      begin
+        Date.parse(report_date.to_s)
+      rescue ArgumentError => e
+        Rails.logger.error "Invalid date format for report_date: #{report_date} - #{e.message}"
+        return nil
       end
 
       query = <<~SQL
@@ -78,14 +88,13 @@ module Reporting
         return nil
       end
 
-      result['period_date_actual'] # Now guaranteed to be in YYYY-MM-DD format
-
-      if result.nil?
-        Rails.logger.error "No calendar entry found for report_date: #{report_date}"
+      period_date = result['period_date_actual']
+      if period_date.nil?
+        Rails.logger.error "No period_date_actual found for report_date: #{report_date}"
         return nil
       end
 
-      result['period_date_actual']
+      period_date
     rescue StandardError => e
       Rails.logger.error "Failed to get period_date for #{report_date}, #{cadence}: #{e.message}"
       nil
@@ -144,7 +153,7 @@ module Reporting
         provider_information: {
           service_provider_name: row['service_provider_name'],
           agency_name: row['agency_name'],
-          start_service_provider_id: row['service_provider_id'],
+          service_provider_id: row['service_provider_id'],
         },
         report_information: {
           period_start_date: row['period_date_actual'],
@@ -155,63 +164,64 @@ module Reporting
       }
     end
 
-    def build_data_section(row)
-      integer_fields = %w[
-        count_active_users
-        count_newly_created_accounts
-        count_existing_accounts
-        count_newly_proofed_users
-        count_preverified_users
-        count_authentications
-        count_pass_sum
-        count_newly_verified_sum
-        count_deadend_sum
-        count_friction_sum
-        count_abandon_sum
-        count_fraud_sum
-        count_inauthentic_doc
-        count_facial_mismatch
-        count_invalid_attributes_dl_dos
-        count_ssn_dob_deceased
-        count_address_other_not_found
-        count_pending_lg99_likely_fraud
-        count_stayed_blocked
-        count_fraud_alert
-        count_suspicious_phone
-        count_lack_phone_ownership
-        count_wrong_phone_type
-        count_blocked_by_ipp_fraud
-        count_pass_via_lg99
-        count_pass_online_finalization
-        count_pass_ipp_online_portion
-        count_pass_via_letter
-        count_doc_auth_ux
-        count_selfie_ux
-        count_dob_incorrect
-        count_ssn_incorrect
-        count_identity_not_found
-        count_friction_during_otp
-        count_doc_auth_technical_issue
-        count_resolution_technical_issues
-        count_doc_auth_processing_issue
-        count_auth_successful
-        count_auth_failure
-        count_desktop_successful
-        count_mobile_successful
-        count_webauthn_platform_successful
-        count_totp_successful
-        count_piv_cac_successful
-        count_sms_successful
-        count_voice_successful
-        count_backup_code_successful
-        count_webauthn_successful
-        count_personal_key_successful
-        count_creation_successful
-        count_creation_failed
-        count_registered_blocked_fraud
-      ]
+    INTEGER_DATA_FIELDS = %w[
+      count_active_users
+      count_newly_created_accounts
+      count_existing_accounts
+      count_newly_proofed_users
+      count_preverified_users
+      count_authentications
+      count_pass_sum
+      count_newly_verified_sum
+      count_deadend_sum
+      count_friction_sum
+      count_abandon_sum
+      count_fraud_sum
+      count_inauthentic_doc
+      count_facial_mismatch
+      count_invalid_attributes_dl_dos
+      count_ssn_dob_deceased
+      count_address_other_not_found
+      count_pending_lg99_likely_fraud
+      count_stayed_blocked
+      count_fraud_alert
+      count_suspicious_phone
+      count_lack_phone_ownership
+      count_wrong_phone_type
+      count_blocked_by_ipp_fraud
+      count_pass_via_lg99
+      count_pass_online_finalization
+      count_pass_ipp_online_portion
+      count_pass_via_letter
+      count_doc_auth_ux
+      count_selfie_ux
+      count_dob_incorrect
+      count_ssn_incorrect
+      count_identity_not_found
+      count_friction_during_otp
+      count_doc_auth_technical_issue
+      count_resolution_technical_issues
+      count_doc_auth_processing_issue
+      count_auth_successful
+      count_auth_failure
+      count_desktop_successful
+      count_mobile_successful
+      count_webauthn_platform_successful
+      count_totp_successful
+      count_piv_cac_successful
+      count_sms_successful
+      count_voice_successful
+      count_backup_code_successful
+      count_webauthn_successful
+      count_personal_key_successful
+      count_creation_successful
+      count_creation_failed
+      count_registered_blocked_fraud
+    ].freeze
 
-      integer_fields.each_with_object({}) do |field, hash|
+    def build_data_section(row)
+
+      INTEGER_DATA_FIELDS.each_with_object({}) do |field, hash|
         value = row[field]
 
         if value.nil? || value.to_s.strip.empty?
@@ -271,7 +281,7 @@ module Reporting
             JOIN date_param p 
             ON cal.calendar_id = TO_CHAR(p.report_date, 'YYYYMMDD')::int
         ),
-        -- Get all active service providers within reporting range
+        -- Get all active service providers with IAA / launch date within report date
         active_service_providers AS (
             SELECT sp.service_provider_id,
                    sp.service_provider_name,
@@ -329,57 +339,57 @@ module Reporting
             -- ==============================================
         
             -- Total Sum Counts
-            sp_data.count_pass_sum,
-            sp_data.count_newly_verified_sum,
-            sp_data.count_deadend_sum,
-            sp_data.count_friction_sum,
-            sp_data.count_abandon_sum,
-            sp_data.count_fraud_sum,
+            idv_data.count_pass_sum,
+            idv_data.count_newly_verified_sum,
+            idv_data.count_deadend_sum,
+            idv_data.count_friction_sum,
+            idv_data.count_abandon_sum,
+            idv_data.count_fraud_sum,
         
             -- Fraud Prevention: Document Fraud
-            sp_data.count_inauthentic_doc,
-            sp_data.count_facial_mismatch,
-            sp_data.count_invalid_attributes_dl_dos,
+            idv_data.count_inauthentic_doc,
+            idv_data.count_facial_mismatch,
+            idv_data.count_invalid_attributes_dl_dos,
         
             -- Fraud Prevention: Identity Fraud
-            sp_data.count_ssn_dob_deceased,
-            sp_data.count_address_other_not_found,
-            sp_data.count_pending_lg99_likely_fraud,
-            sp_data.count_stayed_blocked,
-            sp_data.count_fraud_alert,
+            idv_data.count_ssn_dob_deceased,
+            idv_data.count_address_other_not_found,
+            idv_data.count_pending_lg99_likely_fraud,
+            idv_data.count_stayed_blocked,
+            idv_data.count_fraud_alert,
         
             -- Fraud Prevention: Phone Fraud
-            sp_data.count_suspicious_phone,
-            sp_data.count_lack_phone_ownership,
-            sp_data.count_wrong_phone_type,
+            idv_data.count_suspicious_phone,
+            idv_data.count_lack_phone_ownership,
+            idv_data.count_wrong_phone_type,
         
             -- Fraud Prevention: IPP Fraud
-            sp_data.count_blocked_by_ipp_fraud,
+            idv_data.count_blocked_by_ipp_fraud,
         
             -- Fraud Prevention: Redress
-            sp_data.count_pass_via_lg99,
+            idv_data.count_pass_via_lg99,
         
             -- Identity Verification: Channels
-            sp_data.count_pass_online_finalization,
-            sp_data.count_pass_ipp_online_portion,
-            sp_data.count_pass_via_letter,
+            idv_data.count_pass_online_finalization,
+            idv_data.count_pass_ipp_online_portion,
+            idv_data.count_pass_via_letter,
         
             -- Identity Verification: UX Friction
-            sp_data.count_doc_auth_ux,
-            sp_data.count_selfie_ux,
+            idv_data.count_doc_auth_ux,
+            idv_data.count_selfie_ux,
         
             -- Identity Verification: Data Mismatch Friction
-            sp_data.count_dob_incorrect,
-            sp_data.count_ssn_incorrect,
-            sp_data.count_identity_not_found,
+            idv_data.count_dob_incorrect,
+            idv_data.count_ssn_incorrect,
+            idv_data.count_identity_not_found,
         
             -- Identity Verification: Phone Friction
-            sp_data.count_friction_during_otp,
+            idv_data.count_friction_during_otp,
         
             -- Identity Verification: Technical Issues
-            sp_data.count_doc_auth_technical_issue,
-            sp_data.count_resolution_technical_issues,
-            sp_data.count_doc_auth_processing_issue,
+            idv_data.count_doc_auth_technical_issue,
+            idv_data.count_resolution_technical_issues,
+            idv_data.count_doc_auth_processing_issue,
         
             -- ==============================================
             -- AUTHENTICATION METRICS
@@ -421,9 +431,10 @@ module Reporting
             LEFT JOIN #{tables[:usage]} usage_data
                 ON usage_data.service_provider_id = sp.service_provider_id
                 AND usage_data.period_date_id = sp.period_date_id
-            LEFT JOIN #{tables[:idv]} sp_data
-                ON sp_data.start_service_provider_id = sp.service_provider_id
-                AND sp_data.period_date_id = sp.period_date_id
+            -- NOTE: inconsistency in column names for idv table: start_service_provider_id 
+            LEFT JOIN #{tables[:idv]} idv_data
+                ON idv_data.start_service_provider_id = sp.service_provider_id
+                AND idv_data.period_date_id = sp.period_date_id
             LEFT JOIN #{tables[:auth]} auth_data
                 ON auth_data.service_provider_id = sp.service_provider_id
                 AND auth_data.period_date_id = sp.period_date_id

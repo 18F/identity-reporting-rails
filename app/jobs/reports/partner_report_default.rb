@@ -57,8 +57,13 @@ module Reports
           next
         end
 
-        upload_to_s3(json_data, issuer: issuer, period_date: period_date)
-        uploaded_count += 1
+        begin
+          upload_to_s3(json_data, issuer: issuer, period_date: period_date)
+          uploaded_count += 1
+        rescue => e
+          Rails.logger.error "Failed to upload report for #{issuer}: #{e.message}"
+          skipped_count += 1
+        end
       end
 
       Rails.logger.info "Upload summary: #{uploaded_count} successful, #{skipped_count} skipped"
@@ -96,20 +101,20 @@ module Reports
     end
 
     def period_date
-      @period_date ||= begin
-        date_str = Reporting::PartnerReportDefault.get_period_date_from_report_date(
-          report_date: report_date,
-          cadence: REPORT_CADENCE,
-        )
+      return nil unless @report_date
 
-        # Validate format if present
-        if date_str && !date_str.match?(/\A\d{4}-\d{2}-\d{2}\z/)
-          Rails.logger.error "Invalid period_date format received: '#{date_str}'."\
-          " Expected YYYY-MM-DD"
-          nil
-        else
-          date_str
-        end
+      date_str = Reporting::PartnerReportDefault.get_period_date_from_report_date(
+        report_date: @report_date,
+        cadence: REPORT_CADENCE,
+      )
+
+      # Validate format if present
+      if date_str && !date_str.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+        Rails.logger.error "Invalid period_date format received: '#{date_str}'."\
+        " Expected YYYY-MM-DD"
+        nil
+      else
+        date_str
       end
     end
   end
