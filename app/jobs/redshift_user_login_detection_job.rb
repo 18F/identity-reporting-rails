@@ -30,8 +30,7 @@ class RedshiftUserLoginDetectionJob < ApplicationJob
       FROM SYS_CONNECTION_LOG
       WHERE event = 'authenticated' 
       AND user_name IN (#{users_to_check.map { |s| "'#{s}'" }.join(", ")}) 
-      AND record_time >= CURRENT_TIMESTAMP - INTERVAL '15 MINUTES'
-      AND driver_version LIKE '%JDBC%';
+      AND record_time >= CURRENT_TIMESTAMP - INTERVAL '15 MINUTES';
     SQL
     result = DataWarehouseApplicationRecord.connection.execute(
       DataWarehouseApplicationRecord.sanitize_sql(query),
