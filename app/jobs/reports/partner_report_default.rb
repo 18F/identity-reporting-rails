@@ -28,8 +28,15 @@ module Reports
 
       @report_date = date
 
+      # User marts.calendar to get period date from report date
+      if period_date.nil?
+        Rails.logger.error "Cannot generate reports: "\
+        "failed to retrieve period_date in marts.calendar for report_date #{report_date}"
+        return false
+      end
+
       Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports for report date: "\
-                        "#{report_date} (#{REPORT_CADENCE} report period starting on #{period_date}"
+                      "#{report_date} (#{REPORT_CADENCE} report period starting on #{period_date})"
 
       generate_and_upload_reports(report_date)
       Rails.logger.info "Completed partner default #{REPORT_CADENCE} report"
@@ -71,7 +78,7 @@ module Reports
     def upload_to_s3(json_data, issuer:, period_date:)
       # S3 path structure: issuer/REPORT_CADENCE/2025-01-01.json
       base_path = generate_base_s3_path(directory: 'portal')
-      path = "#{base_path}#{issuer}/#{REPORT_CADENCE}/#{period_date.strftime('%Y-%m-%d')}.json"
+      path = "#{base_path}#{issuer}/#{REPORT_CADENCE}/#{period_date}.json"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(
@@ -90,10 +97,19 @@ module Reports
 
     def period_date
       @period_date ||= begin
-        Reporting::PartnerReportDefault.get_period_date_from_report_date(
-          REPORT_CADENCE,
-          report_date,
+        date_str = Reporting::PartnerReportDefault.get_period_date_from_report_date(
+          report_date: report_date,
+          cadence: REPORT_CADENCE,
         )
+
+        # Validate format if present
+        if date_str && !date_str.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+          Rails.logger.error "Invalid period_date format received: '#{date_str}'."\
+          " Expected YYYY-MM-DD"
+          nil
+        else
+          date_str
+        end
       end
     end
   end

@@ -8,7 +8,6 @@ RSpec.describe Reports::PartnerReportDefault do
   subject(:job) { described_class.new }
 
   let(:report_date) { Time.zone.parse('2026-04-15').end_of_day }
-  let(:calendar_id) { 20260401 }
   let(:period_date) { '2026-04-01' }
   let(:issuer1) { 'urn:gov:gsa:openidconnect.profiles:sp:sso:agency1' }
   let(:issuer2) { 'urn:gov:gsa:openidconnect.profiles:sp:sso:agency2' }
@@ -23,16 +22,28 @@ RSpec.describe Reports::PartnerReportDefault do
         provider_information: {
           service_provider_name: 'Agency 1 App',
           agency_name: 'Test Agency 1',
+          start_service_provider_id: 123,
         },
-        data: { total_active_users: 1000 },
+        report_information: {
+          period_start_date: '2026-04-01',
+          period_calendar_id: 20260401,
+          report_cadence: 'monthly',
+        },
+        data: { count_active_users: 1000, count_authentications: 500 },
       },
       issuer2 => {
         issuer: issuer2,
         provider_information: {
           service_provider_name: 'Agency 2 App',
           agency_name: 'Test Agency 2',
+          start_service_provider_id: 456,
         },
-        data: { total_active_users: 500 },
+        report_information: {
+          period_start_date: '2026-04-01',
+          period_calendar_id: 20260401,
+          report_cadence: 'monthly',
+        },
+        data: { count_active_users: 500, count_authentications: 250 },
       },
     }
   end
@@ -43,7 +54,7 @@ RSpec.describe Reports::PartnerReportDefault do
       issuer1 => {
         issuer: issuer1,
         provider_information: { service_provider_name: 'Agency 1 App' },
-        data: { total_active_users: 1000 },
+        data: { count_active_users: 1000 },
       },
       issuer2 => nil, # This issuer had duplicate/integrity issues
       issuer3 => nil, # This issuer also had issues
@@ -57,6 +68,12 @@ RSpec.describe Reports::PartnerReportDefault do
     allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
     allow(job).to receive(:bucket_name).and_return(bucket_name)
     allow(job).to receive(:upload_file_to_s3_bucket)
+    allow(job).to receive(:generate_base_s3_path).with(directory: 'portal').and_return('')
+
+    allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+      with(report_date: anything, cadence: 'monthly').
+      and_return(period_date)
+
     allow(Reporting::PartnerReportDefault).to receive(:new).and_return(mock_partner_report)
     allow(mock_partner_report).to receive(:generate_reports).and_return(sample_report_data)
   end
@@ -95,6 +112,21 @@ RSpec.describe Reports::PartnerReportDefault do
       end
     end
 
+    context 'when period_date cannot be retrieved' do
+      before do
+        allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+          with(report_date: report_date, cadence: 'monthly').
+          and_return(nil)
+      end
+
+      it 'logs error and returns false' do
+        expect(Rails.logger).to receive(:error).with(
+          "Cannot generate reports: failed to retrieve period_date in marts.calendar for report_date #{report_date}",
+        )
+        expect(job.perform(report_date)).to eq(false)
+      end
+    end
+
     context 'when both redshift and s3 are enabled' do
       it 'sets report_date from parameter' do
         job.perform(report_date)
@@ -104,6 +136,7 @@ RSpec.describe Reports::PartnerReportDefault do
       it 'uses default date when none provided' do
         freeze_time = Time.zone.parse('2026-02-05')
         expected_default = freeze_time - described_class::REPORT_DELAY_DAYS.days
+
         travel_to freeze_time do
           job.perform
           expect(job.report_date).to be_within(1.second).of(expected_default.end_of_day)
@@ -112,25 +145,27 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'creates PartnerReportDefault with correct parameters' do
         expect(Reporting::PartnerReportDefault).to receive(:new).with(
-          calendar_id: calendar_id,
-          target_date: report_date,
+          report_date: report_date,
           report_cadence: 'monthly',
         ).and_return(mock_partner_report)
+
         job.perform(report_date)
       end
 
-      it 'logs start message with calendar_id and period_date' do
+      it 'logs start message with report_date and period_date' do
         allow(Rails.logger).to receive(:info)
         expect(Rails.logger).to receive(:info).with(
-          "Generating partner default monthly reports for calendar_id: "\
-          "#{calendar_id} (#{period_date})",
+          "Generating partner default monthly reports for report date: "\
+          "#{report_date} (monthly report period starting on #{period_date})",
         )
+
         job.perform(report_date)
       end
 
       it 'logs completion message' do
         allow(Rails.logger).to receive(:info)
         expect(Rails.logger).to receive(:info).with('Completed partner default monthly report')
+
         job.perform(report_date)
       end
 
@@ -145,13 +180,16 @@ RSpec.describe Reports::PartnerReportDefault do
           issuer: issuer2,
           period_date: period_date,
         )
+
         job.perform(report_date)
       end
 
       it 'logs upload summary' do
         allow(job).to receive(:upload_to_s3)
         allow(Rails.logger).to receive(:info)
+
         expect(Rails.logger).to receive(:info).with('Upload summary: 2 successful, 0 skipped')
+
         job.perform(report_date)
       end
     end
@@ -169,6 +207,7 @@ RSpec.describe Reports::PartnerReportDefault do
         expect(Rails.logger).to receive(:error).with(
           "Failed to generate partner default monthly reports: #{error_message}",
         )
+
         expect { job.perform(report_date) }.to raise_error(StandardError, error_message)
       end
     end
@@ -182,6 +221,7 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'skips nil issuer reports and logs warnings' do
         allow(Rails.logger).to receive(:info)
+
         expect(Rails.logger).to receive(:warn).with(
           "Skipping upload for #{issuer2}: report generation failed and returned nil",
         )
@@ -192,97 +232,139 @@ RSpec.describe Reports::PartnerReportDefault do
 
         # Should only upload issuer1
         expect(job).to receive(:upload_to_s3).once
+
         job.perform(report_date)
       end
     end
   end
 
-  describe '#calculate_calendar_id' do
-    it 'calculates monthly calendar_id correctly' do
-      test_date = Time.zone.parse('2026-03-15')
-      result = job.send(:calculate_calendar_id, test_date)
-      expect(result).to eq(20260301)
+  describe '#period_date' do
+    context 'when period_date can be retrieved' do
+      before do
+        # Need to set @report_date for these tests
+        job.instance_variable_set(:@report_date, report_date)
+      end
+
+      it 'returns the period date string from marts.calendar' do
+        expect(job.send(:period_date)).to eq(period_date)
+      end
+
+      it 'memoizes the result' do
+        expect(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+          with(report_date: report_date, cadence: 'monthly').
+          once.
+          and_return(period_date)
+
+        2.times { job.send(:period_date) }
+      end
+    end
+
+    context 'when period_date has invalid format' do
+      before do
+        job.instance_variable_set(:@report_date, report_date)
+        allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+          with(report_date: report_date, cadence: 'monthly').
+          and_return('04/01/2026') # Wrong format
+      end
+
+      it 'logs error and returns nil' do
+        expect(Rails.logger).to receive(:error).with(
+          "Invalid period_date format received: '04/01/2026'. Expected YYYY-MM-DD",
+        )
+
+        expect(job.send(:period_date)).to be_nil
+      end
+    end
+
+    context 'when period_date cannot be retrieved' do
+      before do
+        job.instance_variable_set(:@report_date, report_date)
+        allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+          with(report_date: report_date, cadence: 'monthly').
+          and_return(nil)
+      end
+
+      it 'returns nil' do
+        expect(job.send(:period_date)).to be_nil
+      end
     end
   end
 
-  it 'calculates daily calendar_id correctly' do
-    # REPORT_CADENCE currently hardcoded as monthly, but eventually we will implement
-    # daily and weekly
-    allow(job.class).to receive(:const_get).with(:REPORT_CADENCE).and_return('daily')
-    test_date = Time.zone.parse('2026-03-15')
-    result = job.send(:calculate_calendar_id, test_date)
-    expect(result).to eq(20260315)
+  describe '#upload_to_s3' do
+    let(:sample_json_data) do
+      {
+        issuer: issuer1,
+        provider_information: { service_provider_name: 'Test App' },
+        data: { count_active_users: 1000 },
+      }
+    end
+
+    it 'uploads to correct S3 path structure' do
+      expected_path = "#{issuer1}/monthly/2026-04-01.json"
+
+      expect(job).to receive(:upload_file_to_s3_bucket).with(
+        path: expected_path,
+        body: JSON.pretty_generate(sample_json_data),
+        content_type: 'application/json',
+        bucket: bucket_name,
+      )
+
+      job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: period_date)
+    end
+
+    it 'logs successful upload' do
+      expect(Rails.logger).to receive(:info).with(
+        "Uploaded partner report to S3: #{issuer1}/monthly/2026-04-01.json",
+      )
+
+      job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: period_date)
+    end
+
+    context 'when bucket_name is not present' do
+      before do
+        allow(job).to receive(:bucket_name).and_return(nil)
+      end
+
+      it 'skips upload without error' do
+        expect(job).not_to receive(:upload_file_to_s3_bucket)
+        job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: period_date)
+      end
+    end
   end
 
-  describe '#calculate_period_start_date' do
-    it 'calculates monthly period start date correctly' do
-      test_date = Time.zone.parse('2026-03-15')
-      result = job.send(:calculate_period_start_date, test_date)
-      expect(result).to eq('2026-03-01')
+  describe '#json_file' do
+    let(:test_data) { { test: 'data', number: 123 } }
+
+    it 'converts data to pretty JSON' do
+      result = job.send(:json_file, test_data)
+      expect(result).to eq(JSON.pretty_generate(test_data))
     end
 
-    describe '#upload_to_s3' do
-      let(:sample_json_data) do
-        {
-          issuer: issuer1,
-          provider_information: { service_provider_name: 'Test App' },
-          data: { total_active_users: 1000 },
-        }
-      end
+    it 'produces valid JSON' do
+      result = job.send(:json_file, test_data)
+      expect { JSON.parse(result) }.not_to raise_error
+    end
+  end
 
-      it 'uploads to correct S3 path structure' do
-        expected_path = "#{issuer1}/monthly/2026-04-01.json"
-        expect(job).to receive(:upload_file_to_s3_bucket).with(
-          path: expected_path,
-          body: JSON.pretty_generate(sample_json_data),
-          content_type: 'application/json',
-          bucket: bucket_name,
-        )
-        job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: '2026-04-01')
-      end
+  describe 'integration with PartnerReportDefault' do
+    it 'passes correct parameters to report generator' do
+      expect(Reporting::PartnerReportDefault).to receive(:new).with(
+        report_date: report_date,
+        report_cadence: 'monthly',
+      )
 
-      it 'logs successful upload' do
-        expect(Rails.logger).to receive(:info).with(
-          "Uploaded partner report to S3: #{issuer1}/monthly/2026-04-01.json",
-        )
-        job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: '2026-04-01')
-      end
-
-      context 'when bucket_name is not present' do
-        before do
-          allow(job).to receive(:bucket_name).and_return(nil)
-        end
-
-        it 'skips upload without error' do
-          expect(job).not_to receive(:upload_file_to_s3_bucket)
-          job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: '2026-04-01')
-        end
-      end
+      job.perform(report_date)
     end
 
-    describe '#json_file' do
-      let(:test_data) { { test: 'data', number: 123 } }
+    it 'calls get_period_date_from_report_date with correct parameters' do
+      job.instance_variable_set(:@report_date, report_date)
 
-      it 'converts data to pretty JSON' do
-        result = job.send(:json_file, test_data)
-        expect(result).to eq(JSON.pretty_generate(test_data))
-      end
+      expect(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).with(
+        report_date: report_date,
+        cadence: 'monthly',
+      )
 
-      it 'produces valid JSON' do
-        result = job.send(:json_file, test_data)
-        expect { JSON.parse(result) }.not_to raise_error
-      end
-    end
-
-    describe 'integration with PartnerReportDefault' do
-      it 'passes correct parameters to report generator' do
-        expect(Reporting::PartnerReportDefault).to receive(:new).with(
-          calendar_id: calendar_id,
-          target_date: report_date,
-          report_cadence: 'monthly',
-        )
-        job.perform(report_date)
-      end
+      job.send(:period_date)
     end
   end
 end

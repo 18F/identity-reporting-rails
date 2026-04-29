@@ -47,7 +47,7 @@ module Reporting
                              "Must be one of: monthly, weekly, daily"
       end
 
-      @report_date = report_date
+      @report_date = report_date.to_s # Ensure report date is a string
       @report_cadence = report_cadence
       @included_issuers = included_issuers
       @excluded_issuers = excluded_issuers
@@ -55,23 +55,30 @@ module Reporting
 
     def self.get_period_date_from_report_date(report_date:, cadence: 'monthly')
       # Given a date, retrieves the corresponding date for the start of its month/week/day
+      # Returns string in format 'YYYY-MM-DD' or nil on failure
       unless ['monthly', 'weekly', 'daily'].include?(cadence)
         raise ArgumentError, "Invalid cadence: #{cadence}. Must be one of: monthly, weekly, daily"
       end
 
       query = <<~SQL
         SELECT 
-          -- Dynamic period_date_actual based on cadence  
+          -- Dynamic period_date_actual based on cadence, formatted as YYYY-MM-DD
           CASE 
-            WHEN '#{cadence}' = 'monthly' THEN month_start_date_actual
-            WHEN '#{cadence}' = 'weekly' THEN week_start_date_actual
-            WHEN '#{cadence}' = 'daily' THEN cal.date_actual
+            WHEN '#{cadence}' = 'monthly' THEN TO_CHAR(month_start_date_actual, 'YYYY-MM-DD')
+            WHEN '#{cadence}' = 'weekly' THEN TO_CHAR(week_start_date_actual, 'YYYY-MM-DD')
+            WHEN '#{cadence}' = 'daily' THEN TO_CHAR(cal.date_actual, 'YYYY-MM-DD')
           END AS period_date_actual
         FROM marts.calendar cal
         WHERE cal.calendar_id = TO_CHAR('#{report_date}'::date, 'YYYYMMDD')::int;
       SQL
 
       result = DataWarehouseApplicationRecord.connection.execute(query).first
+      if result.nil?
+        Rails.logger.error "No calendar entry found for report_date: #{report_date}"
+        return nil
+      end
+
+      result['period_date_actual'] # Now guaranteed to be in YYYY-MM-DD format
 
       if result.nil?
         Rails.logger.error "No calendar entry found for report_date: #{report_date}"
@@ -206,14 +213,16 @@ module Reporting
 
       integer_fields.each_with_object({}) do |field, hash|
         value = row[field]
+
         if value.nil? || value.to_s.strip.empty?
           hash[field.to_sym] = nil
         else
           begin
-            converted_value = Integer(value)
-            hash[field.to_sym] = converted_value
+            hash[field.to_sym] = Integer(value)
           rescue ArgumentError, TypeError => e
-            Rails.logger.warn "Failed to convert field #{field} with value #{value}: #{e.message}"
+            # This shouldn't happen with marts tables, but log and handle gracefully
+            Rails.logger.error "Failed to convert '#{value}' "\
+                               "to integer for field #{field}: #{e.message}"
             hash[field.to_sym] = nil
           end
         end
@@ -282,7 +291,7 @@ module Reporting
             WHERE sp.iaa_end_date > date_p.report_date  
               AND date_p.report_date >= sp.launch_date   
               #{issuer_filter_clause}
-        ),
+        )
         
         
             SELECT 
@@ -423,16 +432,6 @@ module Reporting
                 AND acct_data.period_date_id = sp.period_date_id
             ORDER BY sp.issuer;
       SQL
-    end
-
-    def should_exclude_issuer?(issuer)
-      if included_issuers&.any?
-        return !included_issuers.include?(issuer)
-      end
-      if excluded_issuers.any?
-        return excluded_issuers.include?(issuer)
-      end
-      false
     end
 
     def issuer_filter_clause
