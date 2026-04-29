@@ -137,15 +137,13 @@ RSpec.describe Reporting::PartnerReportDefault do
       expect(result).to eq(period_date)
     end
 
-    it 'validates cadence parameter' do
-      # The method logs an error and returns nil rather than raising
-      expect(Rails.logger).to receive(:error).with(/Failed to get period_date/)
-
-      result = described_class.get_period_date_from_report_date(
-        report_date: report_date,
-        cadence: 'invalid',
-      )
-      expect(result).to be_nil
+    it 'raises error for invalid report_cadence' do
+      expect do
+        described_class.new(
+          report_date: report_date,
+          report_cadence: 'invalid',
+        )
+      end.to raise_error(ArgumentError, /Invalid report_cadence/)
     end
 
     context 'when no calendar entry exists' do
@@ -246,7 +244,7 @@ RSpec.describe Reporting::PartnerReportDefault do
 
         expect(data[:issuer]).to eq(issuer1)
         expect(data[:provider_information][:service_provider_name]).to eq('Agency 1 Application')
-        expect(data[:provider_information][:start_service_provider_id]).to eq(123)
+        expect(data[:provider_information][:service_provider_id]).to eq(123)
         expect(data[:report_information][:period_start_date]).to eq(period_date)
         expect(data[:report_information][:period_calendar_id]).to eq(20260301)
         expect(data[:report_information][:report_cadence]).to eq('monthly')
@@ -504,7 +502,7 @@ RSpec.describe Reporting::PartnerReportDefault do
 
       expect(provider_info[:service_provider_name]).to eq('Agency 1 Application')
       expect(provider_info[:agency_name]).to eq('Test Agency 1')
-      expect(provider_info[:start_service_provider_id]).to eq(123)
+      expect(provider_info[:service_provider_id]).to eq(123)
     end
 
     it 'includes correct report information fields' do
@@ -525,7 +523,14 @@ RSpec.describe Reporting::PartnerReportDefault do
       expect(data[:count_pass_sum]).to eq(4800)
       expect(data[:count_auth_successful]).to eq(50)
       expect(data[:count_creation_successful]).to eq(45)
-      expect(data.keys.size).to eq(52) # All integer fields
+
+      # Verify all expected fields are present
+      expect(data.keys.size).to eq(Reporting::PartnerReportDefault::INTEGER_DATA_FIELDS.size)
+
+      # Verify all fields from constant are present
+      Reporting::PartnerReportDefault::INTEGER_DATA_FIELDS.each do |field|
+        expect(data).to have_key(field.to_sym)
+      end
     end
   end
 end
