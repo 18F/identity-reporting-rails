@@ -240,9 +240,7 @@ module Reporting
     end
 
     def fetch_bulk_data
-      Reports::BaseReport.transaction_with_timeout do
-        DataWarehouseApplicationRecord.connection.execute(bulk_query).to_a
-      end
+      DataWarehouseApplicationRecord.connection.execute(bulk_query).to_a
     rescue StandardError => e
       Rails.logger.error "Failed to fetch #{report_cadence} partner report data: #{e.message}"
       raise e
