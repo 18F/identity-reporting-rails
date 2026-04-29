@@ -9,7 +9,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
         setup_instance_variables(table)
         create_target_table
         sync_target_and_source_table_schemas
-        widen_mirror_char_columns
+        convert_source_char_columns
         upsert_data
         update_sync_time
       rescue StandardError => e
@@ -23,6 +23,10 @@ class RedshiftSystemTableSyncJob < ApplicationJob
   end
 
   private
+
+  def dw_connection
+    DataWarehouseApplicationRecord.connection
+  end
 
   def table_definitions
     YAML.load_file(config_file_path)['tables']
@@ -44,7 +48,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
   end
 
   def target_table_exists?
-    DataWarehouseApplicationRecord.connection.table_exists?(@target_table_with_schema)
+    dw_connection.table_exists?(@target_table_with_schema)
   end
 
   def create_target_table
@@ -54,7 +58,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
 
     columns = fetch_source_columns
 
-    DataWarehouseApplicationRecord.connection.create_table(
+    dw_connection.create_table(
       @target_table_with_schema,
       id: false,
     ) do |t|
@@ -80,7 +84,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       CREATE SCHEMA IF NOT EXISTS %{target_schema}
     SQL
 
-    DataWarehouseApplicationRecord.connection.execute(schema_query)
+    dw_connection.execute(schema_query)
     log_info("Schema #{@target_schema} created", true)
   rescue ActiveRecord::StatementInvalid => e
     if /unacceptable schema name/i.match?(e.message)
@@ -99,7 +103,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     return if add_column_statements.empty?
 
     add_column_statements.each do |statement|
-      DataWarehouseApplicationRecord.connection.execute(statement)
+      dw_connection.execute(statement)
       log_info("Successfully added column with statement: #{statement}", true)
     end
     log_info(
@@ -126,7 +130,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       ON tgt.table_name = src.table_name AND tgt.column_name = src.column_name
       WHERE tgt.table_name IS NULL;
     SQL
-    result = DataWarehouseApplicationRecord.connection.execute(
+    result = dw_connection.execute(
       DataWarehouseApplicationRecord.sanitize_sql(query),
     )
     if result.any?
@@ -137,8 +141,8 @@ class RedshiftSystemTableSyncJob < ApplicationJob
   end
 
   def add_missing_column_statements(missing_columns)
-    conn = DataWarehouseApplicationRecord.connection
-    by_name = fetch_source_columns.index_by { |c| c['column'] }
+    conn = dw_connection
+    by_name = fetch_source_columns.index_by { it['column'] }
     missing_columns.filter_map do |column_name|
       info = by_name[column_name]
       next unless info
@@ -153,7 +157,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     fetch_columns_for_table(@source_schema, @source_table, log_label: @source_table)
   end
 
-  def fetch_mirror_columns
+  def fetch_target_columns
     fetch_columns_for_table(@target_schema, @target_table, log_label: nil)
   end
 
@@ -177,19 +181,19 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       SQL
     end
 
-    columns = DataWarehouseApplicationRecord.connection.exec_query(query).to_a
+    columns = dw_connection.exec_query(query).to_a
     log_info("Columns fetched for #{log_label}", true) if log_label.present? && columns.present?
 
     columns
   end
 
-  def widen_mirror_char_columns
+  def convert_source_char_columns
     return unless dw_redshift?
     return unless target_table_exists?
 
-    conn = DataWarehouseApplicationRecord.connection
+    conn = dw_connection
     loop do
-      col = fetch_mirror_columns.find { |c| mirror_char_type?(c['type']) }
+      col = fetch_target_columns.find { |c| source_char_type?(c['type']) }
       break unless col
 
       column_name = col['column']
@@ -201,18 +205,21 @@ class RedshiftSystemTableSyncJob < ApplicationJob
       conn.execute("UPDATE #{@target_table_with_schema} SET #{ttmp} = #{tcol}")
       conn.execute("ALTER TABLE #{@target_table_with_schema} DROP COLUMN #{tcol}")
       conn.execute("ALTER TABLE #{@target_table_with_schema} RENAME COLUMN #{ttmp} TO #{tcol}")
-      log_info("Widened mirror column #{column_name} to #{desired}", true, target_table: @target_table)
+      log_info(
+        "Converted source column #{column_name} to #{desired}", true,
+        target_table: @target_table
+      )
     end
   end
 
-  def mirror_char_type?(type)
+  def source_char_type?(type)
     t = type.to_s
     return false if /\bvarying\b/i.match?(t) || /\bvarchar\b/i.match?(t)
     t.match?(/\A(char|character|bpchar)(\s*\(|$)/i)
   end
 
   def dw_redshift?
-    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
+    dw_connection.adapter_name.downcase.include?('redshift')
   end
 
   def upsert_data
@@ -274,7 +281,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     SQL
 
     log_info("Merge query #{@source_table}", true, merge_query: merge_query)
-    DataWarehouseApplicationRecord.connection.execute(merge_query)
+    dw_connection.execute(merge_query)
     log_info("MERGE executed for #{@target_table_with_schema}", true)
   end
 
