@@ -279,24 +279,24 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
     end
   end
 
-  describe '#mirror_char_type?' do
+  describe '#source_char_type?' do
     it 'is false for varchar and character varying' do
-      expect(job.send(:mirror_char_type?, 'character varying')).to be false
-      expect(job.send(:mirror_char_type?, 'varchar(40)')).to be false
+      expect(job.send(:source_char_type?, 'character varying')).to be false
+      expect(job.send(:source_char_type?, 'varchar(40)')).to be false
     end
 
     it 'is true for fixed-width char family types' do
-      expect(job.send(:mirror_char_type?, 'character(3)')).to be true
-      expect(job.send(:mirror_char_type?, 'character')).to be true
-      expect(job.send(:mirror_char_type?, 'bpchar')).to be true
+      expect(job.send(:source_char_type?, 'character(3)')).to be true
+      expect(job.send(:source_char_type?, 'character')).to be true
+      expect(job.send(:source_char_type?, 'bpchar')).to be true
     end
   end
 
-  describe '#widen_mirror_char_columns' do
+  describe '#convert_source_char_columns' do
     before do
       allow(DataWarehouseApplicationRecord.connection).to receive(:adapter_name).and_return('redshift')
       allow(job).to receive(:target_table_exists?).and_return(true)
-      allow(job).to receive(:fetch_mirror_columns).and_return(
+      allow(job).to receive(:fetch_target_columns).and_return(
         [{ 'column' => 'legacy_col', 'type' => 'character(5)' }],
         [{ 'column' => 'legacy_col', 'type' => 'character varying' }],
       )
@@ -307,7 +307,7 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
       calls = []
       allow(conn).to receive(:execute) { |sql| calls << sql }
       allow(Rails.logger).to receive(:info)
-      job.send(:widen_mirror_char_columns)
+      job.send(:convert_source_char_columns)
       expect(calls.size).to eq(4)
       expect(calls[0]).to include('ADD COLUMN', 'VARCHAR(5)')
       expect(calls[1]).to match(/UPDATE .* SET .*legacy_col/)
