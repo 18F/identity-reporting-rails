@@ -268,10 +268,15 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
 
   describe '#add_missing_column_statements' do
     it 'builds ADD COLUMN from source metadata and redshift_data_type' do
-      allow(job).to receive(:fetch_source_columns).and_return([
-        { 'column' => 'new_column1', 'type' => 'integer' },
-        { 'column' => 'new_column2', 'type' => 'character varying' },
-      ])
+      allow(job).to receive(:fetch_source_columns).and_return(
+        [
+          { 'column' => 'new_column1',
+            'type' => 'integer' },
+          {
+            'column' => 'new_column2', 'type' => 'character varying'
+          },
+        ],
+      )
       stmts = job.send(:add_missing_column_statements, %w[new_column1 new_column2])
       expect(stmts.size).to eq(2)
       expect(stmts[0]).to include('new_column1', 'integer')
@@ -294,7 +299,8 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
 
   describe '#convert_source_char_columns' do
     before do
-      allow(DataWarehouseApplicationRecord.connection).to receive(:adapter_name).and_return('redshift')
+      allow(DataWarehouseApplicationRecord.connection).to receive(:adapter_name).
+        and_return('redshift')
       allow(job).to receive(:target_table_exists?).and_return(true)
       allow(job).to receive(:fetch_target_columns).and_return(
         [{ 'column' => 'legacy_col', 'type' => 'character(5)' }],
