@@ -20,20 +20,16 @@ class RedshiftUserLoginDetectionJob < ApplicationJob
 
   private
 
-  def using_redshift_adapter?
-    DataWarehouseApplicationRecord.connection.adapter_name.downcase.include?('redshift')
-  end
-
   def users_to_check
-    ['pii_reader']
+    ['pii_reader', 'superuser']
   end
 
   def user_logins_detected_from_redshift
     query = <<~SQL
       SELECT DISTINCT user_name AS users
       FROM SYS_CONNECTION_LOG
-      WHERE event = 'authenticated'
-      AND user_name IN (#{users_to_check.map { |s| "'#{s}'" }.join(", ")})
+      WHERE event = 'authenticated' 
+      AND user_name IN (#{users_to_check.map { |s| "'#{s}'" }.join(", ")}) 
       AND record_time >= CURRENT_TIMESTAMP - INTERVAL '15 MINUTES';
     SQL
     result = DataWarehouseApplicationRecord.connection.execute(
