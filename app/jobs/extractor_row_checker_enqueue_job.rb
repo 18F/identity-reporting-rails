@@ -1,6 +1,6 @@
 require 'schema_table_service'
 class ExtractorRowCheckerEnqueueJob < ApplicationJob
-  queue_as :default
+  queue_as :admin
 
   def perform
     schema_table_service = SchemaTableService.generate_schema_table_hash
