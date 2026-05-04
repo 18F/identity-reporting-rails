@@ -22,7 +22,7 @@ RSpec.describe Reports::PartnerReportDefault do
         provider_information: {
           service_provider_name: 'Agency 1 App',
           agency_name: 'Test Agency 1',
-          start_service_provider_id: 123,
+          service_provider_id: 123,
         },
         report_information: {
           period_start_date: '2026-04-01',
@@ -36,7 +36,7 @@ RSpec.describe Reports::PartnerReportDefault do
         provider_information: {
           service_provider_name: 'Agency 2 App',
           agency_name: 'Test Agency 2',
-          start_service_provider_id: 456,
+          service_provider_id: 456,
         },
         report_information: {
           period_start_date: '2026-04-01',
@@ -172,12 +172,12 @@ RSpec.describe Reports::PartnerReportDefault do
       it 'uploads reports for each issuer' do
         expect(job).to receive(:upload_to_s3).with(
           sample_report_data[issuer1],
-          issuer: issuer1,
+          service_provider_id: 123,
           period_date: period_date,
         )
         expect(job).to receive(:upload_to_s3).with(
           sample_report_data[issuer2],
-          issuer: issuer2,
+          service_provider_id: 456,
           period_date: period_date,
         )
 
@@ -233,6 +233,37 @@ RSpec.describe Reports::PartnerReportDefault do
         # Should only upload issuer1
         expect(job).to receive(:upload_to_s3).once
 
+        job.perform(report_date)
+      end
+    end
+
+    context 'when service_provider_id is missing from report data' do
+      let(:sample_report_data_missing_id) do
+        {
+          issuer1 => {
+            issuer: issuer1,
+            provider_information: {
+              service_provider_name: 'Agency 1 App',
+              # service_provider_id is missing
+            },
+            data: { count_active_users: 1000 },
+          },
+        }
+      end
+
+      before do
+        allow(mock_partner_report).to receive(:generate_reports).and_return(
+          sample_report_data_missing_id,
+        )
+      end
+
+      it 'skips upload and logs error when service_provider_id is missing' do
+        allow(Rails.logger).to receive(:info)
+        expect(Rails.logger).to receive(:error).with(
+          "Missing service_provider_id for #{issuer1}, skipping upload",
+        )
+        expect(Rails.logger).to receive(:info).with('Upload summary: 0 successful, 1 skipped')
+        expect(job).not_to receive(:upload_to_s3)
         job.perform(report_date)
       end
     end
@@ -294,30 +325,30 @@ RSpec.describe Reports::PartnerReportDefault do
     let(:sample_json_data) do
       {
         issuer: issuer1,
-        provider_information: { service_provider_name: 'Test App' },
+        provider_information: {
+          service_provider_name: 'Test App',
+          service_provider_id: 123,
+        },
         data: { count_active_users: 1000 },
       }
     end
 
     it 'uploads to correct S3 path structure' do
-      expected_path = "#{issuer1}/monthly/2026-04-01.json"
-
+      expected_path = '123/monthly/2026-04-01.json'
       expect(job).to receive(:upload_file_to_s3_bucket).with(
         path: expected_path,
         body: JSON.pretty_generate(sample_json_data),
         content_type: 'application/json',
         bucket: bucket_name,
       )
-
-      job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: period_date)
+      job.send(:upload_to_s3, sample_json_data, service_provider_id: 123, period_date: period_date)
     end
 
     it 'logs successful upload' do
       expect(Rails.logger).to receive(:info).with(
-        "Uploaded partner report to S3: #{issuer1}/monthly/2026-04-01.json",
+        'Uploaded partner report to S3: 123/monthly/2026-04-01.json',
       )
-
-      job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: period_date)
+      job.send(:upload_to_s3, sample_json_data, service_provider_id: 123, period_date: period_date)
     end
 
     context 'when bucket_name is not present' do
@@ -327,7 +358,10 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'skips upload without error' do
         expect(job).not_to receive(:upload_file_to_s3_bucket)
-        job.send(:upload_to_s3, sample_json_data, issuer: issuer1, period_date: period_date)
+        job.send(
+          :upload_to_s3, sample_json_data, service_provider_id: 123,
+                                           period_date: period_date
+        )
       end
     end
   end

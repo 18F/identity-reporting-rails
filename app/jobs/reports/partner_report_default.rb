@@ -58,7 +58,19 @@ module Reports
         end
 
         begin
-          upload_to_s3(json_data, issuer: issuer, period_date: period_date)
+          # service_provider_id used for file path
+          service_provider_id = json_data[:provider_information][:service_provider_id]
+
+          if service_provider_id.nil?
+            Rails.logger.error "Missing service_provider_id for #{issuer}, skipping upload"
+            skipped_count += 1
+            next
+          end
+
+          upload_to_s3(
+            json_data, service_provider_id: service_provider_id,
+                       period_date: period_date
+          )
           uploaded_count += 1
         rescue => e
           Rails.logger.error "Failed to upload report for #{issuer}: #{e.message}"
@@ -80,10 +92,10 @@ module Reports
       ).generate_reports
     end
 
-    def upload_to_s3(json_data, issuer:, period_date:)
-      # S3 path structure: issuer/REPORT_CADENCE/2025-01-01.json
+    def upload_to_s3(json_data, service_provider_id:, period_date:)
+      # S3 path structure: service_provider_id/REPORT_CADENCE/2025-01-01.json
       base_path = generate_base_s3_path(directory: 'portal')
-      path = "#{base_path}#{issuer}/#{REPORT_CADENCE}/#{period_date}.json"
+      path = "#{base_path}#{service_provider_id}/#{REPORT_CADENCE}/#{period_date}.json"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(

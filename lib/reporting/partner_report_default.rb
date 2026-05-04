@@ -220,7 +220,6 @@ module Reporting
     ].freeze
 
     def build_data_section(row)
-
       INTEGER_DATA_FIELDS.each_with_object({}) do |field, hash|
         value = row[field]
 
