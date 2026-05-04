@@ -36,5 +36,17 @@ RSpec.describe ExtractorRowCheckerEnqueueJob, type: :job do
 
       expect { ExtractorRowCheckerEnqueueJob.new.perform }.not_to raise_error
     end
+
+    context 'when schema_table_service is blank' do
+      before do
+        allow(SchemaTableService).to receive(:generate_schema_table_hash).and_return(nil)
+      end
+
+      it 'logs a warning' do
+        expect(Rails.logger).to receive(:warn).with('ExtractorRowCheckerEnqueueJob: schema_table_service is blank')
+
+        expect { ExtractorRowCheckerEnqueueJob.new.perform }.to raise_error(NoMethodError)
+      end
+    end
   end
 end

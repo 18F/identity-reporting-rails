@@ -4,6 +4,11 @@ class ExtractorRowCheckerEnqueueJob < ApplicationJob
 
   def perform
     schema_table_service = SchemaTableService.generate_schema_table_hash
+
+    if schema_table_service.blank?
+      Rails.logger.warn("ExtractorRowCheckerEnqueueJob: schema_table_service is blank")
+    end
+
     schema_table_service.each do |schema_name, tables|
       tables.each do |table_name|
         if schema_name == 'logs'
