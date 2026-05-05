@@ -135,3 +135,5 @@ production:
     encoding: utf8
     migrations_paths: db/data_warehouse_migrate
     schema_dump: false
+    variables:
+      query_group: 'ingestion_reporting_rails'
