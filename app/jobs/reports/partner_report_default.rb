@@ -19,16 +19,16 @@ module Reports
       super(report_date, *args, **rest)
     end
 
-    def perform(date = REPORT_DELAY_DAYS.days.ago.end_of_day)
+    def perform(date = nil)
       unless IdentityConfig.store.redshift_sia_v3_enabled
         Rails.logger.warn 'Redshift SIA V3 is disabled'
         return false
       end
       return unless IdentityConfig.store.s3_reports_enabled
 
-      @report_date = date
+      # Use provided date, or constructor date, or default
+      @report_date = date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
 
-      # User marts.calendar to get period date from report date
       if period_date.nil?
         Rails.logger.error "Cannot generate reports: "\
         "failed to retrieve period_date in marts.calendar for report_date #{report_date}"
@@ -37,7 +37,6 @@ module Reports
 
       Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports for report date: "\
                       "#{report_date} (#{REPORT_CADENCE} report period starting on #{period_date})"
-
       generate_and_upload_reports(report_date)
       Rails.logger.info "Completed partner default #{REPORT_CADENCE} report"
     end
