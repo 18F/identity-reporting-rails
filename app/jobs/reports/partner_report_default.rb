@@ -45,22 +45,32 @@ module Reports
     private
 
     def generate_and_upload_reports(report_date)
-      issuer_reports = partner_reports(report_date)
+      reporter = Reporting::PartnerReportDefault.new(
+        report_date: report_date,
+        report_cadence: REPORT_CADENCE,
+      )
+      # Generate issuer mapping to link IDs and issuer strings
+      issuer_mapping = reporter.generate_issuer_mapping
+      issuer_reports = reporter.generate_reports
+
+      # Check that all service_provider_ids exist in mapping (just in case, warn if any missing)
+      validate_service_provider_ids(issuer_reports, issuer_mapping)
+
+      upload_issuer_mapping_to_s3(issuer_mapping)
+
+      # Upload individual reports
       uploaded_count = 0
       skipped_count = 0
 
       issuer_reports.each do |issuer, json_data|
         if json_data.nil?
-          Rails.logger.warn "Skipping upload for #{issuer}: report generation "\
-                            "failed and returned nil"
+          Rails.logger.warn "Skipping upload for #{issuer}: report generation failed and returned nil"
           skipped_count += 1
           next
         end
 
         begin
-          # service_provider_id used for file path
           service_provider_id = json_data[:provider_information][:service_provider_id]
-
           if service_provider_id.nil?
             Rails.logger.error "Missing service_provider_id for #{issuer}, skipping upload"
             skipped_count += 1
@@ -85,13 +95,6 @@ module Reports
       raise err
     end
 
-    def partner_reports(report_date)
-      Reporting::PartnerReportDefault.new(
-        report_date: report_date,
-        report_cadence: REPORT_CADENCE,
-      ).generate_reports
-    end
-
     def upload_to_s3(json_data, service_provider_id:, period_date:)
       # S3 path structure: service_provider_id/REPORT_CADENCE/2025-01-01.json
       base_path = generate_base_s3_path(directory: 'portal')
@@ -105,6 +108,37 @@ module Reports
           bucket: bucket_name,
         )
         Rails.logger.info "Uploaded partner report to S3: #{path}"
+      end
+    end
+
+    def validate_service_provider_ids(issuer_reports, issuer_mapping)
+      mapping_ids = issuer_mapping.values.map { |v| v[:id] }.to_set
+
+      issuer_reports.each do |issuer, json_data|
+        next if json_data.nil?
+
+        service_provider_id = json_data[:provider_information][:service_provider_id]
+        next if service_provider_id.nil?
+
+        unless mapping_ids.include?(service_provider_id)
+          Rails.logger.warn "Service provider ID #{service_provider_id} for issuer "\
+                            "'#{issuer}' not found in issuer mapping"
+        end
+      end
+    end
+
+    def upload_issuer_mapping_to_s3(mapping_data)
+      base_path = generate_base_s3_path(directory: 'portal')
+      path = "#{base_path}issuers_service_provider_id.json"
+
+      if bucket_name.present?
+        upload_file_to_s3_bucket(
+          path: path,
+          body: JSON.pretty_generate(mapping_data),
+          content_type: 'application/json',
+          bucket: bucket_name,
+        )
+        Rails.logger.info "Uploaded issuer mapping to S3: #{path}"
       end
     end
 

@@ -100,6 +100,12 @@ module Reporting
       nil
     end
 
+    def generate_issuer_mapping
+      # This maps SP ID to issuer string
+      raw_data = fetch_issuer_mapping_data
+      format_issuer_mapping(raw_data)
+    end
+
     # Returns data hash: { issuer => json_data }
     def generate_reports
       raw_data = fetch_bulk_data
@@ -107,6 +113,51 @@ module Reporting
     end
 
     private
+
+    def fetch_issuer_mapping_data
+      DataWarehouseApplicationRecord.connection.execute(issuer_mapping_query).to_a
+    rescue StandardError => e
+      Rails.logger.error "Failed to fetch service provider issuer map data: #{e.message}"
+      raise e
+    end
+
+    def issuer_mapping_query
+      <<~SQL
+        SELECT issuer, id
+        FROM idp.service_providers
+        WHERE issuer IS NOT NULL
+          AND TRIM(issuer) <> ''
+          AND id IS NOT NULL
+        ORDER BY issuer;
+      SQL
+    end
+
+    def format_issuer_mapping(raw_data)
+      if raw_data.empty?
+        Rails.logger.warn 'No service providers found in idp.service_providers'
+        return {}
+      end
+
+      result = {}
+      raw_data.each do |row|
+        issuer = row['issuer']
+        id = row['id']
+
+        if result.key?(issuer)
+          Rails.logger.error "Duplicate issuer found in idp.service_providers: #{issuer}."\
+                             " Keeping first id."
+          next
+        end
+
+        begin
+          result[issuer] = { id: Integer(id) }
+        rescue ArgumentError, TypeError
+          Rails.logger.error "Invalid id value for issuer #{issuer}: #{id.inspect}. Skipping row."
+        end
+      end
+
+      result
+    end
 
     def format_by_issuer(raw_data)
       if raw_data.empty?
