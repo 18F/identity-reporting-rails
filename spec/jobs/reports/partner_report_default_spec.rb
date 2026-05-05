@@ -147,16 +147,20 @@ RSpec.describe Reports::PartnerReportDefault do
         expect(job.report_date).to eq(report_date)
       end
 
-      it 'uses default date when none provided' do
+      it 'uses default date when none provided and no constructor date set' do
         freeze_time = Time.zone.parse('2026-02-05')
         expected_default = freeze_time - described_class::REPORT_DELAY_DAYS.days
-
         travel_to freeze_time do
-          job.perform
+          job.perform  # No date provided, no constructor date
           expect(job.report_date).to be_within(1.second).of(expected_default.end_of_day)
         end
       end
-
+      it 'uses constructor date when no parameter provided' do
+        job_with_constructor_date = described_class.new(report_date)
+        allow(job_with_constructor_date).to receive(:period_date).and_return(period_date)
+        job_with_constructor_date.perform  # No parameter
+        expect(job_with_constructor_date.report_date).to eq(report_date)
+      end
       it 'creates PartnerReportDefault with correct parameters' do
         expect(Reporting::PartnerReportDefault).to receive(:new).with(
           report_date: report_date,
