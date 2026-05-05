@@ -62,20 +62,34 @@ RSpec.describe Reports::PartnerReportDefault do
   end
 
   let(:mock_partner_report) { instance_double(Reporting::PartnerReportDefault) }
+  let(:sample_issuer_mapping) do
+    {
+      issuer1 => { id: 123 },
+      issuer2 => { id: 456 },
+      issuer3 => { id: 789 },
+    }
+  end
 
+  let(:incomplete_issuer_mapping) do
+    {
+      issuer1 => { id: 123 },
+      # Missing issuer2 and issuer3
+    }
+  end
   before do
     allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(true)
     allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
     allow(job).to receive(:bucket_name).and_return(bucket_name)
     allow(job).to receive(:upload_file_to_s3_bucket)
     allow(job).to receive(:generate_base_s3_path).with(directory: 'portal').and_return('')
-
     allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
       with(report_date: anything, cadence: 'monthly').
       and_return(period_date)
-
     allow(Reporting::PartnerReportDefault).to receive(:new).and_return(mock_partner_report)
     allow(mock_partner_report).to receive(:generate_reports).and_return(sample_report_data)
+    allow(mock_partner_report).to receive(
+      :generate_issuer_mapping,
+    ).and_return(sample_issuer_mapping)
   end
 
   describe '#initialize' do
@@ -192,6 +206,23 @@ RSpec.describe Reports::PartnerReportDefault do
 
         job.perform(report_date)
       end
+      it 'generates issuer mapping before reports' do
+        expect(mock_partner_report).to receive(:generate_issuer_mapping).ordered
+        expect(mock_partner_report).to receive(:generate_reports).ordered
+        job.perform(report_date)
+      end
+
+      it 'uploads issuer mapping to S3' do
+        expect(job).to receive(:upload_issuer_mapping_to_s3).with(sample_issuer_mapping)
+        job.perform(report_date)
+      end
+
+      it 'validates service provider IDs against mapping' do
+        expect(job).to receive(:validate_service_provider_ids).with(
+          sample_report_data, sample_issuer_mapping
+        )
+        job.perform(report_date)
+      end
     end
 
     context 'when report generation fails' do
@@ -208,6 +239,24 @@ RSpec.describe Reports::PartnerReportDefault do
           "Failed to generate partner default monthly reports: #{error_message}",
         )
 
+        expect { job.perform(report_date) }.to raise_error(StandardError, error_message)
+      end
+    end
+
+    context 'when issuer mapping generation fails' do
+      let(:error_message) { 'Failed to fetch issuer mapping' }
+
+      before do
+        allow(mock_partner_report).to receive(:generate_issuer_mapping).and_raise(
+          StandardError.new(error_message),
+        )
+      end
+
+      it 'logs error and re-raises exception without generating reports' do
+        expect(Rails.logger).to receive(:error).with(
+          "Failed to generate partner default monthly reports: #{error_message}",
+        )
+        expect(mock_partner_report).not_to receive(:generate_reports)
         expect { job.perform(report_date) }.to raise_error(StandardError, error_message)
       end
     end
@@ -379,7 +428,112 @@ RSpec.describe Reports::PartnerReportDefault do
       expect { JSON.parse(result) }.not_to raise_error
     end
   end
+  describe '#validate_service_provider_ids' do
+    let(:complete_mapping) do
+      {
+        issuer1 => { id: 123 },
+        issuer2 => { id: 456 },
+      }
+    end
 
+    context 'when all service provider IDs exist in mapping' do
+      it 'does not log any warnings' do
+        expect(Rails.logger).not_to receive(:warn)
+        job.send(:validate_service_provider_ids, sample_report_data, complete_mapping)
+      end
+    end
+
+    context 'when some service provider IDs are missing from mapping' do
+      let(:incomplete_mapping) do
+        {
+          issuer1 => { id: 123 },
+          # Missing issuer2 (id: 456)
+        }
+      end
+
+      it 'logs warning for missing service provider IDs' do
+        expect(Rails.logger).to receive(:warn).with(
+          "Service provider ID 456 for issuer '#{issuer2}' not found in issuer mapping",
+        )
+        job.send(:validate_service_provider_ids, sample_report_data, incomplete_mapping)
+      end
+    end
+
+    context 'with nil report data' do
+      let(:report_data_with_nils) do
+        {
+          issuer1 => sample_report_data[issuer1],
+          issuer2 => nil,
+        }
+      end
+
+      it 'skips nil entries without error' do
+        # Note - this is logged at the data fetch/format level when data is missing/corrupted
+        # We are not logging it again during the validate_service_provider_ids method, which has a
+        # different scope
+        expect(Rails.logger).not_to receive(:warn)
+        job.send(:validate_service_provider_ids, report_data_with_nils, complete_mapping)
+      end
+    end
+
+    context 'with missing service_provider_id in report data' do
+      let(:report_data_missing_id) do
+        {
+          issuer1 => {
+            issuer: issuer1,
+            provider_information: {
+              service_provider_name: 'Test App',
+              # service_provider_id is missing
+            },
+          },
+        }
+      end
+
+      it 'skips entries with missing service_provider_id' do
+        # Same comment as previous test -this is logged elsewhere
+        expect(Rails.logger).not_to receive(:warn)
+        job.send(:validate_service_provider_ids, report_data_missing_id, complete_mapping)
+      end
+    end
+  end
+
+  describe '#upload_issuer_mapping_to_s3' do
+    let(:mapping_data) do
+      {
+        issuer1 => { id: 123 },
+        issuer2 => { id: 456 },
+      }
+    end
+
+    it 'uploads mapping to correct S3 path' do
+      expected_path = 'issuers_service_provider_id.json'
+      expect(job).to receive(:upload_file_to_s3_bucket).with(
+        path: expected_path,
+        body: JSON.pretty_generate(mapping_data),
+        content_type: 'application/json',
+        bucket: bucket_name,
+      )
+      job.send(:upload_issuer_mapping_to_s3, mapping_data)
+    end
+
+    it 'logs successful upload' do
+      expect(Rails.logger).to receive(:info).with(
+        'Uploaded issuer mapping to S3: issuers_service_provider_id.json',
+      )
+      job.send(:upload_issuer_mapping_to_s3, mapping_data)
+    end
+
+    context 'when bucket_name is not present' do
+      before do
+        allow(job).to receive(:bucket_name).and_return(nil)
+      end
+
+      it 'skips upload without error' do
+        expect(job).not_to receive(:upload_file_to_s3_bucket)
+        job.send(:upload_issuer_mapping_to_s3, mapping_data)
+      end
+    end
+  end
   describe 'integration with PartnerReportDefault' do
     it 'passes correct parameters to report generator' do
       expect(Reporting::PartnerReportDefault).to receive(:new).with(

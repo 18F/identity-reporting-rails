@@ -103,6 +103,29 @@ RSpec.describe Reporting::PartnerReportDefault do
       'count_auth_successful' => '   ',
     )
   end
+  let(:issuer_mapping_data) do
+    [
+      { 'issuer' => issuer1, 'id' => 123 },
+      { 'issuer' => issuer2, 'id' => 456 },
+      { 'issuer' => issuer3, 'id' => 789 },
+    ]
+  end
+
+  let(:duplicate_issuer_mapping_data) do
+    [
+      { 'issuer' => issuer1, 'id' => 123 },
+      { 'issuer' => issuer1, 'id' => 999 }, # duplicate issuer
+      { 'issuer' => issuer2, 'id' => 456 },
+    ]
+  end
+
+  let(:invalid_id_mapping_data) do
+    [
+      { 'issuer' => issuer1, 'id' => 123 },
+      { 'issuer' => issuer2, 'id' => 'invalid_id' },
+      { 'issuer' => issuer3, 'id' => nil },
+    ]
+  end
 
   subject(:report) do
     described_class.new(
@@ -344,6 +367,104 @@ RSpec.describe Reporting::PartnerReportDefault do
         )
         result = report.generate_reports
         expect(result).to eq({})
+      end
+    end
+  end
+
+  describe '#generate_issuer_mapping' do
+    context 'with valid mapping data' do
+      before do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
+          with(anything).and_call_original
+        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
+          with(match(/FROM idp\.service_providers/)).and_return(issuer_mapping_data)
+      end
+
+      it 'returns correctly formatted mapping' do
+        result = report.generate_issuer_mapping
+        expect(result).to be_a(Hash)
+        expect(result[issuer1]).to eq({ id: 123 })
+        expect(result[issuer2]).to eq({ id: 456 })
+        expect(result[issuer3]).to eq({ id: 789 })
+      end
+
+      it 'converts string IDs to integers' do
+        mapping_data_with_string_ids = [
+          { 'issuer' => issuer1, 'id' => '123' },
+          { 'issuer' => issuer2, 'id' => '456' },
+        ]
+        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
+          with(match(/FROM idp\.service_providers/)).and_return(mapping_data_with_string_ids)
+
+        result = report.generate_issuer_mapping
+        expect(result[issuer1][:id]).to eq(123)
+        expect(result[issuer2][:id]).to eq(456)
+      end
+    end
+
+    context 'with empty mapping data' do
+      before do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
+          with(match(/FROM idp\.service_providers/)).and_return([])
+      end
+
+      it 'returns empty hash and logs warning' do
+        expect(Rails.logger).to receive(:warn).with(
+          'No service providers found in idp.service_providers',
+        )
+        result = report.generate_issuer_mapping
+        expect(result).to eq({})
+      end
+    end
+
+    context 'with duplicate issuers' do
+      before do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
+          with(match(/FROM idp\.service_providers/)).and_return(duplicate_issuer_mapping_data)
+      end
+
+      it 'keeps first ID and logs error for duplicates' do
+        expect(Rails.logger).to receive(:error).with(
+          "Duplicate issuer found in idp.service_providers: #{issuer1}. Keeping first id.",
+        )
+        result = report.generate_issuer_mapping
+        expect(result[issuer1][:id]).to eq(123) # First occurrence
+        expect(result[issuer2][:id]).to eq(456)
+      end
+    end
+
+    context 'with invalid ID values' do
+      before do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
+          with(match(/FROM idp\.service_providers/)).and_return(invalid_id_mapping_data)
+      end
+
+      it 'skips rows with invalid IDs and logs errors' do
+        expect(Rails.logger).to receive(:error).with(
+          "Invalid id value for issuer #{issuer2}: \"invalid_id\". Skipping row.",
+        )
+        expect(Rails.logger).to receive(:error).with(
+          "Invalid id value for issuer #{issuer3}: nil. Skipping row.",
+        )
+        result = report.generate_issuer_mapping
+        expect(result[issuer1][:id]).to eq(123)
+        expect(result).not_to have_key(issuer2)
+        expect(result).not_to have_key(issuer3)
+      end
+    end
+
+    context 'when database query fails' do
+      before do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
+          with(match(/FROM idp\.service_providers/)).
+          and_raise(StandardError.new('Database connection failed'))
+      end
+
+      it 'logs error and re-raises' do
+        expect(Rails.logger).to receive(:error).with(
+          'Failed to fetch service provider issuer map data: Database connection failed',
+        )
+        expect { report.generate_issuer_mapping }.to raise_error(StandardError)
       end
     end
   end
