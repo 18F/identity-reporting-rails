@@ -30,7 +30,7 @@ end
 
 group :development, :test do
   gem 'brakeman', require: false
-  gem 'bullet', '~> 8.1'
+  gem 'bullet'
   gem 'knapsack'
   gem 'listen'
   gem 'nokogiri', '~> 1.18.0'

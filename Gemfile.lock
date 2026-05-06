@@ -483,7 +483,7 @@ DEPENDENCIES
   better_errors (>= 2.5.1)
   bootsnap (~> 1.0)
   brakeman
-  bullet (~> 8.0)
+  bullet
   bundler-audit
   caxlsx
   connection_pool
