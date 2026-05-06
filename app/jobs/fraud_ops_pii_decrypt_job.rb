@@ -37,7 +37,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     query = <<~SQL.squish
       SELECT event_key, message
       FROM fraudops.frd_encrypted_events
-      WHERE processed_timestamp IS NULL
+      WHERE dw_processed_at IS NULL
       ORDER BY event_key
       LIMIT ?
     SQL
@@ -103,7 +103,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     end
 
     insert_sql = <<~SQL.squish
-      INSERT INTO fraudops.frd_events (event_key, message, import_timestamp)
+      INSERT INTO fraudops.frd_events (event_key, message, dw_created_at)
       VALUES #{placeholders}
     SQL
 
@@ -119,7 +119,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     placeholders = (['?'] * event_ids.size).join(', ')
     update_sql = <<~SQL.squish
       UPDATE fraudops.frd_encrypted_events
-      SET processed_timestamp = CURRENT_TIMESTAMP
+      SET dw_processed_at = CURRENT_TIMESTAMP
       WHERE event_key IN (#{placeholders})
     SQL
 

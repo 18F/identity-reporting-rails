@@ -124,7 +124,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
     let(:limit) { 1000 }
     let(:expected_query_pattern) do
       %r{SELECT\ event_key,\ message\ FROM\ fraudops\.frd_encrypted_events
-         \s+WHERE\ processed_timestamp\ IS\ NULL
+         \s+WHERE\ dw_processed_at\ IS\ NULL
          \s+ORDER\ BY\ event_key\ LIMIT}x
     end
     let(:query_result) { instance_double(ActiveRecord::Result) }
@@ -293,7 +293,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses jsonb cast in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ import_timestamp\)
+                      \s*\(event_key,\ message,\ dw_created_at\)
                       \s*VALUES.*::jsonb}x
 
         expect(mock_connection).to receive(:execute).
@@ -316,7 +316,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ import_timestamp\)
+                      \s*\(event_key,\ message,\ dw_created_at\)
                       \s*VALUES.*JSON_PARSE}x
 
         expect(mock_connection).to receive(:execute).
@@ -346,7 +346,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
     context 'when update is successful' do
       it 'executes update query with all event IDs' do
         expected_pattern = %r{UPDATE\ fraudops\.frd_encrypted_events
-                      \s+SET\ processed_timestamp\ =\ CURRENT_TIMESTAMP
+                      \s+SET\ dw_processed_at\ =\ CURRENT_TIMESTAMP
                       \s+WHERE\ event_key\ IN}x
 
         expect(mock_connection).to receive(:execute).
