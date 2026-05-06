@@ -5,6 +5,32 @@ end
 
 require 'active_record/connection_adapters/redshift_adapter'
 
+module ActiveRecord
+  module ConnectionAdapters
+    class AbstractAdapter
+      unless method_defined?(:check_if_write_query)
+        def check_if_write_query(sql)
+          if preventing_writes? && write_query?(sql)
+            raise ActiveRecord::ReadOnlyError,
+                  "Write query attempted while in readonly mode: #{sql}"
+          end
+        end
+      end
+    end
+
+    module DatabaseStatements
+      unless method_defined?(:mark_transaction_written_if_write)
+        def mark_transaction_written_if_write(sql)
+          transaction = current_transaction
+          if transaction.open?
+            transaction.written ||= write_query?(sql)
+          end
+        end
+      end
+    end
+  end
+end
+
 module IdentityReporting
   module SchemaStatementsOverride
     # ActiveRecord passes in options as a hash, but as of Ruby 3.0, they are interpreted
