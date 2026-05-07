@@ -1,5 +1,10 @@
 class DuplicateRowCheckerJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
   queue_as :default
+
+  good_job_control_concurrency_with(
+    total_limit: 1,
+  )
 
   def perform(table_name, schema_name)
     @table_name = DataWarehouseApplicationRecord.connection.quote_table_name(table_name)
