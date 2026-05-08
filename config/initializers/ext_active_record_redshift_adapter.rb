@@ -74,16 +74,18 @@ module IdentityReporting
     end
   end
 
-  module RedshiftRails81ColumnCompat
-    def initialize(name, cast_type, default, sql_type_metadata = nil, null = true, default_function = nil, **options)
+  module RedshiftColumnInitializeOverride
+    def initialize(name, cast_type, default, sql_type_metadata = nil, null = true,
+                   default_function = nil, **options)
       ActiveRecord::ConnectionAdapters::Column.instance_method(:initialize).bind_call(
         self, name, cast_type, default, sql_type_metadata, null, default_function, **options
       )
     end
   end
 
-  module RedshiftRails81SchemaStatementsCompat
-    def new_column(name, default, sql_type_metadata = nil, null = true, _table_name = nil, default_function = nil)
+  module RedshiftSchemaStatementsNewColumnOverride
+    def new_column(name, default, sql_type_metadata = nil, null = true, _table_name = nil,
+                   default_function = nil)
       cast_type =
         if sql_type_metadata
           get_oid_type(
@@ -105,13 +107,12 @@ module IdentityReporting
   end
 end
 
-if ActiveRecord.version >= Gem::Version.new('8.1.0')
-  ActiveRecord::ConnectionAdapters::RedshiftColumn.prepend(IdentityReporting::RedshiftRails81ColumnCompat)
-  ActiveRecord::ConnectionAdapters::Redshift::SchemaStatements.prepend(
-    IdentityReporting::RedshiftRails81SchemaStatementsCompat,
-  )
-end
-
+ActiveRecord::ConnectionAdapters::RedshiftColumn.prepend(
+  IdentityReporting::RedshiftColumnInitializeOverride,
+)
+ActiveRecord::ConnectionAdapters::Redshift::SchemaStatements.prepend(
+  IdentityReporting::RedshiftSchemaStatementsNewColumnOverride,
+)
 ActiveRecord::ConnectionAdapters::Redshift::SchemaStatements.
   send(:prepend, IdentityReporting::SchemaStatementsOverride)
 ActiveRecord::ConnectionAdapters::Redshift::ColumnMethods.
