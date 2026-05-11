@@ -63,5 +63,25 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
         logs_job.perform('events', 'logs')
       end
     end
+
+    context 'when performed without table arguments' do
+      before do
+        allow(SchemaTableService).to receive(:generate_schema_table_hash).and_return(
+          'logs' => ['events'],
+          'idp' => ['articles'],
+        )
+        allow(DataWarehouseApplicationRecord.connection).to receive(:columns).and_return(
+          [instance_double(ActiveRecord::ConnectionAdapters::Column, name: 'id')],
+        )
+        allow(DataWarehouseApplicationRecord.connection).to receive(:exec_query).and_return(
+          ActiveRecord::Result.new([], []),
+        )
+      end
+
+      it 'runs duplicate checks for each allowed table' do
+        expect(DataWarehouseApplicationRecord.connection).to receive(:exec_query).twice
+        described_class.new.perform
+      end
+    end
   end
 end

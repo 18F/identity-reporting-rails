@@ -9,6 +9,7 @@ cron_1d_morning = '0 11 * * *' # 11:00am UTC or 6:00am EST
 cron_24h = '0 0 * * *'
 cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever else runs at 0000 UTC
 cron_monthly = '30 0 1 * *' # monthly, 0:30 UTC to not overlap with jobs running at 0000
+cron_1w_saturday = '0 2 * * 6'
 
 extractor_row_checker_enqueue_cron_config =
   Fugit.parse_cron(IdentityConfig.store.extractor_row_checker_enqueue_cron).presence&.original
@@ -53,6 +54,10 @@ else
         # runs every 5 minutes
       },
       # Queue schema service job to GoodJob
+      duplicate_row_checker_job: {
+        class: 'DuplicateRowCheckerJob',
+        cron: cron_1w_saturday,
+      },
       extractor_row_checker_enqueue_job: {
         class: 'ExtractorRowCheckerEnqueueJob',
         cron: extractor_row_checker_enqueue_cron_config,

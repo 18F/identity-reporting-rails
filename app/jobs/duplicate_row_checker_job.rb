@@ -1,3 +1,5 @@
+require 'schema_table_service'
+
 class DuplicateRowCheckerJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
   queue_as :default
@@ -7,7 +9,27 @@ class DuplicateRowCheckerJob < ApplicationJob
     key: -> { "#{self.class.name}-#{queue_name}-#{arguments.second}-#{arguments.first}" },
   )
 
-  def perform(table_name, schema_name)
+  ALLOWED_SCHEMAS = ['logs', 'idp'].freeze
+
+  def perform(table_name = nil, schema_name = nil)
+    if table_name.present? && schema_name.present?
+      check_duplicates(table_name, schema_name)
+    else
+      SchemaTableService.generate_schema_table_hash.each do |sch, tables|
+        next unless ALLOWED_SCHEMAS.include?(sch)
+
+        tables.each do |tbl|
+          next if tbl.start_with?('unextracted_')
+
+          check_duplicates(tbl, sch)
+        end
+      end
+    end
+  end
+
+  private
+
+  def check_duplicates(table_name, schema_name)
     @table_name = DataWarehouseApplicationRecord.connection.quote_table_name(table_name)
     @schema_name = DataWarehouseApplicationRecord.connection.quote_table_name(schema_name)
     uniq_by = determine_unique_identifier(schema_name, table_name)
@@ -20,8 +42,6 @@ class DuplicateRowCheckerJob < ApplicationJob
     duplicates = DataWarehouseApplicationRecord.connection.exec_query(query)
     log_result(duplicates)
   end
-
-  private
 
   def build_query(uniq_by)
     <<-SQL
