@@ -20,6 +20,7 @@ class DuplicateRowCheckerJob < ApplicationJob
 
         tables.each do |tbl|
           next if tbl.start_with?('unextracted_')
+          next if sch == 'logs' && !logs_duplicate_check_day?
 
           check_duplicates(tbl, sch)
         end
@@ -28,6 +29,10 @@ class DuplicateRowCheckerJob < ApplicationJob
   end
 
   private
+
+  def logs_duplicate_check_day?
+    Time.zone.today.saturday?
+  end
 
   def check_duplicates(table_name, schema_name)
     @table_name = DataWarehouseApplicationRecord.connection.quote_table_name(table_name)

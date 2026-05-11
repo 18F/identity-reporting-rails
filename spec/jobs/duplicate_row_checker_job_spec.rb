@@ -78,9 +78,18 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
         )
       end
 
-      it 'runs duplicate checks for each allowed table' do
-        expect(DataWarehouseApplicationRecord.connection).to receive(:exec_query).twice
-        described_class.new.perform
+      it 'runs duplicate checks for logs and idp on Saturday' do
+        travel_to(Time.zone.local(2026, 1, 3, 2, 0, 0)) do
+          expect(DataWarehouseApplicationRecord.connection).to receive(:exec_query).twice
+          described_class.new.perform
+        end
+      end
+
+      it 'runs duplicate checks for idp only when not Saturday' do
+        travel_to(Time.zone.local(2026, 1, 5, 2, 0, 0)) do
+          expect(DataWarehouseApplicationRecord.connection).to receive(:exec_query).once
+          described_class.new.perform
+        end
       end
     end
   end
