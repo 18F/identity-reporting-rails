@@ -135,7 +135,8 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'logs error and returns false' do
         expect(Rails.logger).to receive(:error).with(
-          "Cannot generate reports: failed to retrieve period_date in marts.calendar for report_date #{report_date}",
+          "Cannot generate reports: failed to retrieve period_date"\
+          " in marts.calendar for report_date #{report_date}",
         )
         expect(job.perform(report_date)).to eq(false)
       end
@@ -151,14 +152,14 @@ RSpec.describe Reports::PartnerReportDefault do
         freeze_time = Time.zone.parse('2026-02-05')
         expected_default = freeze_time - described_class::REPORT_DELAY_DAYS.days
         travel_to freeze_time do
-          job.perform  # No date provided, no constructor date
+          job.perform # No date provided, no constructor date
           expect(job.report_date).to be_within(1.second).of(expected_default.end_of_day)
         end
       end
       it 'uses constructor date when no parameter provided' do
         job_with_constructor_date = described_class.new(report_date)
         allow(job_with_constructor_date).to receive(:period_date).and_return(period_date)
-        job_with_constructor_date.perform  # No parameter
+        job_with_constructor_date.perform # No parameter
         expect(job_with_constructor_date.report_date).to eq(report_date)
       end
       it 'creates PartnerReportDefault with correct parameters' do
