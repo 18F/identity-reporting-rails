@@ -93,11 +93,15 @@ module Reports
       # We run this report monthly even though it's quarterly and send it to internal emails
       # For off-quarter months, we want the filename to indicate that data is in progress quarterly
       # I.e. report_date of Feb 27 will have 2026-01-01_2026_02-28 (for first quarter)
-      # For the actual partner facing report with report date of March 30,
-      # the two expressions are equivalently equal - 2026-01-01_2026_03_31
-      # This is specifically for quarterly data pulls sent monthly, but the logic
+
+      # For the actual partner facing report run on April 2nd with report date of March 31,
+      # the two expressions are equal - 2026-01-01_2026_03_31
+
+      # This is specifically for quarterly data pulls which we send monthly, but the logic
       # should work for monthly reports as well if we choose to ever generate those
-      min(report_date.all_month.end, time_range_obj.end)
+      raise ArgumentError, 'Report date cannot be in the future' if report_date > Time.zone.today
+      end_date = [report_date.all_month.end, time_range_obj.end].min
+      end_date.strftime('%Y%m%d')
     end
 
     def upload_to_s3(report_body, sp_id:, filename:)
@@ -107,8 +111,9 @@ module Reports
       start_date_fp = time_range_obj.begin.strftime('%Y%m%d')
       end_date_fp = get_end_date_fp(time_range_obj)
 
+      # Use instance variable @time_frame instead of constant TIME_FRAME
       file_key = "DemographicsMetricsReport/#{sp_id}/"\
-                 "#{TIME_FRAME}/{sp_id}_#{start_date_fp}_#{end_date_fp}_#{filename}.csv"
+                "#{@time_frame}/#{sp_id}_#{start_date_fp}_#{end_date_fp}_#{filename}.csv"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(
