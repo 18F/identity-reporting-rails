@@ -9,11 +9,12 @@ module Reports
 
     REPORT_NAME = 'demographics-metrics-report'
     TIME_FRAME = 'quarterly' # Future options: 'monthly', etc.
+    REPORT_DELAY_DAYS = 3 # 3 day lag to account for data sync delay
 
     attr_reader :report_date, :time_frame
 
     def initialize(report_date = nil, time_frame = TIME_FRAME, *args, **rest)
-      @report_date = report_date
+      @report_date = date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
       @time_frame = time_frame
       super(report_date, time_frame, *args, **rest)
     end
