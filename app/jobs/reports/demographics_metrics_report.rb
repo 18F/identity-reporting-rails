@@ -1,19 +1,24 @@
 # frozen_string_literal: true
 
 require 'reporting/demographics_metrics_report'
+require 'reporting/issuer_string_to_sp_id_helper'
 
 module Reports
   class DemographicsMetricsReport < BaseReport
+    include Reporting::IssuerStringToSpIdHelper
+
     REPORT_NAME = 'demographics-metrics-report'
+    TIME_FRAME = 'quarterly' # Future options: 'monthly', etc.
 
-    attr_reader :report_date
+    attr_reader :report_date, :time_frame
 
-    def initialize(report_date = nil, *args, **rest)
+    def initialize(report_date = nil, time_frame = TIME_FRAME, *args, **rest)
       @report_date = report_date
-      super(report_date, *args, **rest)
+      @time_frame = time_frame
+      super(report_date, time_frame, *args, **rest)
     end
 
-    def perform(date = Time.zone.yesterday.end_of_day)
+    def perform(date = Time.zone.yesterday.end_of_day, time_frame = TIME_FRAME)
       unless IdentityConfig.store.redshift_sia_v3_enabled
         Rails.logger.warn 'Redshift SIA V3 is disabled'
         return false
@@ -22,66 +27,92 @@ module Reports
       return unless IdentityConfig.store.s3_reports_enabled
 
       @report_date = date
+      @time_frame = time_frame
+      issuer_strings = report_configs
 
-      report_configs.each do |report_config|
-        generate_and_upload_report(report_config)
+      Rails.logger.info "Starting demographics metrics report generation for"\
+                        " #{issuer_strings.length} issuers with #{time_frame} time frame"
+
+      issuer_strings.each do |issuer_config|
+        generate_and_upload_report_for_issuer(issuer_config)
       end
+
+      Rails.logger.info 'Completed demographics metrics '\
+                        'report generation for all issuers'
     end
 
     private
 
-    def generate_and_upload_report(report_config)
-      issuers = report_config['issuers']
-      agency_abbreviation = report_config['agency_abbreviation']
+    def generate_and_upload_report_for_issuer(issuer_config)
+      issuer_string = issuer_config['issuer_string']
 
-      Rails.logger.info "Generating demographics report for #{agency_abbreviation}"
+      Rails.logger.info "Generating demographics report for issuer: #{issuer_string}"
 
-      reports = demographics_reports(issuers, agency_abbreviation)
+      # Get service provider ID for this issuer
+      sp_id = get_sp_id_for_issuer(issuer_string)
+      unless sp_id
+        Rails.logger.error "No service provider ID found for issuer: #{issuer_string}. Skipping."
+        return
+      end
+
+      # Generate reports for this single issuer
+      reports = demographics_reports_for_issuer(issuer_string)
+
       reports.each do |report|
         table = report.fetch(:table)
         filename = report.fetch(:filename)
-        upload_to_s3(table, report_name: filename, agency: agency_abbreviation)
+        upload_to_s3(table, sp_id: sp_id, filename: filename)
       end
 
-      Rails.logger.info "Completed demographics report for #{agency_abbreviation}"
+      Rails.logger.info "Completed demographics report for issuer: #{issuer_string}"
     rescue StandardError => err
-      Rails.logger.error "Failed to generate demographics report "\
-                         "for #{agency_abbreviation}: #{err.message}"
+      Rails.logger.error "Failed to generate demographics report for issuer #{issuer_string}:"\
+                         " #{err.message}"
       raise err
     end
 
-    def demographics_reports(issuers, agency_abbreviation)
+    def demographics_reports_for_issuer(issuer_string)
       Reporting::DemographicsMetricsReport.new(
-        issuers: issuers,
-        agency_abbreviation: agency_abbreviation,
-        time_range: report_date.all_quarter,
+        issuer_string: issuer_string,
+        time_range: report_time_range,
       ).as_reports
     end
 
-    def upload_to_s3(report_body, report_name: nil, agency: nil)
-      # Create agency-specific path for better organization
-      report_name_with_agency = agency ? "#{agency.downcase}_#{REPORT_NAME}" : REPORT_NAME
+    def report_time_range
+      case time_frame
+      when 'quarterly'
+        report_date.all_quarter
+      when 'monthly'
+        report_date.all_month
+      else
+        raise ArgumentError, "Unsupported time frame: #{time_frame}"
+      end
+    end
 
-      _latest, path = generate_s3_paths(
-        report_name_with_agency,
-        'csv',
-        directory: 'idp',
-        subname: report_name,
-        now: report_date,
-      )
+    def upload_to_s3(report_body, sp_id:, filename:)
+      # Generate the S3 path using the new directory structure
+      # DemographicsMetricsReport/{sp_id}/{time_frame}/{sp_id}_YYYYMMDD_YYYYMMDD_{filename}.csv
+      time_range_obj = report_time_range
+      start_date = time_range_obj.begin.strftime('%Y%m%d')
+      end_date = time_range_obj.end.strftime('%Y%m%d')
+
+      file_key = "DemographicsMetricsReport/#{sp_id}/"\
+                 "#{TIME_FRAME}/{sp_id}_#{start_date}_#{end_date}_#{filename}.csv"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(
-          path: path,
+          path: file_key,
           body: csv_file(report_body),
           content_type: 'text/csv',
           bucket: bucket_name,
         )
-        Rails.logger.info "Uploaded #{report_name} to S3: #{path}"
+        Rails.logger.info "Uploaded #{filename} to S3: #{file_key}"
       end
     end
 
     def report_configs
+      # This should return an array of issuer configurations
+      # Each config should have 'issuer_string' only
       IdentityConfig.store.demographics_metrics_report_configs
     end
 
