@@ -63,7 +63,8 @@ module Reports
 
       issuer_reports.each do |issuer, json_data|
         if json_data.nil?
-          Rails.logger.warn "Skipping upload for #{issuer}: report generation failed and returned nil"
+          Rails.logger.warn "Skipping upload for #{issuer}:"\
+                            " report generation failed and returned nil"
           skipped_count += 1
           next
         end
