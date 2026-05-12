@@ -72,17 +72,21 @@ module Reporting
 
       query = <<~SQL
         SELECT 
-          -- Dynamic period_date_actual based on cadence, formatted as YYYY-MM-DD
           CASE 
-            WHEN '#{cadence}' = 'monthly' THEN TO_CHAR(month_start_date_actual, 'YYYY-MM-DD')
-            WHEN '#{cadence}' = 'weekly' THEN TO_CHAR(week_start_date_actual, 'YYYY-MM-DD')
-            WHEN '#{cadence}' = 'daily' THEN TO_CHAR(cal.date_actual, 'YYYY-MM-DD')
+            WHEN $1 = 'monthly' THEN TO_CHAR(month_start_date_actual, 'YYYY-MM-DD')
+            WHEN $1 = 'weekly' THEN TO_CHAR(week_start_date_actual, 'YYYY-MM-DD')
+            WHEN $1 = 'daily' THEN TO_CHAR(cal.date_actual, 'YYYY-MM-DD')
           END AS period_date_actual
         FROM marts.calendar cal
-        WHERE cal.calendar_id = TO_CHAR('#{report_date}'::date, 'YYYYMMDD')::int;
+        WHERE cal.calendar_id = TO_CHAR($2::date, 'YYYYMMDD')::int;
       SQL
 
-      result = DataWarehouseApplicationRecord.connection.execute(query).first
+      result = DataWarehouseApplicationRecord.connection.exec_query(
+        query,
+        'get_period_date',
+        [cadence, report_date],
+      ).first
+
       if result.nil?
         Rails.logger.error "No calendar entry found for report_date: #{report_date}"
         return nil
