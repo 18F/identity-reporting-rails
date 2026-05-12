@@ -51,11 +51,11 @@ module Reporting
       [
         ['Metric', 'Unit', 'Definition'],
         ['Age range/Verification Demographics', 'Count',
-         'The number of users who verified within ' \
+         'The number of users for this issuer who verified within ' \
            'the reporting period, grouped by age in ' \
            '10 year range.'],
         ['Geographic area/Verification Demographics', 'Count',
-         'The number of users who verified within ' \
+         'The number of users for this issuer who verified within ' \
            'the reporting period, grouped by state.'],
       ]
     end
