@@ -6,21 +6,19 @@ require 'reporting/json_path_helper'
 module Reporting
   class DemographicsMetricsReport
     include Reporting::JsonPathHelper
-    attr_reader :issuers, :time_range, :agency_abbreviation
+    attr_reader :issuer_string, :time_range
 
     # Log event names used in SQL query
     SP_REDIRECT_EVENT = 'SP redirect initiated'
     DOC_AUTH_EVENT = 'IdV: doc auth verify proofing results'
 
-    # @param [Array<String>] issuers
+    # @param [String] issuer_string
     # @param [Range<Time>] time_range
     def initialize(
-      issuers:,
-      agency_abbreviation:,
+      issuer_string:,
       time_range:
     )
-      @issuers = issuers
-      @agency_abbreviation = agency_abbreviation
+      @issuer_string = issuer_string
       @time_range = time_range
     end
 
@@ -37,12 +35,12 @@ module Reporting
           filename: 'overview',
         },
         {
-          title: "#{@agency_abbreviation} Age Metrics",
+          title: 'Age Metrics',
           table: age_metrics_table,
           filename: 'age_metrics',
         },
         {
-          title: "#{@agency_abbreviation} State Metrics",
+          title: 'State Metrics',
           table: state_metrics_table,
           filename: 'state_metrics',
         },
@@ -53,12 +51,12 @@ module Reporting
       [
         ['Metric', 'Unit', 'Definition'],
         ['Age range/Verification Demographics', 'Count',
-         "The number of #{@agency_abbreviation} users who verified within " \
-           "the reporting period, grouped by age in " \
-           "10 year range."],
+         'The number of users who verified within ' \
+           'the reporting period, grouped by age in ' \
+           '10 year range.'],
         ['Geographic area/Verification Demographics', 'Count',
-         "The number of #{@agency_abbreviation} users who verified within " \
-           "the reporting period, grouped by state."],
+         'The number of users who verified within ' \
+           'the reporting period, grouped by state.'],
       ]
     end
 
@@ -66,7 +64,7 @@ module Reporting
       [
         ['Report Timeframe', "#{time_range.begin} to #{time_range.end}"],
         ['Report Generated', Time.zone.today.to_s],
-        ['Issuer', issuers.present? ? issuers.join(', ') : 'All Issuers'],
+        ['Issuer', issuer_string.to_s],
       ]
     end
 
@@ -99,7 +97,7 @@ module Reporting
     private
 
     def user_data
-      @user_data ||= connection.execute(demographics_query).to_a
+      @user_data ||= DataWarehouseApplicationRecord.connection.execute(demographics_query).to_a
     end
 
     # Ruby processing: Group by age ranges and count
@@ -144,7 +142,7 @@ module Reporting
           SELECT DISTINCT user_id
           FROM logs.events 
           WHERE name = '#{SP_REDIRECT_EVENT}'
-            AND service_provider IN (#{formatted_issuers})
+            AND service_provider = '#{issuer_string}'
             AND #{extract_json_path('message', 'properties.event_properties.ial', type: 'INTEGER')} = 2
             AND #{extract_json_path('message', 'properties.sp_request.facial_match', type: 'BOOLEAN')} = TRUE
             AND #{extract_json_path('message', 'properties.sp_request.facial_match')} IS NOT NULL
@@ -158,7 +156,7 @@ module Reporting
             UPPER(#{extract_json_path('message', 'properties.event_properties.proofing_results.biographical_info.state_id_jurisdiction')}::TEXT) as state
           FROM logs.events
           WHERE name = '#{DOC_AUTH_EVENT}'
-            AND service_provider IN (#{formatted_issuers})
+            AND service_provider = '#{issuer_string}'
             AND #{extract_json_path('message', 'properties.event_properties.success', type: 'BOOLEAN')} = TRUE
             AND #{extract_json_path('message', 'properties.event_properties.success')} IS NOT NULL
             AND cloudwatch_timestamp BETWEEN '#{formatted_start_time}' AND '#{formatted_end_time}'
@@ -171,10 +169,6 @@ module Reporting
         INNER JOIN sp_redirects s ON d.user_id = s.user_id
         ORDER BY d.user_id;
       SQL
-    end
-
-    def formatted_issuers
-      issuers.map { |issuer| "'#{issuer}'" }.join(', ')
     end
 
     def formatted_start_time
