@@ -89,15 +89,26 @@ module Reports
       end
     end
 
+    def get_end_date_fp(time_range_obj)
+      # We run this report monthly even though it's quarterly and send it to internal emails
+      # For off-quarter months, we want the filename to indicate that data is in progress quarterly
+      # I.e. report_date of Feb 27 will have 2026-01-01_2026_02-28 (for first quarter)
+      # For the actual partner facing report with report date of March 30,
+      # the two expressions are equivalently equal - 2026-01-01_2026_03_31
+      # This is specifically for quarterly data pulls sent monthly, but the logic
+      # should work for monthly reports as well if we choose to ever generate those
+      min(report_date.all_month.end, time_range_obj.end)
+    end
+
     def upload_to_s3(report_body, sp_id:, filename:)
       # Generate the S3 path using the new directory structure
       # DemographicsMetricsReport/{sp_id}/{time_frame}/{sp_id}_YYYYMMDD_YYYYMMDD_{filename}.csv
       time_range_obj = report_time_range
-      start_date = time_range_obj.begin.strftime('%Y%m%d')
-      end_date = time_range_obj.end.strftime('%Y%m%d')
+      start_date_fp = time_range_obj.begin.strftime('%Y%m%d')
+      end_date_fp = get_end_date_fp(time_range_obj)
 
       file_key = "DemographicsMetricsReport/#{sp_id}/"\
-                 "#{TIME_FRAME}/{sp_id}_#{start_date}_#{end_date}_#{filename}.csv"
+                 "#{TIME_FRAME}/{sp_id}_#{start_date_fp}_#{end_date_fp}_#{filename}.csv"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(
