@@ -114,7 +114,8 @@ module Reports
       end_date_fp = get_end_date_fp(time_range_obj)
 
       # Use instance variable @time_frame instead of constant TIME_FRAME
-      file_key = "DemographicsMetricsReport/#{sp_id}/"\
+      base_path = generate_base_s3_path('idp')
+      file_key = "#{base_path}DemographicsMetricsReport/#{sp_id}/"\
                 "#{@time_frame}/SP#{sp_id}_#{start_date_fp}_#{end_date_fp}_#{filename}.csv"
 
       if bucket_name.present?
