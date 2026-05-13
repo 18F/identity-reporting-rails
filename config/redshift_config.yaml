@@ -114,49 +114,6 @@ lambda_users:
       - logs
 
 system_users:
-  - user_name: rails_worker
-    syslog_access: true
-    secret_id: "redshift/%{env_name}-analytics-rails-worker"
-    schemas:
-      - schema_name: pg_catalog
-        schema_privileges: USAGE
-        table_privileges: SELECT
-        tables:
-          - pg_user
-      - schema_name: idp
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: system_tables
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: logs
-        schema_privileges: USAGE
-        table_privileges: SELECT, INSERT, UPDATE, DELETE
-      - schema_name: fraudops
-        schema_privileges: USAGE, CREATE
-        table_privileges: SELECT, INSERT, UPDATE, DELETE
-        feature_flag:
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
-      - schema_name: marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: qa_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: fraudops_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-        feature_flag:
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
-      - schema_name: fraudops_qa_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-        feature_flag:
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
-
   - user_name: security_audit
     secret_id: "redshift/%{env_name}-analytics-security-audit"
     schemas:
@@ -168,42 +125,6 @@ system_users:
       - schema_name: system_tables
         schema_privileges: USAGE
         table_privileges: SELECT
-
-  - user_name: pii_reader
-    syslog_access: true
-    secret_id: "redshift/%{env_name}-analytics-pii-reader"
-    feature_flag: dw_fraudops_email_enabled
-    schemas:
-      - schema_name: idp
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: system_tables
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: logs
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: fraudops
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: qa_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: fraudops_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-        feature_flag:
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
-      - schema_name: fraudops_qa_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-        feature_flag:
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
 
   - user_name: quicksight_connector
     secret_id: "redshift/%{env_name}-analytics-quicksight-connector"
@@ -328,3 +249,84 @@ system_users:
       - schema_name: fraudops
         schema_privileges: USAGE
         table_privileges: SELECT
+
+  # The users below need to be created after the fraudops_marts and fraudops_qa_marts schemas are created,
+  # which happens when the respective users are created, otherwise the sync will fail
+  - user_name: rails_worker
+    syslog_access: true
+    secret_id: "redshift/%{env_name}-analytics-rails-worker"
+    schemas:
+      - schema_name: pg_catalog
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        tables:
+          - pg_user
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: system_tables
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT, INSERT, UPDATE, DELETE
+      - schema_name: fraudops
+        schema_privileges: USAGE, CREATE
+        table_privileges: SELECT, INSERT, UPDATE, DELETE
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+      - schema_name: marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+      - schema_name: fraudops_qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+
+  - user_name: pii_reader
+    syslog_access: true
+    secret_id: "redshift/%{env_name}-analytics-pii-reader"
+    feature_flag: dw_fraudops_email_enabled
+    schemas:
+      - schema_name: idp
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: system_tables
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: logs
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
+      - schema_name: fraudops_qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+        feature_flag:
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
