@@ -14,12 +14,12 @@ module Reports
     attr_reader :report_date, :time_frame
 
     def initialize(report_date = nil, time_frame = TIME_FRAME, *args, **rest)
-      @report_date = date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
+      @report_date = report_date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
       @time_frame = time_frame
       super(report_date, time_frame, *args, **rest)
     end
 
-    def perform(date = Time.zone.yesterday.end_of_day, time_frame = TIME_FRAME)
+    def perform(report_date = nil, time_frame = nil)
       unless IdentityConfig.store.redshift_sia_v3_enabled
         Rails.logger.warn 'Redshift SIA V3 is disabled'
         return false
@@ -27,12 +27,13 @@ module Reports
 
       return unless IdentityConfig.store.s3_reports_enabled
 
-      @report_date = date
-      @time_frame = time_frame
+      # Default to method argument, then constructor arguments, then default
+      @report_date = report_date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
+      @time_frame = time_frame || @time_frame || TIME_FRAME
       issuer_strings = report_configs
 
       Rails.logger.info "Starting demographics metrics report generation for"\
-                        " #{issuer_strings.length} issuers with #{time_frame} time frame"
+                        " #{issuer_strings.length} issuers with #{@time_frame} time frame"
 
       issuer_strings.each do |issuer_config|
         generate_and_upload_report_for_issuer(issuer_config)
@@ -80,13 +81,13 @@ module Reports
     end
 
     def report_time_range
-      case time_frame
+      case @time_frame
       when 'quarterly'
-        report_date.all_quarter
+        @report_date.all_quarter
       when 'monthly'
-        report_date.all_month
+        @report_date.all_month
       else
-        raise ArgumentError, "Unsupported time frame: #{time_frame}"
+        raise ArgumentError, "Unsupported time frame: #{@time_frame}"
       end
     end
 
@@ -100,21 +101,21 @@ module Reports
 
       # This is specifically for quarterly data pulls which we send monthly, but the logic
       # should work for monthly reports as well if we choose to ever generate those
-      raise ArgumentError, 'Report date cannot be in the future' if report_date > Time.zone.today
-      end_date = [report_date.all_month.end, time_range_obj.end].min
+      raise ArgumentError, 'Report date cannot be in the future' if @report_date > Time.zone.today
+      end_date = [@report_date.all_month.end, time_range_obj.end].min
       end_date.strftime('%Y%m%d')
     end
 
     def upload_to_s3(report_body, sp_id:, filename:)
       # Generate the S3 path using the new directory structure
-      # DemographicsMetricsReport/{sp_id}/{time_frame}/{sp_id}_YYYYMMDD_YYYYMMDD_{filename}.csv
+      # DemographicsMetricsReport/{sp_id}/{time_frame}/SP{sp_id}_YYYYMMDD_YYYYMMDD_{filename}.csv
       time_range_obj = report_time_range
       start_date_fp = time_range_obj.begin.strftime('%Y%m%d')
       end_date_fp = get_end_date_fp(time_range_obj)
 
       # Use instance variable @time_frame instead of constant TIME_FRAME
       file_key = "DemographicsMetricsReport/#{sp_id}/"\
-                "#{@time_frame}/#{sp_id}_#{start_date_fp}_#{end_date_fp}_#{filename}.csv"
+                "#{@time_frame}/SP#{sp_id}_#{start_date_fp}_#{end_date_fp}_#{filename}.csv"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(
