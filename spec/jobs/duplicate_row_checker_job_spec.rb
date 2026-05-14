@@ -9,7 +9,7 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
     it 'locks per schema and table' do
       job = DuplicateRowCheckerJob.new('events', 'logs')
 
-      expect(job.good_job_concurrency_key).to eq('DuplicateRowCheckerJob-default-logs-events')
+      expect(job.good_job_concurrency_key).to eq('DuplicateRowCheckerJob-admin-logs-events')
     end
   end
 
@@ -61,6 +61,35 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
       it 'does not log a warning' do
         expect(Rails.logger).not_to receive(:warn)
         logs_job.perform('events', 'logs')
+      end
+    end
+
+    context 'when performed without table arguments' do
+      before do
+        allow(SchemaTableService).to receive(:generate_schema_table_hash).and_return(
+          'logs' => ['events'],
+          'idp' => ['articles'],
+        )
+        allow(DataWarehouseApplicationRecord.connection).to receive(:columns).and_return(
+          [instance_double(ActiveRecord::ConnectionAdapters::Column, name: 'id')],
+        )
+        allow(DataWarehouseApplicationRecord.connection).to receive(:exec_query).and_return(
+          ActiveRecord::Result.new([], []),
+        )
+      end
+
+      it 'runs duplicate checks for logs and idp on Saturday' do
+        travel_to(Time.zone.local(2026, 1, 3, 2, 0, 0)) do
+          expect(DataWarehouseApplicationRecord.connection).to receive(:exec_query).twice
+          described_class.new.perform
+        end
+      end
+
+      it 'runs duplicate checks for idp only when not Saturday' do
+        travel_to(Time.zone.local(2026, 1, 5, 2, 0, 0)) do
+          expect(DataWarehouseApplicationRecord.connection).to receive(:exec_query).once
+          described_class.new.perform
+        end
       end
     end
   end
