@@ -4,7 +4,7 @@ class LogsColumnExtractorJob < ApplicationJob
   queue_as :default
 
   good_job_control_concurrency_with(
-    total_limit: 1,
+    perform_limit: 1,
     key: -> { "#{self.class.name}-#{queue_name}-logs-#{arguments.first}" },
   )
 
