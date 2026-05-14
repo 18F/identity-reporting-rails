@@ -2,7 +2,7 @@ require 'schema_table_service'
 
 class DuplicateRowCheckerJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
-  queue_as :default
+  queue_as :admin
 
   good_job_control_concurrency_with(
     perform_limit: 1,
@@ -15,14 +15,14 @@ class DuplicateRowCheckerJob < ApplicationJob
     if table_name.present? && schema_name.present?
       check_duplicates(table_name, schema_name)
     else
-      SchemaTableService.generate_schema_table_hash.each do |sch, tables|
-        next unless ALLOWED_SCHEMAS.include?(sch)
+      SchemaTableService.generate_schema_table_hash.each do |schema, tables|
+        next unless ALLOWED_SCHEMAS.include?(schema)
 
-        tables.each do |tbl|
-          next if tbl.start_with?('unextracted_')
-          next if sch == 'logs' && !logs_duplicate_check_day?
+        tables.each do |table|
+          next if table.start_with?('unextracted_')
+          next if schema == 'logs' && !logs_duplicate_check_day?
 
-          check_duplicates(tbl, sch)
+          check_duplicates(table, schema)
         end
       end
     end

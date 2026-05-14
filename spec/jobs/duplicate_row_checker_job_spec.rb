@@ -9,7 +9,7 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
     it 'locks per schema and table' do
       job = DuplicateRowCheckerJob.new('events', 'logs')
 
-      expect(job.good_job_concurrency_key).to eq('DuplicateRowCheckerJob-default-logs-events')
+      expect(job.good_job_concurrency_key).to eq('DuplicateRowCheckerJob-admin-logs-events')
     end
   end
 
