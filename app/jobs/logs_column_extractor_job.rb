@@ -1,5 +1,12 @@
 class LogsColumnExtractorJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :default
+
+  good_job_control_concurrency_with(
+    total_limit: 1,
+    key: -> { "#{self.class.name}-#{queue_name}-logs-#{arguments.first}" },
+  )
 
   # THE ORDER OF THE FIELDS IN THE SELECT QUERY SHOULD MATCH THE ORDER OF THE FIELDS
   # IN THE TARGET TABLE FOR PRODUCTION RUNS; ADDITIONALLY FIELDS LISTED HERE SHOULD

@@ -5,6 +5,14 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
   let(:idp_job) { DuplicateRowCheckerJob.new }
   let(:logs_job) { DuplicateRowCheckerJob.new }
 
+  describe 'concurrency key' do
+    it 'locks per schema and table' do
+      job = DuplicateRowCheckerJob.new('events', 'logs')
+
+      expect(job.good_job_concurrency_key).to eq('DuplicateRowCheckerJob-default-logs-events')
+    end
+  end
+
   describe '#perform' do
     context 'when there are duplicate articles' do
       before do

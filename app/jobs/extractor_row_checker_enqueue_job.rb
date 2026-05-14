@@ -1,12 +1,6 @@
 require 'schema_table_service'
 class ExtractorRowCheckerEnqueueJob < ApplicationJob
-  include GoodJob::ActiveJobExtensions::Concurrency
-
   queue_as :admin
-
-  good_job_control_concurrency_with(
-    total_limit: 1,
-  )
 
   def perform
     schema_table_service = SchemaTableService.generate_schema_table_hash

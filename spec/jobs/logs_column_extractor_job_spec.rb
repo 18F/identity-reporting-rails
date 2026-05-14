@@ -5,6 +5,14 @@ RSpec.describe LogsColumnExtractorJob, type: :job do
   let(:logs_job) { LogsColumnExtractorJob.new }
   let(:uuids) { ['07324b45-e043-45cd-8d17-33e8cc8c54e0', '07324b45-e043-45cd-8d17-33e8cc8c54e1'] }
 
+  describe 'concurrency key' do
+    it 'locks per logs target table' do
+      job = LogsColumnExtractorJob.new('events')
+
+      expect(job.good_job_concurrency_key).to eq('LogsColumnExtractorJob-default-logs-events')
+    end
+  end
+
   describe '#perform' do
     context 'when target table name is not recognized' do
       it 'confirm the job will not run' do

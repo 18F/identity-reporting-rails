@@ -4,6 +4,7 @@ class DuplicateRowCheckerJob < ApplicationJob
 
   good_job_control_concurrency_with(
     total_limit: 1,
+    key: -> { "#{self.class.name}-#{queue_name}-#{arguments.second}-#{arguments.first}" },
   )
 
   def perform(table_name, schema_name)

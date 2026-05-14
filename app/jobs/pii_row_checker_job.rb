@@ -5,6 +5,7 @@ class PiiRowCheckerJob < ApplicationJob
 
   good_job_control_concurrency_with(
     total_limit: 1,
+    key: -> { "#{self.class.name}-#{queue_name}-logs-#{arguments.first}" },
   )
 
   def perform(table_name)
