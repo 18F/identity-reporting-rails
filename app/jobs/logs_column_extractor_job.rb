@@ -1,5 +1,12 @@
 class LogsColumnExtractorJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :default
+
+  good_job_control_concurrency_with(
+    perform_limit: 1,
+    key: -> { "#{self.class.name}-#{queue_name}-logs-#{arguments.first}" },
+  )
 
   # THE ORDER OF THE FIELDS IN THE SELECT QUERY SHOULD MATCH THE ORDER OF THE FIELDS
   # IN THE TARGET TABLE FOR PRODUCTION RUNS; ADDITIONALLY FIELDS LISTED HERE SHOULD
@@ -66,6 +73,7 @@ class LogsColumnExtractorJob < ApplicationJob
     @schema_name = 'logs'
     @target_table_name = target_table_name
     @source_table_name = "unextracted_#{target_table_name}"
+    @temp_table_suffix = Time.current.to_i
     unless SOURCE_TABLE_NAMES.include?(@source_table_name)
       Rails.logger.info(
         {
@@ -146,9 +154,9 @@ class LogsColumnExtractorJob < ApplicationJob
       source_table_name: DataWarehouseApplicationRecord.
         connection.quote_table_name(@source_table_name),
       source_table_name_temp: DataWarehouseApplicationRecord.
-        connection.quote_table_name("#{@source_table_name}_temp"),
+        connection.quote_table_name("#{@source_table_name}_temp_#{@temp_table_suffix}"),
       source_table_name_with_dups_temp: DataWarehouseApplicationRecord.
-        connection.quote_table_name("#{@source_table_name}_with_dups_temp"),
+        connection.quote_table_name("#{@source_table_name}_with_dups_temp_#{@temp_table_suffix}"),
       target_table_name: DataWarehouseApplicationRecord.
         connection.quote_table_name(@target_table_name),
       merge_key: DataWarehouseApplicationRecord.
@@ -207,7 +215,7 @@ class LogsColumnExtractorJob < ApplicationJob
   end
 
   def merge_temp_with_target_query
-    @source_table_name_temp = "#{@source_table_name}_temp"
+    @source_table_name_temp = "#{@source_table_name}_temp_#{@temp_table_suffix}"
     vars = build_merge_variables(@source_table_name_temp, @column_map)
 
     if using_redshift_adapter?

@@ -4,6 +4,14 @@ require 'factory_bot'
 RSpec.describe PiiRowCheckerJob, type: :job do
   let(:pii_job) { PiiRowCheckerJob.new }
 
+  describe 'concurrency key' do
+    it 'locks per logs table' do
+      job = PiiRowCheckerJob.new('events')
+
+      expect(job.good_job_concurrency_key).to eq('PiiRowCheckerJob-default-logs-events')
+    end
+  end
+
   describe '#perform' do
     context 'when target table is unextracted_events' do
       let(:test_pattern) { 'fakey' }
