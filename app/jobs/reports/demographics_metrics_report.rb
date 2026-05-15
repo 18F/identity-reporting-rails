@@ -2,24 +2,27 @@
 
 require 'reporting/demographics_metrics_report'
 require 'reporting/issuer_string_to_sp_id_helper'
+require 'date'
 
 module Reports
   class DemographicsMetricsReport < BaseReport
     include Reporting::IssuerStringToSpIdHelper
 
     REPORT_NAME = 'demographics-metrics-report'
-    TIME_FRAME = 'quarterly' # Future options: 'monthly', etc.
-    REPORT_DELAY_DAYS = 3 # 3 day lag to account for data sync delay
+    DATA_LAG_DAYS = 2 # 2 day lag to account for data sync delay into DW
 
     attr_reader :report_date, :time_frame
 
-    def initialize(report_date = nil, time_frame = TIME_FRAME, *args, **rest)
-      @report_date = report_date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
-      @time_frame = time_frame
-      super(report_date, time_frame, *args, **rest)
+    def initialize(init_run_date = Time.zone.now, init_days_back_for_time_period = 4,
+                   init_time_frame = 'quarterly', *args, **rest)
+      @run_date = init_run_date
+      @days_back_for_time_period = init_days_back_for_time_period
+      @time_frame = init_time_frame
+      super(run_date, days_back_for_time_period, time_frame, *args, **rest)
     end
 
-    def perform(report_date = nil, time_frame = nil)
+    def perform(perform_run_date = nil, perform_days_back_for_time_period = nil,
+                perform_time_frame = nil)
       unless IdentityConfig.store.redshift_sia_v3_enabled
         Rails.logger.warn 'Redshift SIA V3 is disabled'
         return false
@@ -28,12 +31,24 @@ module Reports
       return unless IdentityConfig.store.s3_reports_enabled
 
       # Default to method argument, then constructor arguments, then default
-      @report_date = report_date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
-      @time_frame = time_frame || @time_frame || TIME_FRAME
+      @run_date = perform_run_date || @run_date || Time.zone.now
+      @days_back_for_time_period = perform_days_back_for_time_period ||
+                                   @days_back_for_time_period ||
+                                   4
+      @time_frame = perform_time_frame || @time_frame || 'quarterly'
+
+      raise ArgumentError, "#{@time_frame} is not a valid time frame - must be 'quarterly'"\
+                           unless @time_frame == 'quarterly'
+      unless @days_back_for_time_period.between?(0, 90)
+        raise ArgumentError, "days_back_for_time_period must be between 0 and 90, "\
+                            "got #{@days_back_for_time_period}. Adjust run_date for periods "\
+                            "great than 90 days."
+      end
+
       issuer_strings = report_configs
 
-      Rails.logger.info "Starting demographics metrics report generation for"\
-                        " #{issuer_strings.length} issuers with #{@time_frame} time frame"
+      Rails.logger.info "Starting #{report_type}-facing #{@time_frame} demographics metrics "\
+                        "report generation for #{issuer_strings.length} issuers"
 
       issuer_strings.each do |issuer_config|
         generate_and_upload_report_for_issuer(issuer_config)
@@ -83,49 +98,80 @@ module Reports
     def report_time_range
       case @time_frame
       when 'quarterly'
-        @report_date.all_quarter
+        @run_date.prev_day(@days_back_for_time_period).all_quarter
       when 'monthly'
-        @report_date.all_month
+        @run_date.prev_day(@days_back_for_time_period).all_month
+      when 'daily'
+        @run_date.prev_day(@days_back_for_time_period).all_day
       else
         raise ArgumentError, "Unsupported time frame: #{@time_frame}"
       end
     end
 
-    def get_end_date_fp(time_range_obj)
-      # We run this report monthly even though it's quarterly and send it to internal emails
-      # For off-quarter months, we want the filename to indicate that data is in progress quarterly
-      # I.e. report_date of Feb 27 will have 2026-01-01_2026_02-28 (for first quarter)
+    def report_time_range_label
+      end_of_range = report_time_range.end
+      case @time_frame
+      when 'quarterly'
+        # Q1
+        q_int = ((end_of_range.month - 1) / 3) + 1
+        label_start = "Q#{q_int}"
+      when 'monthly'
+        # Jan
+        label_start = end_of_range.strftime('%b')
+      when 'daily'
+        # Jan01
+        label_start = "#{end_of_range.strftime('%b')}"\
+                      "#{end_of_range.strftime('%d')}"
+      else
+        raise ArgumentError, "Unsupported time frame: #{@time_frame}"
+      end
+      # Q12026, Jan2026, Jan012026
+      "#{label_start}#{end_of_range.strftime('%Y')}"
+    end
 
-      # For the actual partner facing report run on April 2nd with report date of March 31,
-      # the two expressions are equal - 2026-01-01_2026_03_31
+    # True (External) when quarter has ended + lag has passed
+    # I.e. True if March 31st <= April 6th - DATA_LAG_DAYS
+    def is_external_report
+      report_time_range.end.to_date <= Date.current - DATA_LAG_DAYS.days
+    end
 
-      # This is specifically for quarterly data pulls which we send monthly, but the logic
-      # should work for monthly reports as well if we choose to ever generate those
-      raise ArgumentError, 'Report date cannot be in the future' if @report_date > Time.zone.today
-      end_date = [@report_date.all_month.end, time_range_obj.end].min
-      end_date.strftime('%Y%m%d')
+    def report_type
+      is_external_report ? 'external' : 'internal'
     end
 
     def upload_to_s3(report_body, sp_id:, filename:)
-      # Generate the S3 path using the new directory structure
-      # DemographicsMetricsReport/{sp_id}/{time_frame}/SP{sp_id}_YYYYMMDD_YYYYMMDD_{filename}.csv
-      time_range_obj = report_time_range
-      start_date_fp = time_range_obj.begin.strftime('%Y%m%d')
-      end_date_fp = get_end_date_fp(time_range_obj)
+      now_date_fp = Time.zone.now.strftime('%Y%m%d')
 
-      # Use instance variable @time_frame instead of constant TIME_FRAME
-      base_path = generate_base_s3_path(directory: 'idp')
-      file_key = "#{base_path}DemographicsMetricsReport/#{sp_id}/"\
-                "#{@time_frame}/SP#{sp_id}_#{start_date_fp}_#{end_date_fp}_#{filename}.csv"
+      fname_specific = "SP#{sp_id}_#{now_date_fp}_#{report_type}_#{filename}.csv"
+      fname_latest_internal = "SP#{sp_id}_#{filename}_latest.csv"
+      fname_latest_external = "SP#{sp_id}_#{filename}_latest_external.csv"
 
-      if bucket_name.present?
-        upload_file_to_s3_bucket(
-          path: file_key,
-          body: csv_file(report_body),
-          content_type: 'text/csv',
-          bucket: bucket_name,
-        )
-        Rails.logger.info "Uploaded #{filename} to S3: #{file_key}"
+      # Determine which files to upload
+      files_to_upload = [fname_specific]
+
+      # Always update latest internal
+      files_to_upload << fname_latest_internal
+
+      # Only update latest external if this is an external report
+      files_to_upload << fname_latest_external if is_external_report
+
+      # Generate base path
+      bucket_idp_path = generate_base_s3_path(directory: 'idp')
+      base_directory = "#{bucket_idp_path}DemographicsReport/#{sp_id}/"\
+                      "#{@time_frame.downcase}/#{report_time_range_label}/"
+
+      files_to_upload.each do |filename|
+        full_path = "#{base_directory}#{filename}"
+
+        if bucket_name.present?
+          upload_file_to_s3_bucket(
+            path: full_path,
+            body: csv_file(report_body),
+            content_type: 'text/csv',
+            bucket: bucket_name,
+          )
+          Rails.logger.info "Uploaded #{filename} to S3: #{full_path}"
+        end
       end
     end
 
