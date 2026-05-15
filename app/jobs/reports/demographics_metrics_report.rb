@@ -18,7 +18,7 @@ module Reports
       @run_date = init_run_date
       @days_back_for_time_period = init_days_back_for_time_period
       @time_frame = init_time_frame
-      super(run_date, days_back_for_time_period, time_frame, *args, **rest)
+      super(init_run_date, init_days_back_for_time_period, init_time_frame, *args, **rest)
     end
 
     def perform(perform_run_date = nil, perform_days_back_for_time_period = nil,
@@ -143,8 +143,8 @@ module Reports
       now_date_fp = Time.zone.now.strftime('%Y%m%d')
 
       fname_specific = "SP#{sp_id}_#{now_date_fp}_#{report_type}_#{filename}.csv"
-      fname_latest_internal = "SP#{sp_id}_#{filename}_latest.csv"
-      fname_latest_external = "SP#{sp_id}_#{filename}_latest_external.csv"
+      fname_latest_internal = "latest_SP#{sp_id}_#{filename}.csv"
+      fname_latest_external = "latest_external_SP#{sp_id}_#{filename}.csv"
 
       # Determine which files to upload
       files_to_upload = [fname_specific]
@@ -157,7 +157,7 @@ module Reports
 
       # Generate base path
       bucket_idp_path = generate_base_s3_path(directory: 'idp')
-      base_directory = "#{bucket_idp_path}DemographicsReport/#{sp_id}/"\
+      base_directory = "#{bucket_idp_path}DemographicsMetricsReport/#{sp_id}/"\
                       "#{@time_frame.downcase}/#{report_time_range_label}/"
 
       files_to_upload.each do |filename|
