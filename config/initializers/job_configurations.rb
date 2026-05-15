@@ -76,7 +76,7 @@ else
       demographics_metrics_report: {
         class: 'Reports::DemographicsMetricsReport',
         cron: cron_3rd_of_month_6am,
-        args: -> { [Time.zone.now, 3, 'quarterly'] },
+        args: -> { [Time.zone.now, 4, 'quarterly'] },
       },
       # Idv Legacy Conversion Supplement Report to S3
       idv_legacy_conversion_supplement_report: {

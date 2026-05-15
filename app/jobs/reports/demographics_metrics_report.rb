@@ -11,7 +11,7 @@ module Reports
     REPORT_NAME = 'demographics-metrics-report'
     DATA_LAG_DAYS = 2 # 2 day lag to account for data sync delay into DW
 
-    attr_reader :report_date, :time_frame
+    attr_reader :run_date, :days_back_for_time_period, :time_frame
 
     def initialize(init_run_date = Time.zone.now, init_days_back_for_time_period = 4,
                    init_time_frame = 'quarterly', *args, **rest)
@@ -42,7 +42,7 @@ module Reports
       unless @days_back_for_time_period.between?(0, 90)
         raise ArgumentError, "days_back_for_time_period must be between 0 and 90, "\
                             "got #{@days_back_for_time_period}. Adjust run_date for periods "\
-                            "great than 90 days."
+                            "greater than 90 days."
       end
 
       issuer_strings = report_configs
@@ -178,7 +178,7 @@ module Reports
     def report_configs
       # This should return an array of issuer configurations
       # Each config should have 'issuer_string' only
-      IdentityConfig.store.demographics_metrics_report_configs
+      IdentityConfig.store.demographics_metrics_S3_report_configs
     end
 
     def csv_file(report_array)
