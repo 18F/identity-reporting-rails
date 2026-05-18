@@ -178,7 +178,7 @@ module Reports
     def report_configs
       # This should return an array of issuer configurations
       # Each config should have 'issuer_string' only
-      IdentityConfig.store.demographics_metrics_S3_report_configs
+      IdentityConfig.store.demographics_metrics_s3_report_configs
     end
 
     def csv_file(report_array)
