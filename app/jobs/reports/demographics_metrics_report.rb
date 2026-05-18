@@ -3,6 +3,7 @@
 require 'reporting/demographics_metrics_report'
 require 'reporting/issuer_string_to_sp_id_helper'
 require 'date'
+require 'csv'
 
 module Reports
   class DemographicsMetricsReport < BaseReport
@@ -13,12 +14,11 @@ module Reports
     DEFAULT_LOOK_BACK_DAYS = 4 # Cron job runs on 3rd, looks back 4 days
     attr_reader :run_date, :days_back_for_time_period, :time_frame
 
-    def initialize(init_run_date = Time.zone.now, 
+    def initialize(init_run_date = Time.zone.now,
                    init_days_back_for_time_period = DEFAULT_LOOK_BACK_DAYS,
                    init_time_frame = 'quarterly', *args, **rest)
-      @run_date = init_run_date
-      @days_back_for_time_period = init_days_back_for_time_period
-      @time_frame = init_time_frame
+      validate_parameters!(init_run_date, init_days_back_for_time_period, init_time_frame)
+      assign_parameters(init_run_date, init_days_back_for_time_period, init_time_frame)
       super(init_run_date, init_days_back_for_time_period, init_time_frame, *args, **rest)
     end
 
@@ -31,46 +31,77 @@ module Reports
 
       return unless IdentityConfig.store.s3_reports_enabled
 
-      # Default to method argument, then constructor arguments, then default
-      @run_date = perform_run_date || @run_date || Time.zone.now
-      @days_back_for_time_period = perform_days_back_for_time_period ||
-                                   @days_back_for_time_period ||
-                                   DEFAULT_LOOK_BACK_DAYS
-      @time_frame = perform_time_frame || @time_frame || 'quarterly'
-
-      raise ArgumentError, "#{@time_frame} is not a valid time frame - must be 'quarterly'"\
-                           unless @time_frame == 'quarterly'
-      unless @days_back_for_time_period.between?(0, 90)
-        raise ArgumentError, "days_back_for_time_period must be between 0 and 90, "\
-                            "got #{@days_back_for_time_period}. Adjust run_date for periods "\
-                            "greater than 90 days."
-      end
+      final_run_date = perform_run_date || @run_date
+      final_days_back = perform_days_back_for_time_period || @days_back_for_time_period
+      final_time_frame = perform_time_frame || @time_frame
+      validate_parameters!(final_run_date, final_days_back, final_time_frame)
+      assign_parameters(final_run_date, final_days_back, final_time_frame)
 
       issuer_strings = report_configs
-
+      if issuer_strings.nil? || issuer_strings.empty?
+        Rails.logger.error 'demographics_metrics_s3_report_configs is empty or nil - no work to do'
+        raise ArgumentError, 'No issuer configurations found in'\
+                             ' demographics_metrics_s3_report_configs'
+      end
       Rails.logger.info "Starting #{report_type}-facing #{@time_frame} demographics metrics "\
                         "report generation for #{issuer_strings.length} issuers"
 
+      failed_issuers = []
       issuer_strings.each do |issuer_config|
-        generate_and_upload_report_for_issuer(issuer_config)
+        begin
+          generate_and_upload_report_for_issuer(issuer_config)
+        rescue StandardError => err
+          issuer_string = issuer_config['issuer_string']
+          Rails.logger.error "Failed to generate demographics report for issuer"\
+                             " #{issuer_string}: #{err.message}"
+          failed_issuers << issuer_string
+        end
       end
 
-      Rails.logger.info 'Completed demographics metrics '\
-                        'report generation for all issuers'
+      if failed_issuers.any?
+        Rails.logger.warn "Demographics report generation completed with #{failed_issuers.length}"\
+                          " failures: #{failed_issuers.join(', ')}"
+      else
+        Rails.logger.info 'Completed demographics metrics report generation'\
+                          ' for all issuers successfully'
+      end
     end
 
     private
+
+    def assign_parameters(run_date, days_back, time_frame)
+      @run_date = run_date || Time.zone.now
+      @days_back_for_time_period = days_back || DEFAULT_LOOK_BACK_DAYS
+      @time_frame = time_frame || 'quarterly'
+    end
+
+    def validate_parameters!(run_date = @run_date, days_back = @days_back_for_time_period,
+                             time_frame = @time_frame)
+      unless time_frame == 'quarterly'
+        raise ArgumentError, "#{time_frame} is not a valid time frame - must be 'quarterly'"
+      end
+      unless days_back.between?(0, 90)
+        raise ArgumentError, "days_back_for_time_period must be between 0 and 90, "\
+                            "got #{days_back}. Adjust run_date for periods "\
+                            "greater than 90 days."
+      end
+      schema_cutoff_date = Date.new(2025, 10, 1)
+      if run_date.to_date < schema_cutoff_date
+        Rails.logger.warn "Running demographics report for #{run_date.to_date}, which is before "\
+                          "#{schema_cutoff_date}. App log data schema assumptions may be invalid "\
+                          "before this date."
+      end
+    end
 
     def generate_and_upload_report_for_issuer(issuer_config)
       issuer_string = issuer_config['issuer_string']
 
       Rails.logger.info "Generating demographics report for issuer: #{issuer_string}"
 
-      # Get service provider ID for this issuer
+      # Get service provider ID for this issuer (from IssuerStringToSpIdHelper)
       sp_id = get_sp_id_for_issuer(issuer_string)
       unless sp_id
-        Rails.logger.error "No service provider ID found for issuer: #{issuer_string}. Skipping."
-        return
+        raise ArgumentError, "No service provider ID found for issuer: #{issuer_string}"
       end
 
       # Generate reports for this single issuer
@@ -83,10 +114,6 @@ module Reports
       end
 
       Rails.logger.info "Completed demographics report for issuer: #{issuer_string}"
-    rescue StandardError => err
-      Rails.logger.error "Failed to generate demographics report for issuer #{issuer_string}:"\
-                         " #{err.message}"
-      raise err
     end
 
     def demographics_reports_for_issuer(issuer_string)
@@ -101,9 +128,11 @@ module Reports
       when 'quarterly'
         @run_date.prev_day(@days_back_for_time_period).all_quarter
       when 'monthly'
-        @run_date.prev_day(@days_back_for_time_period).all_month
+        raise NotImplementedError, 'Monthly reporting is not yet implemented'
+        # @run_date.prev_day(@days_back_for_time_period).all_month
       when 'daily'
-        @run_date.prev_day(@days_back_for_time_period).all_day
+        raise NotImplementedError, 'Daily reporting is not yet implemented'
+        # @run_date.prev_day(@days_back_for_time_period).all_day
       else
         raise ArgumentError, "Unsupported time frame: #{@time_frame}"
       end
@@ -132,12 +161,12 @@ module Reports
 
     # True (External) when quarter has ended + lag has passed
     # I.e. True if March 31st <= April 6th - DATA_LAG_DAYS
-    def is_external_report
+    def external_report?
       report_time_range.end.to_date <= Date.current - DATA_LAG_DAYS.days
     end
 
     def report_type
-      is_external_report ? 'external' : 'internal'
+      external_report? ? 'external' : 'internal'
     end
 
     def upload_to_s3(report_body, sp_id:, filename:)
@@ -154,15 +183,15 @@ module Reports
       files_to_upload << fname_latest_internal
 
       # Only update latest external if this is an external report
-      files_to_upload << fname_latest_external if is_external_report
+      files_to_upload << fname_latest_external if external_report?
 
       # Generate base path
       bucket_idp_path = generate_base_s3_path(directory: 'idp')
       base_directory = "#{bucket_idp_path}DemographicsMetricsReport/#{sp_id}/"\
                       "#{@time_frame.downcase}/#{report_time_range_label}/"
 
-      files_to_upload.each do |filename|
-        full_path = "#{base_directory}#{filename}"
+      files_to_upload.each do |generated_filename|
+        full_path = "#{base_directory}#{generated_filename}"
 
         if bucket_name.present?
           upload_file_to_s3_bucket(
@@ -171,7 +200,7 @@ module Reports
             content_type: 'text/csv',
             bucket: bucket_name,
           )
-          Rails.logger.info "Uploaded #{filename} to S3: #{full_path}"
+          Rails.logger.info "Uploaded #{generated_filename} to S3: #{full_path}"
         end
       end
     end
