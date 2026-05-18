@@ -523,6 +523,7 @@ class RedshiftSync
     if !result.any?
       sql = "CREATE ROLE #{user_role['role_name']};"
       execute_query(sql)
+      Rails.logger.info("Created user role #{user_role['role_name']}")
     end
 
     sync_user_role(user_role)
