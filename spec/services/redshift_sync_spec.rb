@@ -320,7 +320,7 @@ RSpec.describe RedshiftSync do
       context 'when role does not exist' do
         before do
           allow(mock_connection).to receive(:execute).
-            with(/SELECT rolname FROM pg_roles/).
+            with(/SELECT role_name FROM svv_roles/).
             and_return(double(any?: false))
           allow(sync).to receive(:sync_user_role)
         end
@@ -341,7 +341,7 @@ RSpec.describe RedshiftSync do
       context 'when role already exists' do
         before do
           allow(mock_connection).to receive(:execute).
-            with(/SELECT rolname FROM pg_roles/).
+            with(/SELECT role_name FROM svv_roles/).
             and_return(double(any?: true))
           allow(sync).to receive(:sync_user_role)
         end
@@ -371,15 +371,16 @@ RSpec.describe RedshiftSync do
       context 'when role has existing members' do
         before do
           allow(mock_connection).to receive(:execute).
-            with(/SELECT member.rolname/).
+            with(/SELECT user_name\s+FROM svv_user_grants/).
             and_return([
-                         { 'rolname' => 'old_user' },
-                         { 'rolname' => 'another_old_user' },
+                         { 'user_name' => 'old_user' },
+                         { 'user_name' => 'another_old_user' },
                        ])
         end
 
         it 'revokes existing memberships and grants new ones' do
-          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/).ordered
+          expect(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/).ordered
           expect(mock_connection).to receive(:execute).ordered do |sql|
             expect(sql).to include('REVOKE dw_ingestion FROM "old_user"')
             expect(sql).to include('REVOKE dw_ingestion FROM "another_old_user"')
@@ -394,12 +395,13 @@ RSpec.describe RedshiftSync do
       context 'when role has no existing members' do
         before do
           allow(mock_connection).to receive(:execute).
-            with(/SELECT member.rolname/).
+            with(/SELECT user_name\s+FROM svv_user_grants/).
             and_return([])
         end
 
         it 'grants role to all specified users' do
-          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/).ordered
+          expect(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/).ordered
           expect(mock_connection).to receive(:execute).ordered do |sql|
             expect(sql).not_to include('REVOKE')
             expect(sql).to include('GRANT dw_ingestion TO "rails_worker"')
@@ -420,12 +422,13 @@ RSpec.describe RedshiftSync do
 
         before do
           allow(mock_connection).to receive(:execute).
-            with(/SELECT member.rolname/).
-            and_return([{ 'rolname' => 'old_user' }])
+            with(/SELECT user_name\s+FROM svv_user_grants/).
+            and_return([{ 'user_name' => 'old_user' }])
         end
 
         it 'revokes existing memberships' do
-          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/).ordered
+          expect(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/).ordered
           expect(mock_connection).to receive(:execute).ordered do |sql|
             expect(sql).to include('REVOKE dw_ingestion FROM "old_user"')
             expect(sql).not_to include('GRANT')
@@ -445,12 +448,13 @@ RSpec.describe RedshiftSync do
 
         before do
           allow(mock_connection).to receive(:execute).
-            with(/SELECT member.rolname/).
+            with(/SELECT user_name\s+FROM svv_user_grants/).
             and_return([])
         end
 
         it 'does not execute any SQL' do
-          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/)
+          expect(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/)
           expect(mock_connection).not_to receive(:execute).
             with(a_string_matching(/GRANT|REVOKE/))
 
@@ -475,12 +479,13 @@ RSpec.describe RedshiftSync do
 
         before do
           allow(mock_connection).to receive(:execute).
-            with(/SELECT member.rolname/).
+            with(/SELECT user_name\s+FROM svv_user_grants/).
             and_return([])
         end
 
         it 'interpolates environment variables in user names' do
-          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/).ordered
+          expect(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/).ordered
           expect(mock_connection).to receive(:execute).ordered do |sql|
             expect(sql).to include('GRANT dw_ingestion TO "IAMR:testenv_db_consumption"')
           end

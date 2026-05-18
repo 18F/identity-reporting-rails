@@ -516,7 +516,7 @@ class RedshiftSync
     Rails.logger.info("Creating user role #{user_role['role_name']}")
 
     result = execute_query(
-      "SELECT rolname FROM pg_roles WHERE rolname = #{quote(user_role['role_name'])}",
+      "SELECT role_name FROM svv_roles WHERE role_name = #{quote(user_role['role_name'])}",
     )
 
     if !result.any?
@@ -531,18 +531,16 @@ class RedshiftSync
     Rails.logger.info("Syncing users for role #{user_role['role_name']}")
 
     current_role_users_statement = <<~SQL
-      SELECT member.rolname
-      FROM pg_roles AS member
-      JOIN pg_auth_members ON member.oid = pg_auth_members.member
-      JOIN pg_roles AS role_parent ON role_parent.oid = pg_auth_members.roleid
-      WHERE role_parent.rolname = #{quote(user_role['role_name'])}
+      SELECT user_name
+      FROM svv_user_grants
+      WHERE role_name = #{quote(user_role['role_name'])}
     SQL
 
     result = execute_query(current_role_users_statement)
     user_role_sql = []
 
     if result.any?
-      current_role_users = result.map { |row| row['rolname'] }
+      current_role_users = result.map { |row| row['user_name'] }
       current_role_users.each do |user|
         user_role_sql.append("REVOKE #{user_role['role_name']} FROM \"#{user}\";")
       end
