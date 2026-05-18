@@ -417,10 +417,10 @@ RSpec.describe RedshiftSync do
           expect(mock_connection).to receive(:execute).
             with(/SELECT user_name\s+FROM svv_user_grants/).ordered
           expect(mock_connection).to receive(:execute).ordered do |sql|
-            expect(sql).to include('REVOKE dw_ingestion FROM "old_user"')
-            expect(sql).to include('REVOKE dw_ingestion FROM "another_old_user"')
-            expect(sql).to include('GRANT dw_ingestion TO "rails_worker"')
-            expect(sql).to include('GRANT dw_ingestion TO "IAMR:testenv_db_consumption"')
+            expect(sql).to include('REVOKE ROLE dw_ingestion FROM "old_user"')
+            expect(sql).to include('REVOKE ROLE dw_ingestion FROM "another_old_user"')
+            expect(sql).to include('GRANT ROLE dw_ingestion TO "rails_worker"')
+            expect(sql).to include('GRANT ROLE dw_ingestion TO "IAMR:testenv_db_consumption"')
           end
 
           sync.send(:sync_user_role, user_role)
@@ -439,8 +439,8 @@ RSpec.describe RedshiftSync do
             with(/SELECT user_name\s+FROM svv_user_grants/).ordered
           expect(mock_connection).to receive(:execute).ordered do |sql|
             expect(sql).not_to include('REVOKE')
-            expect(sql).to include('GRANT dw_ingestion TO "rails_worker"')
-            expect(sql).to include('GRANT dw_ingestion TO "IAMR:testenv_db_consumption"')
+            expect(sql).to include('GRANT ROLE dw_ingestion TO "rails_worker"')
+            expect(sql).to include('GRANT ROLE dw_ingestion TO "IAMR:testenv_db_consumption"')
           end
 
           sync.send(:sync_user_role, user_role)
@@ -465,7 +465,7 @@ RSpec.describe RedshiftSync do
           expect(mock_connection).to receive(:execute).
             with(/SELECT user_name\s+FROM svv_user_grants/).ordered
           expect(mock_connection).to receive(:execute).ordered do |sql|
-            expect(sql).to include('REVOKE dw_ingestion FROM "old_user"')
+            expect(sql).to include('REVOKE ROLE dw_ingestion FROM "old_user"')
             expect(sql).not_to include('GRANT')
           end
 
@@ -522,7 +522,7 @@ RSpec.describe RedshiftSync do
           expect(mock_connection).to receive(:execute).
             with(/SELECT user_name\s+FROM svv_user_grants/).ordered
           expect(mock_connection).to receive(:execute).ordered do |sql|
-            expect(sql).to include('GRANT dw_ingestion TO "IAMR:testenv_db_consumption"')
+            expect(sql).to include('GRANT ROLE dw_ingestion TO "IAMR:testenv_db_consumption"')
           end
 
           sync.send(:sync_user_role, user_role)
