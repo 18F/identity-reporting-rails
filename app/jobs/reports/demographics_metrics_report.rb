@@ -10,10 +10,11 @@ module Reports
 
     REPORT_NAME = 'demographics-metrics-report'
     DATA_LAG_DAYS = 2 # 2 day lag to account for data sync delay into DW
-
+    DEFAULT_LOOK_BACK_DAYS = 4 # Cron job runs on 3rd, looks back 4 days
     attr_reader :run_date, :days_back_for_time_period, :time_frame
 
-    def initialize(init_run_date = Time.zone.now, init_days_back_for_time_period = 4,
+    def initialize(init_run_date = Time.zone.now, 
+                   init_days_back_for_time_period = DEFAULT_LOOK_BACK_DAYS,
                    init_time_frame = 'quarterly', *args, **rest)
       @run_date = init_run_date
       @days_back_for_time_period = init_days_back_for_time_period
@@ -34,7 +35,7 @@ module Reports
       @run_date = perform_run_date || @run_date || Time.zone.now
       @days_back_for_time_period = perform_days_back_for_time_period ||
                                    @days_back_for_time_period ||
-                                   4
+                                   DEFAULT_LOOK_BACK_DAYS
       @time_frame = perform_time_frame || @time_frame || 'quarterly'
 
       raise ArgumentError, "#{@time_frame} is not a valid time frame - must be 'quarterly'"\
