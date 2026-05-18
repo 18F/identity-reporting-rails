@@ -44,7 +44,8 @@ module Reports
                              ' demographics_metrics_s3_report_configs'
       end
       Rails.logger.info "Starting #{report_type}-facing #{@time_frame} demographics metrics "\
-                        "report generation for #{issuer_strings.length} issuers"
+                        "report generation for #{issuer_strings.length} issuers "\
+                        "#{report_time_range.begin.date} to #{report_time_range.end.date}"
 
       failed_issuers = []
       issuer_strings.each do |issuer_config|
