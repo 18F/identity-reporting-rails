@@ -496,9 +496,9 @@ RSpec.describe RedshiftSync do
           sync.send(:sync_user_role, user_role)
         end
 
-        it 'logs that the role has no members' do
+        it 'logs that role is already in sync' do
           expect(Rails.logger).to receive(:info).
-            with(/User role dw_ingestion has no members/)
+            with(/User role dw_ingestion is already in sync/)
 
           sync.send(:sync_user_role, user_role)
         end
@@ -524,6 +524,33 @@ RSpec.describe RedshiftSync do
           expect(mock_connection).to receive(:execute).ordered do |sql|
             expect(sql).to include('GRANT ROLE dw_ingestion TO "IAMR:testenv_db_consumption"')
           end
+
+          sync.send(:sync_user_role, user_role)
+        end
+      end
+
+      context 'when role membership is already in sync' do
+        before do
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/).
+            and_return([
+                         { 'user_name' => 'rails_worker' },
+                         { 'user_name' => 'IAMR:testenv_db_consumption' },
+                       ])
+        end
+
+        it 'does not make any changes' do
+          expect(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/)
+          expect(mock_connection).not_to receive(:execute).
+            with(a_string_matching(/GRANT|REVOKE/))
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'logs that role is already in sync' do
+          expect(Rails.logger).to receive(:info).
+            with(/User role dw_ingestion is already in sync/)
 
           sync.send(:sync_user_role, user_role)
         end

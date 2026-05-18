@@ -514,7 +514,7 @@ class RedshiftSync
   end
 
   def create_user_role(user_role)
-    Rails.logger.info("Creating user role #{user_role['role_name']}")
+    Rails.logger.info("Checking user role #{user_role['role_name']}...")
 
     result = execute_query(
       "SELECT role_name FROM svv_roles WHERE role_name = #{quote(user_role['role_name'])}",
@@ -538,27 +538,28 @@ class RedshiftSync
     SQL
 
     result = execute_query(current_role_users_statement)
+    current_role_users = result.any? ? result.map { |row| row['user_name'] } : []
+    desired_role_users = user_role['users'].map { |user| interpolate_env_name(user) }
+
+    users_to_revoke = current_role_users - desired_role_users
+    users_to_grant = desired_role_users - current_role_users
+
     user_role_sql = []
 
-    if result.any?
-      current_role_users = result.map { |row| row['user_name'] }
-      current_role_users.each do |user|
-        user_role_sql.append("REVOKE ROLE #{user_role['role_name']} FROM \"#{user}\";")
-      end
+    users_to_revoke.each do |user|
+      Rails.logger.info("Revoking role #{user_role['role_name']} from user #{user}")
+      user_role_sql.append("REVOKE ROLE #{user_role['role_name']} FROM \"#{user}\";")
     end
 
-    role_users = user_role['users'].map { |user| interpolate_env_name(user) }
-
-    if role_users.any?
-      role_users.each do |user|
-        user_role_sql.append("GRANT ROLE #{user_role['role_name']} TO \"#{user}\";")
-      end
+    users_to_grant.each do |user|
+      Rails.logger.info("Granting role #{user_role['role_name']} to user #{user}")
+      user_role_sql.append("GRANT ROLE #{user_role['role_name']} TO \"#{user}\";")
     end
 
     if user_role_sql.any?
       execute_query(user_role_sql.join("\n"))
     else
-      Rails.logger.info("User role #{user_role['role_name']} has no members")
+      Rails.logger.info("User role #{user_role['role_name']} is already in sync")
     end
   end
 end
