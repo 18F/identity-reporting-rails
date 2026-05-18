@@ -354,15 +354,15 @@ RSpec.describe RedshiftSync do
 
       context 'when role does not exist' do
         before do
-          allow(mock_connection).to receive(:execute)
-            .with(/SELECT rolname FROM pg_roles/)
-            .and_return(double(any?: false))
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT rolname FROM pg_roles/).
+            and_return(double(any?: false))
           allow(sync).to receive(:sync_user_role)
         end
 
         it 'creates the role' do
-          expect(mock_connection).to receive(:execute)
-            .with(/CREATE ROLE dw_ingestion;/)
+          expect(mock_connection).to receive(:execute).
+            with(/CREATE ROLE dw_ingestion;/)
 
           sync.send(:create_user_role, user_role)
         end
@@ -375,15 +375,15 @@ RSpec.describe RedshiftSync do
 
       context 'when role already exists' do
         before do
-          allow(mock_connection).to receive(:execute)
-            .with(/SELECT rolname FROM pg_roles/)
-            .and_return(double(any?: true))
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT rolname FROM pg_roles/).
+            and_return(double(any?: true))
           allow(sync).to receive(:sync_user_role)
         end
 
         it 'does not create the role' do
-          expect(mock_connection).not_to receive(:execute)
-            .with(/CREATE ROLE/)
+          expect(mock_connection).not_to receive(:execute).
+            with(/CREATE ROLE/)
 
           sync.send(:create_user_role, user_role)
         end
@@ -405,12 +405,12 @@ RSpec.describe RedshiftSync do
 
       context 'when role has existing members' do
         before do
-          allow(mock_connection).to receive(:execute)
-            .with(/SELECT member.rolname/)
-            .and_return([
-              { 'rolname' => 'old_user' },
-              { 'rolname' => 'another_old_user' },
-            ])
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT member.rolname/).
+            and_return([
+                         { 'rolname' => 'old_user' },
+                         { 'rolname' => 'another_old_user' },
+                       ])
         end
 
         it 'revokes existing memberships and grants new ones' do
@@ -428,9 +428,9 @@ RSpec.describe RedshiftSync do
 
       context 'when role has no existing members' do
         before do
-          allow(mock_connection).to receive(:execute)
-            .with(/SELECT member.rolname/)
-            .and_return([])
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT member.rolname/).
+            and_return([])
         end
 
         it 'grants role to all specified users' do
@@ -454,9 +454,9 @@ RSpec.describe RedshiftSync do
         end
 
         before do
-          allow(mock_connection).to receive(:execute)
-            .with(/SELECT member.rolname/)
-            .and_return([{ 'rolname' => 'old_user' }])
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT member.rolname/).
+            and_return([{ 'rolname' => 'old_user' }])
         end
 
         it 'revokes existing memberships' do
@@ -479,22 +479,22 @@ RSpec.describe RedshiftSync do
         end
 
         before do
-          allow(mock_connection).to receive(:execute)
-            .with(/SELECT member.rolname/)
-            .and_return([])
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT member.rolname/).
+            and_return([])
         end
 
         it 'does not execute any SQL' do
           expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/)
-          expect(mock_connection).not_to receive(:execute)
-            .with(a_string_matching(/GRANT|REVOKE/))
+          expect(mock_connection).not_to receive(:execute).
+            with(a_string_matching(/GRANT|REVOKE/))
 
           sync.send(:sync_user_role, user_role)
         end
 
         it 'logs that the role has no members' do
-          expect(Rails.logger).to receive(:info)
-            .with(/User role dw_ingestion has no members/)
+          expect(Rails.logger).to receive(:info).
+            with(/User role dw_ingestion has no members/)
 
           sync.send(:sync_user_role, user_role)
         end
@@ -509,9 +509,9 @@ RSpec.describe RedshiftSync do
         end
 
         before do
-          allow(mock_connection).to receive(:execute)
-            .with(/SELECT member.rolname/)
-            .and_return([])
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT member.rolname/).
+            and_return([])
         end
 
         it 'interpolates environment variables in user names' do
