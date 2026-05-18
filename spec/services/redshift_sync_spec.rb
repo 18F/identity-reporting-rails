@@ -38,6 +38,26 @@ RSpec.describe RedshiftSync do
               'table_privileges' => 'SELECT' },
           ],
         },
+        {
+          'user_name' => 'rails_worker',
+          'secret_id' => 'redshift/testenv-analytics-rails-worker',
+          'syslog_access' => true,
+          'schemas' => [
+            { 'schema_name' => 'idp',
+              'schema_privileges' => 'USAGE',
+              'table_privileges' => 'SELECT' },
+          ],
+        },
+      ],
+      'user_roles' => [
+        {
+          'role_name' => 'dw_ingestion',
+          'users' => [
+            'rails_worker',
+            'IAMR:%{env_name}_db_consumption',
+            'IAMR:%{env_name}_log_consumption',
+          ],
+        },
       ],
     }
   end
@@ -198,6 +218,7 @@ RSpec.describe RedshiftSync do
         []
       end
       allow(sync).to receive(:sync_user_group) { call_order << :sync_user_group }
+      allow(sync).to receive(:create_user_role) { call_order << :create_user_role }
 
       sync.sync
 
@@ -209,6 +230,7 @@ RSpec.describe RedshiftSync do
           :drop_users,
           :create_users,
           :sync_user_group,
+          :create_user_role,
         ],
       )
     end
@@ -221,6 +243,7 @@ RSpec.describe RedshiftSync do
       allow(sync).to receive(:create_user_group)
       allow(sync).to receive(:drop_users)
       allow(sync).to receive(:sync_user_group)
+      allow(sync).to receive(:create_user_role)
     end
 
     context 'when new users are created' do
@@ -267,6 +290,203 @@ RSpec.describe RedshiftSync do
       it 'logs a warning' do
         expect(Rails.logger).to receive(:warn).with(a_string_matching(/masking policies/i))
         sync.sync
+      end
+    end
+  end
+
+  describe 'user roles' do
+    describe '#user_roles' do
+      it 'returns interpolated user roles from config' do
+        roles = sync.send(:user_roles)
+
+        expect(roles.length).to eq(1)
+        expect(roles.first['role_name']).to eq('dw_ingestion')
+        expect(roles.first['users']).to include(
+          'rails_worker',
+          'IAMR:testenv_db_consumption',
+          'IAMR:testenv_log_consumption',
+        )
+      end
+    end
+
+    describe '#create_user_role' do
+      let(:user_role) do
+        {
+          'role_name' => 'dw_ingestion',
+          'users' => ['rails_worker', 'IAMR:testenv_db_consumption'],
+        }
+      end
+
+      context 'when role does not exist' do
+        before do
+          allow(mock_connection).to receive(:execute)
+            .with(/SELECT rolname FROM pg_roles/)
+            .and_return(double(any?: false))
+          allow(sync).to receive(:sync_user_role)
+        end
+
+        it 'creates the role' do
+          expect(mock_connection).to receive(:execute)
+            .with(/CREATE ROLE dw_ingestion;/)
+
+          sync.send(:create_user_role, user_role)
+        end
+
+        it 'syncs the role membership' do
+          expect(sync).to receive(:sync_user_role).with(user_role)
+          sync.send(:create_user_role, user_role)
+        end
+      end
+
+      context 'when role already exists' do
+        before do
+          allow(mock_connection).to receive(:execute)
+            .with(/SELECT rolname FROM pg_roles/)
+            .and_return(double(any?: true))
+          allow(sync).to receive(:sync_user_role)
+        end
+
+        it 'does not create the role' do
+          expect(mock_connection).not_to receive(:execute)
+            .with(/CREATE ROLE/)
+
+          sync.send(:create_user_role, user_role)
+        end
+
+        it 'syncs the role membership' do
+          expect(sync).to receive(:sync_user_role).with(user_role)
+          sync.send(:create_user_role, user_role)
+        end
+      end
+    end
+
+    describe '#sync_user_role' do
+      let(:user_role) do
+        {
+          'role_name' => 'dw_ingestion',
+          'users' => ['rails_worker', 'IAMR:testenv_db_consumption'],
+        }
+      end
+
+      context 'when role has existing members' do
+        before do
+          allow(mock_connection).to receive(:execute)
+            .with(/SELECT member.rolname/)
+            .and_return([
+              { 'rolname' => 'old_user' },
+              { 'rolname' => 'another_old_user' },
+            ])
+        end
+
+        it 'revokes existing memberships and grants new ones' do
+          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/).ordered
+          expect(mock_connection).to receive(:execute).ordered do |sql|
+            expect(sql).to include('REVOKE dw_ingestion FROM "old_user"')
+            expect(sql).to include('REVOKE dw_ingestion FROM "another_old_user"')
+            expect(sql).to include('GRANT dw_ingestion TO "rails_worker"')
+            expect(sql).to include('GRANT dw_ingestion TO "IAMR:testenv_db_consumption"')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+      end
+
+      context 'when role has no existing members' do
+        before do
+          allow(mock_connection).to receive(:execute)
+            .with(/SELECT member.rolname/)
+            .and_return([])
+        end
+
+        it 'grants role to all specified users' do
+          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/).ordered
+          expect(mock_connection).to receive(:execute).ordered do |sql|
+            expect(sql).not_to include('REVOKE')
+            expect(sql).to include('GRANT dw_ingestion TO "rails_worker"')
+            expect(sql).to include('GRANT dw_ingestion TO "IAMR:testenv_db_consumption"')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+      end
+
+      context 'when role has no users configured' do
+        let(:user_role) do
+          {
+            'role_name' => 'dw_ingestion',
+            'users' => [],
+          }
+        end
+
+        before do
+          allow(mock_connection).to receive(:execute)
+            .with(/SELECT member.rolname/)
+            .and_return([{ 'rolname' => 'old_user' }])
+        end
+
+        it 'revokes existing memberships' do
+          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/).ordered
+          expect(mock_connection).to receive(:execute).ordered do |sql|
+            expect(sql).to include('REVOKE dw_ingestion FROM "old_user"')
+            expect(sql).not_to include('GRANT')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+      end
+
+      context 'when role has no existing members and no users configured' do
+        let(:user_role) do
+          {
+            'role_name' => 'dw_ingestion',
+            'users' => [],
+          }
+        end
+
+        before do
+          allow(mock_connection).to receive(:execute)
+            .with(/SELECT member.rolname/)
+            .and_return([])
+        end
+
+        it 'does not execute any SQL' do
+          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/)
+          expect(mock_connection).not_to receive(:execute)
+            .with(a_string_matching(/GRANT|REVOKE/))
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'logs that the role has no members' do
+          expect(Rails.logger).to receive(:info)
+            .with(/User role dw_ingestion has no members/)
+
+          sync.send(:sync_user_role, user_role)
+        end
+      end
+
+      context 'with environment variable interpolation in user names' do
+        let(:user_role) do
+          {
+            'role_name' => 'dw_ingestion',
+            'users' => ['IAMR:%{env_name}_db_consumption'],
+          }
+        end
+
+        before do
+          allow(mock_connection).to receive(:execute)
+            .with(/SELECT member.rolname/)
+            .and_return([])
+        end
+
+        it 'interpolates environment variables in user names' do
+          expect(mock_connection).to receive(:execute).with(/SELECT member.rolname/).ordered
+          expect(mock_connection).to receive(:execute).ordered do |sql|
+            expect(sql).to include('GRANT dw_ingestion TO "IAMR:testenv_db_consumption"')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
       end
     end
   end
