@@ -40,6 +40,10 @@ class RedshiftSync
 
     apply_masking_for_new_users(new_users) if new_users.any?
 
+    user_roles.each do |user_role|
+      create_user_role(user_role)
+    end
+
     Rails.logger.info('Redshift user sync completed successfully')
   end
 
@@ -131,6 +135,10 @@ class RedshiftSync
 
   def user_groups
     redshift_config['user_groups'].map { |group| interpolate_config_hash(group) }
+  end
+
+  def user_roles
+    redshift_config['user_roles'].map { |role| interpolate_config_hash(role) }
   end
 
   def lambda_users
@@ -502,6 +510,57 @@ class RedshiftSync
       execute_query(user_group_sql.join("\n"))
     else
       Rails.logger.info("User group #{group['name']} is empty")
+    end
+  end
+
+  def create_user_role(user_role)
+    Rails.logger.info("Creating user role #{user_role['role_name']}")
+
+    result = execute_query(
+      "SELECT rolname FROM pg_roles WHERE rolname = #{quote(user_role['role_name'])}",
+    )
+
+    if !result.any?
+      sql = "CREATE ROLE #{user_role['role_name']};"
+      execute_query(sql)
+    end
+
+    sync_user_role(user_role)
+  end
+
+  def sync_user_role(user_role)
+    Rails.logger.info("Syncing users for role #{user_role['role_name']}")
+
+    current_role_users_statement = <<~SQL
+      SELECT member.rolname
+      FROM pg_roles AS member
+      JOIN pg_auth_members ON member.oid = pg_auth_members.member
+      JOIN pg_roles AS role_parent ON role_parent.oid = pg_auth_members.roleid
+      WHERE role_parent.rolname = #{quote(user_role['role_name'])}
+    SQL
+
+    result = execute_query(current_role_users_statement)
+    user_role_sql = []
+
+    if result.any?
+      current_role_users = result.map { |row| row['rolname'] }
+      current_role_users.each do |user|
+        user_role_sql.append("REVOKE #{user_role['role_name']} FROM \"#{user}\";")
+      end
+    end
+
+    role_users = user_role['users'].map { |user| interpolate_env_name(user) }
+
+    if role_users.any?
+      role_users.each do |user|
+        user_role_sql.append("GRANT #{user_role['role_name']} TO \"#{user}\";")
+      end
+    end
+
+    if user_role_sql.any?
+      execute_query(user_role_sql.join("\n"))
+    else
+      Rails.logger.info("User role #{user_role['role_name']} has no members")
     end
   end
 end
