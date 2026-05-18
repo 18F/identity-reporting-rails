@@ -105,8 +105,9 @@ module Reporting
         ).to_a
 
         if result.empty?
-          raise StandardError, "No demographic data found for issuer #{issuer_string} in"\
-                               " time range #{time_range.begin} to #{time_range.end}"
+          Rails.logger.info "No demographic data found for issuer #{issuer_string} in"\
+                            " time range #{time_range.begin} to #{time_range.end}. "\
+                            "Generating empty reports."
         end
 
         result
