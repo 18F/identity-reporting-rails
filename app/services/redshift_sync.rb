@@ -542,7 +542,7 @@ class RedshiftSync
     if result.any?
       current_role_users = result.map { |row| row['user_name'] }
       current_role_users.each do |user|
-        user_role_sql.append("REVOKE #{user_role['role_name']} FROM \"#{user}\";")
+        user_role_sql.append("REVOKE ROLE #{user_role['role_name']} FROM \"#{user}\";")
       end
     end
 
@@ -550,7 +550,7 @@ class RedshiftSync
 
     if role_users.any?
       role_users.each do |user|
-        user_role_sql.append("GRANT #{user_role['role_name']} TO \"#{user}\";")
+        user_role_sql.append("GRANT ROLE #{user_role['role_name']} TO \"#{user}\";")
       end
     end
 
