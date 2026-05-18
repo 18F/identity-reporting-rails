@@ -9,7 +9,7 @@ module Reporting
       else
         # PostgreSQL JSON operators - cast to JSONB first
         parts = path.split('.')
-        quoted_parts = parts.map { |part| "'#{part}'" }
+        quoted_parts = parts.map { |part| connection.quote(part) }
         to_string = types_to_extract_as_text.include?(type) || type.include?('VARCHAR')
 
         if to_string
