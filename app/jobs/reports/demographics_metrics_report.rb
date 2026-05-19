@@ -12,6 +12,7 @@ module Reports
     REPORT_NAME = 'demographics-metrics-report'
     DATA_LAG_DAYS = 2 # 2 day lag to account for data sync delay into DW
     DEFAULT_LOOK_BACK_DAYS = 4 # Cron job runs on 3rd, looks back 4 days
+    SCHEMA_CUTOFF_DATE = Date.new(2025, 10, 1).freeze
     attr_reader :run_date, :days_back_for_time_period, :time_frame
 
     def initialize(init_run_date = Time.zone.now,
@@ -45,7 +46,7 @@ module Reports
       end
       Rails.logger.info "Starting #{report_type}-facing #{@time_frame} demographics metrics "\
                         "report generation for #{issuer_strings.length} issuers "\
-                        "#{report_time_range.begin.date} to #{report_time_range.end.date}"
+                        "#{report_time_range.begin.to_date} to #{report_time_range.end.to_date}"
 
       failed_issuers = []
       issuer_strings.each do |issuer_config|
@@ -79,17 +80,16 @@ module Reports
     def validate_parameters!(run_date = @run_date, days_back = @days_back_for_time_period,
                              time_frame = @time_frame)
       unless time_frame == 'quarterly'
-        raise ArgumentError, "#{time_frame} is not a valid time frame - must be 'quarterly'"
+        raise ArgumentError, "#{time_frame} time frame not yet implemented - must be 'quarterly'"
       end
       unless days_back.between?(0, 90)
         raise ArgumentError, "days_back_for_time_period must be between 0 and 90, "\
                             "got #{days_back}. Adjust run_date for periods "\
                             "greater than 90 days."
       end
-      schema_cutoff_date = Date.new(2025, 10, 1)
-      if run_date.to_date < schema_cutoff_date
+      if run_date.to_date < SCHEMA_CUTOFF_DATE
         Rails.logger.warn "Running demographics report for #{run_date.to_date}, which is before "\
-                          "#{schema_cutoff_date}. App log data schema assumptions may be invalid "\
+                          "#{SCHEMA_CUTOFF_DATE}. App log data schema assumptions may be invalid "\
                           "before this date."
       end
     end
@@ -161,9 +161,9 @@ module Reports
     end
 
     # True (External) when quarter has ended + lag has passed
-    # I.e. True if March 31st <= April 6th - DATA_LAG_DAYS
+    # I.e. True if March 31st < April 6th - DATA_LAG_DAYS
     def external_report?
-      report_time_range.end.to_date <= Date.current - DATA_LAG_DAYS.days
+      report_time_range.end.to_date < Date.current - DATA_LAG_DAYS.days
     end
 
     def report_type
