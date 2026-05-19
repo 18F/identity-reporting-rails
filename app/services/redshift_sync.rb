@@ -138,6 +138,8 @@ class RedshiftSync
   end
 
   def user_roles
+    return [] unless redshift_config['user_roles']
+
     redshift_config['user_roles'].map { |role| interpolate_config_hash(role) }
   end
 

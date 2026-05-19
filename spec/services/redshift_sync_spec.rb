@@ -342,6 +342,21 @@ RSpec.describe RedshiftSync do
           'IAMR:testenv_log_consumption',
         )
       end
+
+      it 'returns empty array when user_roles is not defined in config' do
+        allow(sync).to receive(:redshift_config).and_return(
+          {
+            'enabled_aws_groups' => { 'sandbox' => ['dwuser'] },
+            'user_groups' => [],
+            'lambda_users' => [],
+            'system_users' => [],
+          },
+        )
+
+        roles = sync.send(:user_roles)
+
+        expect(roles).to eq([])
+      end
     end
 
     describe '#create_user_role' do
