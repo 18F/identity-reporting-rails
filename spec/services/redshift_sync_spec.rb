@@ -572,4 +572,43 @@ RSpec.describe RedshiftSync do
       end
     end
   end
+
+  describe 'redshift_config.yaml validation' do
+    let(:real_config) do
+      YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))
+    end
+
+    let(:allowed_role_users) do
+      lambda_user_names = real_config['lambda_users'].map { |u| u['user_name'] }
+      system_user_names = real_config['system_users'].map { |u| u['user_name'] }
+      exceptions = ['superuser']
+
+      (lambda_user_names + system_user_names + exceptions).uniq
+    end
+
+    it 'references only users defined in lambda_users, system_users, or known exceptions' do
+      return if real_config['user_roles'].nil?
+
+      invalid_references = []
+
+      real_config['user_roles'].each do |role|
+        role['users'].each do |user|
+          unless allowed_role_users.include?(user)
+            invalid_references << "Role '#{role['role_name']}' references unknown user '#{user}'"
+          end
+        end
+      end
+
+      error_message = [
+        'Found invalid user references in user_roles:',
+        invalid_references.join("\n"),
+        '',
+        'Users in user_roles must be defined in lambda_users, system_users, ' \
+          'or be a known exception (superuser).',
+        "Allowed users: #{allowed_role_users.sort.join(', ')}",
+      ].join("\n")
+
+      expect(invalid_references).to be_empty, error_message
+    end
+  end
 end
