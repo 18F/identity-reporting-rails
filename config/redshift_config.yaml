@@ -335,7 +335,6 @@ user_roles:
   - role_name: dw_ingestion
     users:
       - rails_worker
-      - pii_reader
       - superuser
       - "IAMR:%{env_name}_db_consumption"
       - "IAMR:%{env_name}_log_consumption"
