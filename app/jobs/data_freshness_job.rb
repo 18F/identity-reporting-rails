@@ -22,14 +22,13 @@ class DataFreshnessJob < ApplicationJob
   def latest_production_record
     return @latest_production_record if defined?(@latest_production_record)
 
-    @latest_production_record = Production.order(cloudwatch_timestamp: :desc).first
+    @latest_production_record = Production.maximum(:cloudwatch_timestamp)
   end
 
   def log_data_freshness
-    cloudwatch_timestamp = latest_production_record.cloudwatch_timestamp
-    freshness_hours = ((Time.zone.now - cloudwatch_timestamp) / 1.hour).round(2)
+    freshness_hours = ((Time.zone.now - latest_production_record) / 1.hour).round(2)
     limit = Identity::Hostdata.config.data_freshness_threshold_hours.hours.ago
-    status = cloudwatch_timestamp > limit ? 'within_range' : 'out_of_range'
+    status = latest_production_record > limit ? 'within_range' : 'out_of_range'
 
     logger.info(
       {

@@ -45,7 +45,7 @@ RSpec.describe DataFreshnessJob, type: :job do
 
   context 'when no logs are found' do
     it 'logs an error' do
-      allow(Production).to receive(:order).and_return([])
+      allow(Production).to receive(:maximum).with(:cloudwatch_timestamp).and_return(nil)
 
       expect(log_entry).to receive(:error).with(
         {
