@@ -20,6 +20,7 @@ AllCops:
     - 'tmp/**/*'
     - 'vendor/**/*'
     - 'public/**/*'
+    - 'config/initializers/ext_active_record_redshift_adapter.rb'
   TargetRubyVersion: 3.4
   TargetRailsVersion: 8.0
   UseCache: true

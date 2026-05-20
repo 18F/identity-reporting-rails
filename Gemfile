@@ -3,7 +3,7 @@ git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
 gem 'activerecord-redshift-adapter'
-gem 'rails', '~> 8.0.0'
+gem 'rails', '~> 8.1.3'
 gem 'bootsnap', '~> 1.0', require: false
 gem 'csv'
 gem 'faker'
@@ -30,7 +30,7 @@ end
 
 group :development, :test do
   gem 'brakeman', require: false
-  gem 'bullet', '~> 8.0'
+  gem 'bullet'
   gem 'knapsack'
   gem 'listen'
   gem 'nokogiri', '~> 1.18.0'
