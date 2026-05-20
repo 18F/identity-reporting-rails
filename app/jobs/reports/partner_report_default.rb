@@ -149,18 +149,18 @@ module Reports
     def period_date
       return nil unless @report_date
 
-      date_str = Reporting::PartnerReportDefault.get_period_date_from_report_date(
-        report_date: @report_date,
-        cadence: REPORT_CADENCE,
-      )
-
-      # Validate format if present
-      if date_str && !date_str.match?(/\A\d{4}-\d{2}-\d{2}\z/)
-        Rails.logger.error "Invalid period_date format received: '#{date_str}'."\
-        " Expected YYYY-MM-DD"
-        nil
-      else
-        date_str
+      @period_date ||= begin
+        date_str = Reporting::PartnerReportDefault.get_period_date_from_report_date(
+          report_date: @report_date,
+          cadence: REPORT_CADENCE,
+        )
+        if date_str && !date_str.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+          Rails.logger.error "Invalid period_date format received: '#{date_str}'."\
+          " Expected YYYY-MM-DD"
+          nil
+        else
+          date_str
+        end
       end
     end
   end

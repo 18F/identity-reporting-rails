@@ -53,10 +53,7 @@ RSpec.describe Reports::PartnerReportDefault do
     {
       issuer1 => {
         issuer: issuer1,
-        provider_information: {
-          service_provider_name: 'Agency 1 App',
-          service_provider_id: 123,
-        },
+        provider_information: { service_provider_name: 'Agency 1 App', service_provider_id: 123 },
         data: { count_active_users: 1000 },
       },
       issuer2 => nil, # This issuer had duplicate/integrity issues
@@ -146,6 +143,13 @@ RSpec.describe Reports::PartnerReportDefault do
     end
 
     context 'when both redshift and s3 are enabled' do
+      before do
+        allow(Identity::Hostdata).to receive(:bucket_name).and_return(bucket_name)
+        mock_s3_client = Aws::S3::Client.new(stub_responses: true)
+        mock_s3_helper = instance_double(JobHelpers::S3Helper, s3_client: mock_s3_client)
+        allow(JobHelpers::S3Helper).to receive(:new).and_return(mock_s3_helper)
+        allow(job).to receive(:upload_file_to_s3_bucket).and_return(true)
+      end
       it 'sets report_date from parameter' do
         job.perform(report_date)
         expect(job.report_date).to eq(report_date)
