@@ -8,7 +8,7 @@ class DataFreshnessJob < ApplicationJob
   queue_as :default
 
   def perform
-    if latest_production_record
+    if latest_production_timestamp
       log_data_freshness
     else
       log_error('No logs found!')
@@ -19,16 +19,16 @@ class DataFreshnessJob < ApplicationJob
 
   private
 
-  def latest_production_record
-    return @latest_production_record if defined?(@latest_production_record)
+  def latest_production_timestamp
+    return @latest_production_timestamp if defined?(@latest_production_timestamp)
 
-    @latest_production_record = Production.maximum(:cloudwatch_timestamp)
+    @latest_production_timestamp = Production.maximum(:cloudwatch_timestamp)
   end
 
   def log_data_freshness
-    freshness_hours = ((Time.zone.now - latest_production_record) / 1.hour).round(2)
+    freshness_hours = ((Time.zone.now - latest_production_timestamp) / 1.hour).round(2)
     limit = Identity::Hostdata.config.data_freshness_threshold_hours.hours.ago
-    status = latest_production_record > limit ? 'within_range' : 'out_of_range'
+    status = latest_production_timestamp > limit ? 'within_range' : 'out_of_range'
 
     logger.info(
       {
