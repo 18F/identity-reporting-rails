@@ -144,11 +144,13 @@ RSpec.describe Reporting::PartnerReportDefault do
   end
 
   describe '.get_period_date_from_report_date' do
-    let(:calendar_query_result) { [{ 'period_date_actual' => period_date }] }
+    let(:calendar_query_result) do
+      double('query_result', first: { 'period_date_actual' => period_date })
+    end
 
     before do
-      allow(DataWarehouseApplicationRecord.connection).to receive(:execute).with(
-        anything,
+      allow(DataWarehouseApplicationRecord.connection).to receive(
+        :exec_query,
       ).and_return(calendar_query_result)
     end
 
@@ -171,8 +173,9 @@ RSpec.describe Reporting::PartnerReportDefault do
 
     context 'when no calendar entry exists' do
       before do
-        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
-          and_return([])
+        allow(DataWarehouseApplicationRecord.connection).to receive(:exec_query).and_return(
+          double('query_result', first: nil),
+        )
       end
 
       it 'returns nil and logs error' do
@@ -189,13 +192,14 @@ RSpec.describe Reporting::PartnerReportDefault do
 
     context 'when database error occurs' do
       before do
-        allow(DataWarehouseApplicationRecord.connection).to receive(:execute).
-          and_raise(StandardError.new('Database error'))
+        allow(DataWarehouseApplicationRecord.connection).to receive(:exec_query).
+          and_raise(PG::UndefinedTable.new('ERROR: relation "marts.calendar" does not exist'))
       end
 
       it 'returns nil and logs error' do
         expect(Rails.logger).to receive(:error).with(
-          /Failed to get period_date for #{report_date}, monthly: Database error/,
+          a_string_matching(/Failed to get period_date for #{report_date}, monthly:/) &
+          a_string_matching(/relation "marts\.calendar" does not exist/),
         )
         result = described_class.get_period_date_from_report_date(
           report_date: report_date,
@@ -230,18 +234,38 @@ RSpec.describe Reporting::PartnerReportDefault do
     end
 
     context 'with custom filters' do
-      subject(:filtered_report) do
-        described_class.new(
+      it 'sets filters correctly' do
+        # Test with included_issuers only
+        included_report = described_class.new(
           report_date: report_date,
           report_cadence: report_cadence,
           included_issuers: [issuer1, issuer2],
+          excluded_issuers: [],
+        )
+        expect(included_report.included_issuers).to eq([issuer1, issuer2])
+        expect(included_report.excluded_issuers).to eq([])
+
+        # Test with excluded_issuers only
+        excluded_report = described_class.new(
+          report_date: report_date,
+          report_cadence: report_cadence,
+          included_issuers: nil,
           excluded_issuers: [issuer3],
         )
-      end
+        expect(excluded_report.included_issuers).to be_nil
+        expect(excluded_report.excluded_issuers).to eq([issuer3])
 
-      it 'sets filters correctly' do
-        expect(filtered_report.included_issuers).to eq([issuer1, issuer2])
-        expect(filtered_report.excluded_issuers).to eq([issuer3])
+        # Test that both together raises error
+        expect do
+          described_class.new(
+            report_date: report_date,
+            report_cadence: report_cadence,
+            included_issuers: [issuer1],
+            excluded_issuers: [issuer3],
+          )
+        end.to raise_error(
+          ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
+        )
       end
     end
   end

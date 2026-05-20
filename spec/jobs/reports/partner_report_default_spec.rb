@@ -53,7 +53,7 @@ RSpec.describe Reports::PartnerReportDefault do
     {
       issuer1 => {
         issuer: issuer1,
-        provider_information: { service_provider_name: 'Agency 1 App' },
+        provider_information: { service_provider_name: 'Agency 1 App', service_provider_id: 123 },
         data: { count_active_users: 1000 },
       },
       issuer2 => nil, # This issuer had duplicate/integrity issues
@@ -79,8 +79,8 @@ RSpec.describe Reports::PartnerReportDefault do
   before do
     allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(true)
     allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
-    allow(job).to receive(:bucket_name).and_return(bucket_name)
-    allow(job).to receive(:upload_file_to_s3_bucket)
+    allow_any_instance_of(described_class).to receive(:bucket_name).and_return(bucket_name)
+    allow_any_instance_of(described_class).to receive(:upload_file_to_s3_bucket)
     allow(job).to receive(:generate_base_s3_path).with(directory: 'portal').and_return('')
     allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
       with(report_date: anything, cadence: 'monthly').
@@ -143,6 +143,13 @@ RSpec.describe Reports::PartnerReportDefault do
     end
 
     context 'when both redshift and s3 are enabled' do
+      before do
+        allow(Identity::Hostdata).to receive(:bucket_name).and_return(bucket_name)
+        mock_s3_client = Aws::S3::Client.new(stub_responses: true)
+        mock_s3_helper = instance_double(JobHelpers::S3Helper, s3_client: mock_s3_client)
+        allow(JobHelpers::S3Helper).to receive(:new).and_return(mock_s3_helper)
+        allow(job).to receive(:upload_file_to_s3_bucket).and_return(true)
+      end
       it 'sets report_date from parameter' do
         job.perform(report_date)
         expect(job.report_date).to eq(report_date)
@@ -336,7 +343,7 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'memoizes the result' do
         expect(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
-          with(report_date: report_date, cadence: 'monthly').
+          with(hash_including(report_date: report_date, cadence: 'monthly')).
           once.
           and_return(period_date)
 
