@@ -1,6 +1,6 @@
 require 'fugit'
 
-cron_30m = '*/30 * * * *'
+cron_hourly_offset = '55 * * * *'
 cron_15m = '*/15 * * * *'
 cron_5m = '0/5 * * * *'
 # cron_10m = '0/10 * * * *'
@@ -38,7 +38,7 @@ else
       # Queue data freshness check job for production table to GoodJob
       data_freshness_job: {
         class: 'DataFreshnessJob',
-        cron: cron_30m,
+        cron: cron_hourly_offset,
       },
       # Queue redshift new user detection job to GoodJob
       redshift_new_user_detection_job: {
