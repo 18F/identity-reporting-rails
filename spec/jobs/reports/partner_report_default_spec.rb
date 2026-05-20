@@ -344,7 +344,7 @@ RSpec.describe Reports::PartnerReportDefault do
       it 'memoizes the result' do
         expect(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
           with(hash_including(report_date: report_date, cadence: 'monthly')).
-          twice.
+          once.
           and_return(period_date)
 
         2.times { job.send(:period_date) }
