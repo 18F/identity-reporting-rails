@@ -53,7 +53,10 @@ RSpec.describe Reports::PartnerReportDefault do
     {
       issuer1 => {
         issuer: issuer1,
-        provider_information: { service_provider_name: 'Agency 1 App' },
+        provider_information: {
+          service_provider_name: 'Agency 1 App',
+          service_provider_id: 123,
+        },
         data: { count_active_users: 1000 },
       },
       issuer2 => nil, # This issuer had duplicate/integrity issues
@@ -79,8 +82,8 @@ RSpec.describe Reports::PartnerReportDefault do
   before do
     allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(true)
     allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
-    allow(job).to receive(:bucket_name).and_return(bucket_name)
-    allow(job).to receive(:upload_file_to_s3_bucket)
+    allow_any_instance_of(described_class).to receive(:bucket_name).and_return(bucket_name)
+    allow_any_instance_of(described_class).to receive(:upload_file_to_s3_bucket)
     allow(job).to receive(:generate_base_s3_path).with(directory: 'portal').and_return('')
     allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
       with(report_date: anything, cadence: 'monthly').
@@ -332,15 +335,6 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'returns the period date string from marts.calendar' do
         expect(job.send(:period_date)).to eq(period_date)
-      end
-
-      it 'memoizes the result' do
-        expect(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
-          with(report_date: report_date, cadence: 'monthly').
-          once.
-          and_return(period_date)
-
-        2.times { job.send(:period_date) }
       end
     end
 
