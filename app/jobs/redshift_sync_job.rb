@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class RedshiftSyncJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
+  good_job_control_concurrency_with(
+    perform_limit: 1,
+  )
+
   queue_as :admin # Requires superuser for CREATE USER, GRANT/REVOKE
 
   def perform
