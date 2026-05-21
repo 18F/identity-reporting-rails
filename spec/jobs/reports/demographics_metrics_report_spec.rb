@@ -126,7 +126,9 @@ RSpec.describe Reports::DemographicsMetricsReport do
 
     context 'when configs are empty' do
       before do
-        allow(IdentityConfig.store).to receive(:demographics_metrics_s3_report_configs).and_return([])
+        allow(IdentityConfig.store).to receive(
+          :demographics_metrics_s3_report_configs,
+        ).and_return([])
       end
 
       it 'logs error and raises ArgumentError' do
@@ -356,7 +358,9 @@ RSpec.describe Reports::DemographicsMetricsReport do
       let(:report_body) { [['header'], ['data']] }
       before do
         allow(test_report).to receive(:bucket_name).and_return('test-bucket')
-        allow(test_report).to receive(:generate_base_s3_path).with(directory: 'idp').and_return('base/path/')
+        allow(test_report).to receive(:generate_base_s3_path).with(
+          directory: 'idp',
+        ).and_return('base/path/')
       end
 
       it 'uploads correct files for external report' do
