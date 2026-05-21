@@ -9,7 +9,6 @@ module Reports
   class DemographicsMetricsReport < BaseReport
     include Reporting::IssuerStringToSpIdHelper
 
-    REPORT_NAME = 'demographics-metrics-report'
     DATA_LAG_DAYS = 2 # 2 day lag to account for data sync delay into DW
     DEFAULT_LOOK_BACK_DAYS = 4 # Cron job runs on 3rd, looks back 4 days
     SCHEMA_CUTOFF_DATE = Date.new(2025, 10, 1).freeze
