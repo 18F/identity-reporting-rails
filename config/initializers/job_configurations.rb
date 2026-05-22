@@ -11,6 +11,7 @@ cron_1d_offset_430am = '30 4 * * *' # 4:30am UTC, staggered from other daily job
 cron_24h = '0 0 * * *'
 cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever else runs at 0000 UTC
 cron_1st_of_month_6am = '0 6 1 * *' # 6 AM UTC on the 1st of each month
+cron_3rd_of_month_6am = '0 6 3 * * ' # 6 AM UTC on the 3rd of each month
 
 extractor_row_checker_enqueue_cron_config =
   Fugit.parse_cron(IdentityConfig.store.extractor_row_checker_enqueue_cron).presence&.original
@@ -88,6 +89,11 @@ else
         class: 'Reports::MonthlyKeyMetricsIdvS3Report',
         cron: cron_1d_offset_2am, # Previously scheduled midnight, but there seemed to be data lag
         args: -> { [Time.zone.yesterday.end_of_day] },
+      # Hardcoded in job to perform monthly for now
+      partner_report_default: {
+        class: 'Reports::PartnerReportDefault',
+        cron: cron_3rd_of_month_6am,
+        args: -> { [4.days.ago] },
       },
       # Idv Legacy Conversion Supplement Report to S3
       idv_legacy_conversion_supplement_report: {

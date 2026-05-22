@@ -14,24 +14,9 @@ module Reporting
   class PartnerReportDefault
     # Marts table mappings for different report cadences
     CADENCE_TABLES = {
-      'monthly' => {
-        usage: 'marts.sp_usage_metrics_monthly',
-        idv: 'marts.sp_idv_outcomes_monthly',
-        auth: 'marts.sp_auth_metrics_monthly',
-        account: 'marts.sp_account_creation_metrics_monthly',
-      },
-      'weekly' => {
-        usage: 'marts.sp_usage_metrics_weekly',
-        idv: 'marts.sp_idv_outcomes_weekly',
-        auth: 'marts.sp_auth_metrics_weekly',
-        account: 'marts.sp_account_creation_metrics_weekly',
-      },
-      'daily' => {
-        usage: 'marts.sp_usage_metrics_daily',
-        idv: 'marts.sp_idv_outcomes_daily',
-        auth: 'marts.sp_auth_metrics_daily',
-        account: 'marts.sp_account_creation_metrics_daily',
-      },
+      'monthly' => 'marts.sp_partner_report_metrics_monthly',
+      'weekly' => 'marts.sp_partner_report_metrics_weekly',
+      'daily' => 'marts.sp_partner_report_metrics_daily',
     }.freeze
 
     attr_reader :report_date, :report_cadence, :included_issuers, :excluded_issuers
@@ -42,32 +27,31 @@ module Reporting
       included_issuers: nil,
       excluded_issuers: []
     )
-      unless ['monthly', 'weekly', 'daily'].include?(report_cadence)
-        raise ArgumentError, "Invalid report_cadence: #{report_cadence}. "\
-                             "Must be one of: monthly, weekly, daily"
-      end
-      if included_issuers&.any? && excluded_issuers.any?
-        raise ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
-      end
       @report_date = report_date.to_s # Ensure report date is a string
       @report_cadence = report_cadence
       @included_issuers = included_issuers
       @excluded_issuers = excluded_issuers
+
+      unless ['monthly', 'weekly', 'daily'].include?(@report_cadence)
+        raise ArgumentError, "Invalid report_cadence: #{@report_cadence}. "\
+                             "Must be one of: monthly, weekly, daily"
+      end
+      if @included_issuers&.any? && @excluded_issuers&.any?
+        raise ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
+      end
     end
 
     def self.get_period_date_from_report_date(report_date:, cadence: 'monthly')
       # Given a date, retrieves the corresponding date for the start of its month/week/day
-      # Returns string in format 'YYYY-MM-DD' or nil on failure
+      # Returns string in format 'YYYY-MM-DD', raises on failure
       unless ['monthly', 'weekly', 'daily'].include?(cadence)
-        Rails.logger.error "Invalid cadence: #{cadence}. Must be one of: monthly, weekly, daily"
-        return nil
+        raise ArgumentError, "Invalid cadence: #{cadence}"
       end
 
       begin
         Date.parse(report_date.to_s)
       rescue ArgumentError => e
-        Rails.logger.error "Invalid date format for report_date: #{report_date} - #{e.message}"
-        return nil
+        raise ArgumentError, "Invalid date format for report_date: #{report_date} - #{e.message}"
       end
 
       query = <<~SQL
@@ -88,20 +72,15 @@ module Reporting
       ).first
 
       if result.nil?
-        Rails.logger.error "No calendar entry found for report_date: #{report_date}"
-        return nil
+        raise StandardError, "No calendar entry found for report_date: #{report_date}"
       end
 
       period_date = result['period_date_actual']
       if period_date.nil?
-        Rails.logger.error "No period_date_actual found for report_date: #{report_date}"
-        return nil
+        raise StandardError, "No period_date_actual found for report_date: #{report_date}"
       end
 
       period_date
-    rescue StandardError => e
-      Rails.logger.error "Failed to get period_date for #{report_date}, #{cadence}: #{e.message}"
-      nil
     end
 
     def generate_issuer_mapping
@@ -120,9 +99,6 @@ module Reporting
 
     def fetch_issuer_mapping_data
       DataWarehouseApplicationRecord.connection.execute(issuer_mapping_query).to_a
-    rescue StandardError => e
-      Rails.logger.error "Failed to fetch service provider issuer map data: #{e.message}"
-      raise e
     end
 
     def issuer_mapping_query
@@ -196,11 +172,11 @@ module Reporting
     end
 
     def format_row_as_json(row)
-      required_fields = %w[issuer service_provider_name period_date_actual]
+      required_fields = %w[issuer service_provider_name period_date]
       missing_fields = required_fields.select { |field| row[field].nil? }
 
       if missing_fields.any?
-        raise "Missing required fields: #{missing_fields.join(', ')}"
+        raise StandardError, "Missing required fields: #{missing_fields.join(', ')}"
       end
 
       {
@@ -211,9 +187,10 @@ module Reporting
           service_provider_id: row['service_provider_id'],
         },
         report_information: {
-          period_start_date: row['period_date_actual'],
+          period_start_date: row['period_date'],
           period_calendar_id: row['period_date_id'],
           report_cadence: report_cadence,
+          report_date: @report_date,
         },
         data: build_data_section(row),
       }
@@ -277,16 +254,14 @@ module Reporting
     def build_data_section(row)
       INTEGER_DATA_FIELDS.each_with_object({}) do |field, hash|
         value = row[field]
-
         if value.nil? || value.to_s.strip.empty?
           hash[field.to_sym] = nil
         else
           begin
             hash[field.to_sym] = Integer(value)
           rescue ArgumentError, TypeError => e
-            # This shouldn't happen with marts tables, but log and handle gracefully
-            Rails.logger.error "Failed to convert '#{value}' "\
-                               "to integer for field #{field}: #{e.message}"
+            Rails.logger.error "Failed to convert '#{value}' " \
+                              "to integer for field #{field}: #{e.message}"
             hash[field.to_sym] = nil
           end
         end
@@ -295,215 +270,39 @@ module Reporting
 
     def fetch_bulk_data
       DataWarehouseApplicationRecord.connection.execute(bulk_query).to_a
-    rescue StandardError => e
-      Rails.logger.error "Failed to fetch #{report_cadence} partner report data: #{e.message}"
-      raise e
+    end
+
+    def period_date
+      self.class.get_period_date_from_report_date(
+        report_date: @report_date,
+        cadence: @report_cadence,
+      )
     end
 
     def bulk_query
-      tables = CADENCE_TABLES[report_cadence]
-
-      # Map cadence to report period columns in marts.calendar table
-      period_calendar_id_col = case report_cadence
-                      when 'monthly' then 'month_start_calendar_id'
-                      when 'weekly' then 'week_start_calendar_id'
-                      when 'daily' then 'calendar_id'
-                      end
-
-      period_calendar_date_col = case report_cadence
-                          when 'monthly' then 'month_start_date_actual'
-                          when 'weekly' then 'week_start_date_actual'
-                          when 'daily' then 'date_actual'
-                          end
-
+      table = CADENCE_TABLES[report_cadence]
       <<~SQL
-        WITH date_param AS (
-            SELECT
-                 '#{report_date}'::date as report_date
-        ),
-        date_period_id AS (
-            SELECT 
-                p.report_date,
-                cal.calendar_id AS report_date_id, 
-                cal.date_actual AS report_date_actual,
-                '#{report_cadence}' AS cadence,
-                cal.#{period_calendar_id_col} AS period_date_id, -- Int ID for start of report window
-                cal.#{period_calendar_date_col} AS period_date_actual -- Date for start of report window        
-            FROM marts.calendar cal
-            JOIN date_param p 
-            ON cal.calendar_id = TO_CHAR(p.report_date, 'YYYYMMDD')::int
-        ),
-        -- Get all active service providers with IAA / launch date within report date
-        active_service_providers AS (
-            SELECT sp.service_provider_id,
-                   sp.service_provider_name,
-                   sp.issuer,
-                   sp.is_active, 
-                   sp.agency_name,
-                   sp.agency_abbreviation,
-                   sp.launch_date,
-                   sp.launch_date_calendar_id,
-                   sp.iaa_end_date,
-                   date_p.report_date_id,
-                   date_p.report_date,
-                   date_p.period_date_id,
-                   date_p.period_date_actual
-            FROM marts.service_providers sp
-            CROSS JOIN date_period_id date_p
-            WHERE sp.iaa_end_date > date_p.report_date  
-              AND date_p.report_date >= sp.launch_date   
-              #{issuer_filter_clause}
-        )
-        
-        
-            SELECT 
-            -- Service Provider Information
-            sp.issuer,
-            sp.service_provider_name,
-            sp.agency_name,
-            sp.service_provider_id,
-            
-            -- Report Period  
-            sp.report_date,   -- Date passed in as a parameter / report date
-            sp.period_date_id, -- start of the month for monthly, start of week for weekly, equal to report_date for daily
-            sp.period_date_actual, -- same as period_date_id but in timestamp format
-            
-            -- ==============================================
-            -- USAGE METRICS
-            -- ==============================================
-        
-            -- Users That Accessed Services Via Login.gov
-            usage_data.count_active_users,
-        
-            -- Active Users Breakdown
-            usage_data.count_newly_created_accounts,
-            usage_data.count_existing_accounts,
-        
-            -- Identity Verified Users
-            usage_data.count_newly_proofed_users,
-            usage_data.count_preverified_users,
-        
-            -- Authentications
-            usage_data.count_authentications,
-        
-            -- ==============================================
-            -- IDENTITY VERIFICATION OUTCOMES
-            -- ==============================================
-        
-            -- Total Sum Counts
-            idv_data.count_pass_sum,
-            idv_data.count_newly_verified_sum,
-            idv_data.count_deadend_sum,
-            idv_data.count_friction_sum,
-            idv_data.count_abandon_sum,
-            idv_data.count_fraud_sum,
-        
-            -- Fraud Prevention: Document Fraud
-            idv_data.count_inauthentic_doc,
-            idv_data.count_facial_mismatch,
-            idv_data.count_invalid_attributes_dl_dos,
-        
-            -- Fraud Prevention: Identity Fraud
-            idv_data.count_ssn_dob_deceased,
-            idv_data.count_address_other_not_found,
-            idv_data.count_pending_lg99_likely_fraud,
-            idv_data.count_stayed_blocked,
-            idv_data.count_fraud_alert,
-        
-            -- Fraud Prevention: Phone Fraud
-            idv_data.count_suspicious_phone,
-            idv_data.count_lack_phone_ownership,
-            idv_data.count_wrong_phone_type,
-        
-            -- Fraud Prevention: IPP Fraud
-            idv_data.count_blocked_by_ipp_fraud,
-        
-            -- Fraud Prevention: Redress
-            idv_data.count_pass_via_lg99,
-        
-            -- Identity Verification: Channels
-            idv_data.count_pass_online_finalization,
-            idv_data.count_pass_ipp_online_portion,
-            idv_data.count_pass_via_letter,
-        
-            -- Identity Verification: UX Friction
-            idv_data.count_doc_auth_ux,
-            idv_data.count_selfie_ux,
-        
-            -- Identity Verification: Data Mismatch Friction
-            idv_data.count_dob_incorrect,
-            idv_data.count_ssn_incorrect,
-            idv_data.count_identity_not_found,
-        
-            -- Identity Verification: Phone Friction
-            idv_data.count_friction_during_otp,
-        
-            -- Identity Verification: Technical Issues
-            idv_data.count_doc_auth_technical_issue,
-            idv_data.count_resolution_technical_issues,
-            idv_data.count_doc_auth_processing_issue,
-        
-            -- ==============================================
-            -- AUTHENTICATION METRICS
-            -- ==============================================
-        
-            -- Authentication Success Counts
-            auth_data.count_auth_successful,
-            auth_data.count_auth_failure,
-        
-            -- Device Type Counts
-            auth_data.count_desktop_successful,
-            auth_data.count_mobile_successful,
-        
-            -- MFA Type Counts
-            auth_data.count_webauthn_platform_successful,  -- Face / Touch
-            auth_data.count_totp_successful,               -- Authenticator App
-            auth_data.count_piv_cac_successful,            -- PIV / CAC
-            auth_data.count_sms_successful,                -- SMS
-            auth_data.count_voice_successful,              -- Voice
-            auth_data.count_backup_code_successful,        -- Backup Code
-            auth_data.count_webauthn_successful,           -- Security Key
-            auth_data.count_personal_key_successful,        -- Personal Key
-        
-            -- ==============================================
-            -- ACCOUNT CREATION METRICS
-            -- ==============================================
-        
-            -- Account Creation Success Rate Components
-            acct_data.count_creation_successful,
-            acct_data.count_creation_failed,
-        
-            -- Account Creation Fraud Prevention
-            acct_data.count_registered_blocked_fraud
-        
-            -- ==============================================
-            -- MARTS TABLE JOINS
-            -- ==============================================
-            FROM active_service_providers sp
-            LEFT JOIN #{tables[:usage]} usage_data
-                ON usage_data.service_provider_id = sp.service_provider_id
-                AND usage_data.period_date_id = sp.period_date_id
-            -- NOTE: inconsistency in column names for idv table: start_service_provider_id 
-            LEFT JOIN #{tables[:idv]} idv_data
-                ON idv_data.start_service_provider_id = sp.service_provider_id
-                AND idv_data.period_date_id = sp.period_date_id
-            LEFT JOIN #{tables[:auth]} auth_data
-                ON auth_data.service_provider_id = sp.service_provider_id
-                AND auth_data.period_date_id = sp.period_date_id
-            LEFT JOIN #{tables[:account]} acct_data
-                ON acct_data.service_provider_id = sp.service_provider_id
-                AND acct_data.period_date_id = sp.period_date_id
-            ORDER BY sp.issuer;
+        SELECT *
+        FROM #{table}
+        WHERE period_date = '#{period_date}'
+          AND issuer IN (
+            SELECT issuer
+            FROM marts.service_providers
+            WHERE iaa_end_date > '#{@report_date}'::date
+              AND '#{@report_date}'::date >= launch_date
+          )
+          #{issuer_filter_clause}
+        ORDER BY issuer;
       SQL
     end
 
     def issuer_filter_clause
-      if included_issuers&.any?
-        sanitized = included_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
-        "AND sp.issuer IN (#{sanitized.join(', ')})"
-      elsif excluded_issuers.any?
-        sanitized = excluded_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
-        "AND sp.issuer NOT IN (#{sanitized.join(', ')})"
+      if @included_issuers&.any?
+        sanitized = @included_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
+        "AND issuer IN (#{sanitized.join(', ')})"
+      elsif @excluded_issuers.any?
+        sanitized = @excluded_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
+        "AND issuer NOT IN (#{sanitized.join(', ')})"
       else
         ''
       end
