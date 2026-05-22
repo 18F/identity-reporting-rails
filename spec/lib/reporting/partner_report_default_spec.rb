@@ -18,9 +18,8 @@ RSpec.describe Reporting::PartnerReportDefault do
       'service_provider_name' => 'Agency 1 Application',
       'agency_name' => 'Test Agency 1',
       'service_provider_id' => 123,
-      'report_date' => report_date,
       'period_date_id' => 20260301,
-      'period_date_actual' => period_date,
+      'period_date' => period_date,
       # Usage metrics
       'count_active_users' => 1000,
       'count_newly_created_accounts' => 50,
@@ -87,7 +86,7 @@ RSpec.describe Reporting::PartnerReportDefault do
       'service_provider_name' => nil, # Missing required field
       'agency_name' => 'Test Agency 2',
       'service_provider_id' => 456,
-      'period_date_actual' => period_date,
+      'period_date' => period_date,
       'period_date_id' => 20260301,
       'count_active_users' => 500,
     }
@@ -141,6 +140,7 @@ RSpec.describe Reporting::PartnerReportDefault do
     allow(DataWarehouseApplicationRecord.connection).to receive(:execute).and_return(
       [complete_row_data, incomplete_row_data, nil_values_row],
     )
+    allow(described_class).to receive(:get_period_date_from_report_date).and_return(period_date)
   end
 
   describe '.get_period_date_from_report_date' do
@@ -149,6 +149,8 @@ RSpec.describe Reporting::PartnerReportDefault do
     end
 
     before do
+      # Remove the default stub for these tests
+      allow(described_class).to receive(:get_period_date_from_report_date).and_call_original
       allow(DataWarehouseApplicationRecord.connection).to receive(
         :exec_query,
       ).and_return(calendar_query_result)
@@ -178,15 +180,13 @@ RSpec.describe Reporting::PartnerReportDefault do
         )
       end
 
-      it 'returns nil and logs error' do
-        expect(Rails.logger).to receive(:error).with(
-          "No calendar entry found for report_date: #{report_date}",
-        )
-        result = described_class.get_period_date_from_report_date(
-          report_date: report_date,
-          cadence: 'monthly',
-        )
-        expect(result).to be_nil
+      it 'raises StandardError' do
+        expect do
+          described_class.get_period_date_from_report_date(
+            report_date: report_date,
+            cadence: 'monthly',
+          )
+        end.to raise_error(StandardError, "No calendar entry found for report_date: #{report_date}")
       end
     end
 
@@ -196,16 +196,33 @@ RSpec.describe Reporting::PartnerReportDefault do
           and_raise(PG::UndefinedTable.new('ERROR: relation "marts.calendar" does not exist'))
       end
 
-      it 'returns nil and logs error' do
-        expect(Rails.logger).to receive(:error).with(
-          a_string_matching(/Failed to get period_date for #{report_date}, monthly:/) &
-          a_string_matching(/relation "marts\.calendar" does not exist/),
+      it 'allows error to bubble up' do
+        expect do
+          described_class.get_period_date_from_report_date(
+            report_date: report_date,
+            cadence: 'monthly',
+          )
+        end.to raise_error(PG::UndefinedTable)
+      end
+    end
+
+    context 'when period_date_actual is nil in result' do
+      before do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:exec_query).and_return(
+          double('query_result', first: { 'period_date_actual' => nil }),
         )
-        result = described_class.get_period_date_from_report_date(
-          report_date: report_date,
-          cadence: 'monthly',
+      end
+
+      it 'raises StandardError' do
+        expect do
+          described_class.get_period_date_from_report_date(
+            report_date: report_date,
+            cadence: 'monthly',
+          )
+        end.to raise_error(
+          StandardError,
+          "No period_date_actual found for report_date: #{report_date}",
         )
-        expect(result).to be_nil
       end
     end
   end
@@ -484,44 +501,40 @@ RSpec.describe Reporting::PartnerReportDefault do
           and_raise(StandardError.new('Database connection failed'))
       end
 
-      it 'logs error and re-raises' do
-        expect(Rails.logger).to receive(:error).with(
-          'Failed to fetch service provider issuer map data: Database connection failed',
+      it 'allows error to bubble up' do
+        expect { report.generate_issuer_mapping }.to raise_error(
+          StandardError, 'Database connection failed'
         )
-        expect { report.generate_issuer_mapping }.to raise_error(StandardError)
       end
     end
   end
 
   describe 'SQL query methods' do
     describe '#bulk_query' do
-      it 'includes correct table references for monthly cadence' do
+      it 'includes correct table reference and subquery for monthly cadence' do
         query = report.send(:bulk_query)
-        expect(query).to include('marts.sp_usage_metrics_monthly')
-        expect(query).to include('marts.sp_idv_outcomes_monthly')
-        expect(query).to include('marts.sp_auth_metrics_monthly')
-        expect(query).to include('marts.sp_account_creation_metrics_monthly')
+        expect(query).to include('FROM marts.sp_partner_report_metrics_monthly')
+        expect(query).to include('WHERE period_date =')
+        expect(query).to include('AND issuer IN (')
+        expect(query).to include('SELECT issuer')
+        expect(query).to include('FROM marts.service_providers')
+        expect(query).to include("iaa_end_date > '#{report_date}'::date")
+        expect(query).to include("'#{report_date}'::date >= launch_date")
       end
 
       context 'with weekly cadence' do
         let(:report_cadence) { 'weekly' }
-
-        it 'uses weekly tables' do
+        it 'uses weekly table' do
           query = report.send(:bulk_query)
-          expect(query).to include('marts.sp_usage_metrics_weekly')
-          expect(query).to include('week_start_calendar_id')
-          expect(query).to include('week_start_date_actual')
+          expect(query).to include('FROM marts.sp_partner_report_metrics_weekly')
         end
       end
 
       context 'with daily cadence' do
         let(:report_cadence) { 'daily' }
-
-        it 'uses daily tables' do
+        it 'uses daily table' do
           query = report.send(:bulk_query)
-          expect(query).to include('marts.sp_usage_metrics_daily')
-          expect(query).to include('calendar_id')
-          expect(query).to include('date_actual')
+          expect(query).to include('FROM marts.sp_partner_report_metrics_daily')
         end
       end
     end
@@ -575,11 +588,10 @@ RSpec.describe Reporting::PartnerReportDefault do
         )
       end
 
-      it 'logs error and re-raises' do
-        expect(Rails.logger).to receive(:error).with(
-          /Failed to fetch monthly partner report data: Database connection failed/,
+      it 'allows error to bubble up' do
+        expect { report.generate_reports }.to raise_error(
+          StandardError, 'Database connection failed'
         )
-        expect { report.generate_reports }.to raise_error(StandardError)
       end
     end
 
@@ -615,8 +627,8 @@ RSpec.describe Reporting::PartnerReportDefault do
         it 'generates valid SQL query' do
           query = report.send(:bulk_query)
           expect(query).to be_a(String)
-          expect(query).to include("'#{cadence}' AS cadence")
-          expect(query).to include("marts.sp_usage_metrics_#{cadence}")
+          expect(query).to include("FROM marts.sp_partner_report_metrics_#{cadence}")
+          expect(query).to include('AND issuer IN (')
         end
 
         it 'handles data correctly' do
