@@ -442,6 +442,17 @@ RSpec.describe Reports::PartnerReportDefault do
   end
 
   describe '#period_date' do
+    context 'when report_date is nil' do
+      before do
+        job.instance_variable_set(:@report_date, nil)
+      end
+      it 'raises argument error' do
+        expect { job.send(:period_date) }.to raise_error(
+          ArgumentError, 'report_date must be set before calling period_date'
+        )
+      end
+    end
+
     context 'when period_date can be retrieved' do
       before do
         # Need to set @report_date for these tests

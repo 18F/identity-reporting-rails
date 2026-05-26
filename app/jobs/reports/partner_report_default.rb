@@ -41,13 +41,13 @@ module Reports
       @report_date = report_date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
 
       Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports for report date: "\
-                      "#{report_date} (#{REPORT_CADENCE} report period starting on #{period_date})"
+                      "#{@report_date} (#{REPORT_CADENCE} report period starting on #{period_date})"
       if @included_issuers&.any?
         Rails.logger.info "Filtering to include only issuers: #{@included_issuers.join(', ')}"
       elsif @excluded_issuers&.any?
         Rails.logger.info "Filtering to exclude issuers: #{@excluded_issuers.join(', ')}"
       end
-      generate_and_upload_reports(report_date)
+      generate_and_upload_reports(@report_date)
       Rails.logger.info "Completed partner default #{REPORT_CADENCE} report"
 
       true
@@ -172,6 +172,7 @@ module Reports
     end
 
     def period_date
+      raise ArgumentError, 'report_date must be set before calling period_date' if @report_date.nil?
       @period_date ||= Reporting::PartnerReportDefault.get_period_date_from_report_date(
         report_date: @report_date,
         cadence: REPORT_CADENCE,

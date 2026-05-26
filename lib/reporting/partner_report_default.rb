@@ -25,9 +25,9 @@ module Reporting
       report_date:,
       report_cadence: 'monthly',
       included_issuers: nil,
-      excluded_issuers: []
+      excluded_issuers: nil
     )
-      @report_date = report_date.to_s # Ensure report date is a string
+      @report_date = report_date.to_s
       @report_cadence = report_cadence
       @included_issuers = included_issuers
       @excluded_issuers = excluded_issuers
@@ -190,7 +190,7 @@ module Reporting
           period_start_date: row['period_date'],
           period_calendar_id: row['period_date_id'],
           report_cadence: report_cadence,
-          report_date: @report_date,
+          report_generated_at: Time.zone.now,
         },
         data: build_data_section(row),
       }
@@ -300,7 +300,7 @@ module Reporting
       if @included_issuers&.any?
         sanitized = @included_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
         "AND issuer IN (#{sanitized.join(', ')})"
-      elsif @excluded_issuers.any?
+      elsif @excluded_issuers&.any?
         sanitized = @excluded_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
         "AND issuer NOT IN (#{sanitized.join(', ')})"
       else
