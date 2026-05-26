@@ -155,7 +155,7 @@ RSpec.describe Reports::PartnerReportDefault do
       before do
         allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(false)
       end
-      
+
       it 'logs warning and returns false' do
         expect(Rails.logger).to receive(:warn).with('Redshift SIA V3 is disabled')
         # Don't expect any error logs since this should return early
@@ -181,14 +181,14 @@ RSpec.describe Reports::PartnerReportDefault do
           with(report_date: report_date, cadence: 'monthly').
           and_raise(StandardError, 'No calendar entry found')
       end
-      
+
       it 'logs error and backtrace, then returns false' do
         expect(Rails.logger).to receive(:error).with(
           'Failed to generate partner reports: No calendar entry found',
         )
         # Also expect backtrace logging
         expect(Rails.logger).to receive(:error).with(
-          a_string_starting_with("Backtrace:")
+          a_string_starting_with('Backtrace:'),
         )
         expect(job.perform(report_date)).to eq(false)
       end
