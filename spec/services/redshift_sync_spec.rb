@@ -140,8 +140,12 @@ RSpec.describe RedshiftSync do
       {
         'name' => 'lg_users',
         'schemas' => [
-          { 'schema_name' => 'idp', 'schema_privileges' => 'USAGE', 'table_privileges' => 'SELECT' },
-          { 'schema_name' => 'logs', 'schema_privileges' => 'USAGE', 'table_privileges' => 'SELECT' },
+          { 'schema_name' => 'idp',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
+          { 'schema_name' => 'logs',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
         ],
       }
     end
