@@ -27,7 +27,7 @@ module Reports
       super(report_date, *args, **rest)
     end
 
-    def perform(date = nil)
+    def perform(report_date = nil)
       unless IdentityConfig.store.redshift_sia_v3_enabled
         Rails.logger.warn 'Redshift SIA V3 is disabled'
         return false
@@ -37,8 +37,8 @@ module Reports
         return false
       end
 
-      # Use provided date, or constructor date, or default
-      @report_date = date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
+      # Use provided report_date, or constructor date, or default
+      @report_date = report_date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
 
       Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports for report date: "\
                       "#{report_date} (#{REPORT_CADENCE} report period starting on #{period_date})"
