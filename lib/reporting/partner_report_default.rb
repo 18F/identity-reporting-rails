@@ -333,7 +333,7 @@ module Reporting
     def bulk_query
       table = CADENCE_TABLES[report_cadence]
       <<~SQL
-        SELECT *
+        SELECT #{column_list}
         FROM #{table}
         WHERE period_date = '#{period_date}'
           AND issuer IN (
@@ -345,6 +345,20 @@ module Reporting
           #{issuer_filter_clause}
         ORDER BY issuer;
       SQL
+    end
+
+    def column_list
+      base_columns = %w[
+        issuer
+        service_provider_name
+        agency_name
+        service_provider_id
+        period_date
+        period_date_id
+      ]
+
+      all_columns = base_columns + INTEGER_DATA_FIELDS
+      all_columns.join(', ')
     end
 
     def issuer_filter_clause
