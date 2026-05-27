@@ -12,6 +12,7 @@ RSpec.describe Reporting::PartnerReportDefault do
   let(:issuer3) { 'urn:gov:gsa:openidconnect.profiles:sp:test:agency3' }
 
   # Sample complete row data with new column names
+  # Note - this does not contain every field, but that isn't important for tests
   let(:complete_row_data) do
     {
       'issuer' => issuer1,

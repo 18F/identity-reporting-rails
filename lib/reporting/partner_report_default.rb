@@ -209,31 +209,82 @@ module Reporting
       count_friction_sum
       count_abandon_sum
       count_fraud_sum
+      count_stage_onboarding
+      count_skip_preverified_onboarding
+      count_skip_crossed_onboarding
+      count_pass_onboarding
+      count_abandon_welcome
+      count_abandon_consent
+      count_lack_evidence_onboarding
+      count_stage_document_authentication
+      count_skip_preverified_document_auth
+      count_skip_crossed_document_auth
+      count_pass_online_document_auth
+      count_pass_ipp_online_portion
       count_inauthentic_doc
       count_facial_mismatch
+      count_expired_doc_likely_fraud
+      count_doc_auth_wrong_type
+      count_lack_evidence_document_auth
+      count_expired_doc
+      count_doc_auth_ux
+      count_false_rejection_inauthentic_doc
+      count_selfie_ux
+      count_doc_auth_technical_issue
+      count_doc_auth_processing_issue
+      count_abandon_document_auth
+      count_stage_identity_resolution
+      count_skip_preverified_identity
+      count_skip_crossed_identity
+      count_pass_online_identity
       count_invalid_attributes_dl_dos
       count_ssn_dob_deceased
-      count_address_other_not_found
-      count_pending_lg99_likely_fraud
-      count_stayed_blocked
       count_fraud_alert
+      count_invalid_ssn_fraud
+      count_invalid_dob_fraud
+      count_invalid_address_fraud
+      count_dl_dos_incorrect
+      count_abandon_dl_dos_validation
+      count_identity_not_found
+      count_false_rejection_ssn_incorrect
+      count_false_rejection_dob_incorrect
+      count_false_rejection_invalid_attributes_dl_dos
+      count_false_rejection_address_other_not_found
+      count_address_other_not_found
+      count_ssn_incorrect
+      count_dob_incorrect
+      count_resolution_technical_issues
+      count_abandon_ssn_page
+      count_abandon_review_page
+      count_false_rejection_ssn_dob_deceased
+      count_stage_address_verification
+      count_skip_preverified_address
+      count_skip_crossed_address
+      count_pass_online_address
+      count_pass_via_letter
       count_suspicious_phone
       count_lack_phone_ownership
       count_wrong_phone_type
-      count_blocked_by_ipp_fraud
-      count_pass_via_lg99
-      count_pass_online_finalization
-      count_pass_ipp_online_portion
-      count_pass_via_letter
-      count_doc_auth_ux
-      count_selfie_ux
-      count_dob_incorrect
-      count_ssn_incorrect
-      count_identity_not_found
+      count_false_rejection_phone_ownership
+      count_false_rejection_wrong_phone_type
       count_friction_during_otp
-      count_doc_auth_technical_issue
-      count_resolution_technical_issues
-      count_doc_auth_processing_issue
+      count_letter_pending
+      count_abandon_no_attempt
+      count_abandon_no_otp
+      count_stage_finalization
+      count_skip_preverified_finalization
+      count_skip_crossed_finalization
+      count_pass_online_finalization
+      count_pass_ipp
+      count_pass_via_lg99
+      count_stayed_blocked
+      count_blocked_by_ipp_fraud
+      count_pending_lg99_likely_fraud
+      count_pending_ipp
+      count_pending_lg99
+      count_abandon_handoff
+      count_abandon_personal
+      count_abandon_reenter
       count_auth_successful
       count_auth_failure
       count_desktop_successful
