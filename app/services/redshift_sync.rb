@@ -416,7 +416,8 @@ class RedshiftSync
       feature_enabled?(s.fetch('feature_flag', nil))
     end
 
-    schemas_to_revoke = get_existing_configured_schemas
+    active_schema_names = active_schemas.map { |s| s['schema_name'] }
+    schemas_to_revoke = get_existing_configured_schemas - active_schema_names
 
     revoke_statements = schemas_to_revoke.map do |schema_name|
       revoke_all_privileges_for_group(user_group['name'], schema_name)

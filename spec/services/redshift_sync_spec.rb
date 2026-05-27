@@ -135,6 +135,41 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe '#create_schema_privileges_for_group' do
+    let(:user_group) do
+      {
+        'name' => 'lg_users',
+        'schemas' => [
+          { 'schema_name' => 'idp',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
+          { 'schema_name' => 'logs',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
+        ],
+      }
+    end
+    let(:executed_sql) { [] }
+
+    before do
+      allow(sync).to receive(:get_existing_configured_schemas).and_return(%w[idp logs marts])
+      allow(mock_connection).to receive(:execute) do |sql|
+        executed_sql << sql
+        double(any?: true)
+      end
+    end
+
+    it 'revokes only schemas the group should not have' do
+      sync.send(:create_schema_privileges_for_group, user_group)
+
+      sql = executed_sql.join("\n")
+      expect(sql).not_to include('REVOKE ALL ON SCHEMA idp FROM GROUP lg_users')
+      expect(sql).not_to include('REVOKE ALL ON SCHEMA logs FROM GROUP lg_users')
+      expect(sql).to include('REVOKE ALL ON SCHEMA marts FROM GROUP lg_users')
+      expect(sql).to include('GRANT USAGE ON SCHEMA idp TO GROUP lg_users')
+    end
+  end
+
   describe 'SQL generation for user groups' do
     it 'generates correct privilege SQL with restricted tables' do
       sql = sync.send(
