@@ -330,3 +330,12 @@ system_users:
         feature_flag:
           - fraud_ops_tracker_enabled
           - dw_fraudops_email_enabled
+
+user_roles:
+  - role_name: dw_ingestion
+    users:
+      - rails_worker
+      - superuser
+      - "IAMR:%{env_name}_db_consumption"
+      - "IAMR:%{env_name}_log_consumption"
+      - "IAMR:%{env_name}_stale_data_check"
