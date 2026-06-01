@@ -2,7 +2,6 @@
 
 require 'csv'
 require 'json'
-require 'set'
 
 module Reporting
   class IdentityVerificationReport
@@ -30,6 +29,7 @@ module Reporting
     end
 
     module Results
+      # rubocop:disable Layout/LineLength
       IDV_FINAL_RESOLUTION_VERIFIED = 'IdV: final resolution - Verified'
       IDV_FINAL_RESOLUTION_FRAUD_REVIEW = 'IdV: final resolution - Fraud Review Pending'
       IDV_FINAL_RESOLUTION_GPO = 'IdV: final resolution - GPO Pending'
@@ -42,6 +42,7 @@ module Reporting
       IDV_REJECT_DOC_AUTH = 'IdV Reject: Doc Auth'
       IDV_REJECT_VERIFY = 'IdV Reject: Verify'
       IDV_REJECT_PHONE_FINDER = 'IdV Reject: Phone Finder'
+      # rubocop:enable Layout/LineLength
     end
 
     EVENTS_TO_IGNORE_IF_FRAUD_REVIEW_PENDING = [
@@ -78,13 +79,25 @@ module Reporting
       csv << []
       csv << ['Workflow completed', idv_final_resolution]
       csv << ['Workflow completed - With Phone Number', idv_final_resolution_verified]
-      csv << ['Workflow completed - With Phone Number - Fraud Review', idv_final_resolution_fraud_review]
+      csv << [
+        'Workflow completed - With Phone Number - Fraud Review',
+        idv_final_resolution_fraud_review,
+      ]
       csv << ['Workflow completed - GPO Pending', idv_final_resolution_gpo]
-      csv << ['Workflow completed - GPO Pending - Fraud Review', idv_final_resolution_gpo_fraud_review]
+      csv << [
+        'Workflow completed - GPO Pending - Fraud Review',
+        idv_final_resolution_gpo_fraud_review,
+      ]
       csv << ['Workflow completed - In-Person Pending', idv_final_resolution_in_person]
-      csv << ['Workflow completed - In-Person Pending - Fraud Review', idv_final_resolution_in_person_fraud_review]
+      csv << [
+        'Workflow completed - In-Person Pending - Fraud Review',
+        idv_final_resolution_in_person_fraud_review,
+      ]
       csv << ['Workflow completed - GPO + In-Person Pending', idv_final_resolution_gpo_in_person]
-      csv << ['Workflow completed - GPO + In-Person Pending - Fraud Review', idv_final_resolution_gpo_in_person_fraud_review]
+      csv << [
+        'Workflow completed - GPO + In-Person Pending - Fraud Review',
+        idv_final_resolution_gpo_in_person_fraud_review,
+      ]
       csv << []
       csv << ['Fraud review rejected', idv_fraud_rejected]
       csv << ['Successfully Verified', successfully_verified_users]
@@ -93,8 +106,14 @@ module Reporting
       csv << ['Successfully Verified - In Person', usps_enrollment_status_updated]
       csv << ['Successfully Verified - Passed fraud review', fraud_review_passed]
       csv << ['Blanket Proofing Rate (IDV Started to Successfully Verified)', blanket_proofing_rate]
-      csv << ['Intent Proofing Rate (Welcome Submitted to Successfully Verified)', intent_proofing_rate]
-      csv << ['Actual Proofing Rate (Image Submitted to Successfully Verified)', actual_proofing_rate]
+      csv << [
+        'Intent Proofing Rate (Welcome Submitted to Successfully Verified)',
+        intent_proofing_rate,
+      ]
+      csv << [
+        'Actual Proofing Rate (Image Submitted to Successfully Verified)',
+        actual_proofing_rate,
+      ]
       csv << ['Industry Proofing Rate (Verified minus IDV Rejected)', industry_proofing_rate]
     end
 
@@ -111,7 +130,9 @@ module Reporting
           [time_range.begin, other.time_range.begin].min,
           [time_range.end, other.time_range.end].max,
         ),
-        data: data.merge(other.data) { |_event, old_user_ids, new_user_ids| old_user_ids + new_user_ids },
+        data: data.merge(other.data) do |_event, old_user_ids, new_user_ids|
+          old_user_ids + new_user_ids
+        end,
       )
     end
 
@@ -129,7 +150,10 @@ module Reporting
     end
 
     def industry_proofing_rate
-      safely_divide(successfully_verified_users, successfully_verified_users + idv_doc_auth_rejected)
+      safely_divide(
+        successfully_verified_users,
+        successfully_verified_users + idv_doc_auth_rejected,
+      )
     end
 
     def idv_final_resolution
@@ -188,13 +212,17 @@ module Reporting
       return users if issuers.blank?
 
       users_with_events_for_any_issuer =
-        issuers.each_with_object(Set.new) { |issuer, accumulated| accumulated.merge(data[sp_key(issuer)]) }
+        issuers.each_with_object(Set.new) do |issuer, accumulated|
+          accumulated.merge(data[sp_key(issuer)])
+        end
 
       users & users_with_events_for_any_issuer
     end
 
     def did_not_pass_fraud_review_users
-      result = data[Events::FRAUD_REVIEW_REJECT_AUTOMATIC] + data[Events::FRAUD_REVIEW_REJECT_MANUAL]
+      result =
+        data[Events::FRAUD_REVIEW_REJECT_AUTOMATIC] +
+        data[Events::FRAUD_REVIEW_REJECT_MANUAL]
 
       issuers&.each do |issuer|
         result &= data[sp_key(issuer)]
@@ -214,7 +242,10 @@ module Reporting
     end
 
     def idv_started
-      @idv_started ||= (data[Events::IDV_DOC_AUTH_WELCOME] + data[Events::IDV_DOC_AUTH_GETTING_STARTED]).count
+      @idv_started ||= (
+        data[Events::IDV_DOC_AUTH_WELCOME] +
+        data[Events::IDV_DOC_AUTH_GETTING_STARTED]
+      ).count
     end
 
     def idv_doc_auth_image_vendor_submitted
@@ -253,6 +284,7 @@ module Reporting
       end
     end
 
+    # rubocop:disable Metrics/BlockLength
     def data
       @data ||= begin
         users = Hash.new { |h, event_name| h[event_name] = Set.new }
@@ -265,7 +297,8 @@ module Reporting
           event_properties = extract_event_properties(row['message'])
           success = event_success(row, event_properties)
           gpo_verification_pending = true_value?(event_properties['gpo_verification_pending'])
-          in_person_verification_pending = true_value?(event_properties['in_person_verification_pending'])
+          in_person_verification_pending =
+            true_value?(event_properties['in_person_verification_pending'])
           fraud_review_pending = fraud_review_pending?(event_properties)
           has_other_deactivation_reason = event_properties['deactivation_reason'].present?
           profile_not_pending =
@@ -275,18 +308,23 @@ module Reporting
             !has_other_deactivation_reason
           service_provider = row['service_provider'].presence || event_properties['issuer']
 
-          if event == Events::USPS_ENROLLMENT_STATUS_UPDATED && !true_value?(event_properties['passed'])
+          if event == Events::USPS_ENROLLMENT_STATUS_UPDATED &&
+             !true_value?(event_properties['passed'])
             next
           end
 
-          if [Events::GPO_VERIFICATION_SUBMITTED, Events::GPO_VERIFICATION_SUBMITTED_OLD].include?(event)
+          if [
+            Events::GPO_VERIFICATION_SUBMITTED,
+            Events::GPO_VERIFICATION_SUBMITTED_OLD,
+          ].include?(event)
             next if !success || true_value?(event_properties['pending_in_person_enrollment'])
           end
 
           next if event == Events::FRAUD_REVIEW_PASSED && !success
 
           if issuers.present?
-            tagged_event_for_issuer = service_provider.present? && issuers.include?(service_provider)
+            tagged_event_for_issuer =
+              service_provider.present? && issuers.include?(service_provider)
             next if !tagged_event_for_issuer && !FRAUD_EVENT_NAMES.include?(event)
           end
 
@@ -304,16 +342,26 @@ module Reporting
               users[Results::IDV_FINAL_RESOLUTION_FRAUD_REVIEW] << user_id if fraud_review_pending
             elsif gpo_verification_pending && !in_person_verification_pending
               users[Results::IDV_FINAL_RESOLUTION_GPO] << user_id unless fraud_review_pending
-              users[Results::IDV_FINAL_RESOLUTION_GPO_FRAUD_REVIEW] << user_id if fraud_review_pending
+              if fraud_review_pending
+                users[Results::IDV_FINAL_RESOLUTION_GPO_FRAUD_REVIEW] << user_id
+              end
             elsif !gpo_verification_pending && in_person_verification_pending
               users[Results::IDV_FINAL_RESOLUTION_IN_PERSON] << user_id unless fraud_review_pending
-              users[Results::IDV_FINAL_RESOLUTION_IN_PERSON_FRAUD_REVIEW] << user_id if fraud_review_pending
+              if fraud_review_pending
+                users[Results::IDV_FINAL_RESOLUTION_IN_PERSON_FRAUD_REVIEW] << user_id
+              end
             elsif gpo_verification_pending && in_person_verification_pending
-              users[Results::IDV_FINAL_RESOLUTION_GPO_IN_PERSON] << user_id unless fraud_review_pending
-              users[Results::IDV_FINAL_RESOLUTION_GPO_IN_PERSON_FRAUD_REVIEW] << user_id if fraud_review_pending
+              unless fraud_review_pending
+                users[Results::IDV_FINAL_RESOLUTION_GPO_IN_PERSON] << user_id
+              end
+              if fraud_review_pending
+                users[Results::IDV_FINAL_RESOLUTION_GPO_IN_PERSON_FRAUD_REVIEW] << user_id
+              end
             end
           when Events::IDV_DOC_AUTH_IMAGE_UPLOAD
-            users[Results::IDV_REJECT_DOC_AUTH] << user_id if doc_auth_failed_non_fraud?(event_properties, success)
+            if doc_auth_failed_non_fraud?(event_properties, success)
+              users[Results::IDV_REJECT_DOC_AUTH] << user_id
+            end
           when Events::IDV_DOC_AUTH_VERIFY_RESULTS
             users[Results::IDV_REJECT_VERIFY] << user_id unless success
           when Events::IDV_PHONE_FINDER_RESULTS
@@ -324,6 +372,7 @@ module Reporting
         users
       end
     end
+    # rubocop:enable Metrics/BlockLength
 
     def fetch_results
       connection.execute(query).to_a
@@ -334,10 +383,14 @@ module Reporting
     def query
       conditions = []
       conditions << "name in (#{quoted(Events.all_events)})"
-      conditions << "cloudwatch_timestamp between #{connection.quote(time_range.begin)} and #{connection.quote(time_range.end)}"
+      conditions <<
+        "cloudwatch_timestamp between #{connection.quote(time_range.begin)} " \
+        "and #{connection.quote(time_range.end)}"
 
       if issuers.present?
-        conditions << "(service_provider in (#{quoted(issuers)}) OR name in (#{quoted(FRAUD_EVENT_NAMES)}))"
+        conditions <<
+          "(service_provider in (#{quoted(issuers)}) " \
+          "OR name in (#{quoted(FRAUD_EVENT_NAMES)}))"
       end
 
       <<~SQL

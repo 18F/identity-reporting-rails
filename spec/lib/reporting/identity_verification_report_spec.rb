@@ -2,11 +2,20 @@ require 'rails_helper'
 require 'reporting/identity_verification_report'
 
 RSpec.describe Reporting::IdentityVerificationReport do
-  let(:time_range) { Time.zone.parse('2026-05-01 00:00:00 UTC')..Time.zone.parse('2026-05-31 23:59:59 UTC') }
+  let(:time_range) do
+    Time.zone.parse('2026-05-01 00:00:00 UTC')..
+      Time.zone.parse('2026-05-31 23:59:59 UTC')
+  end
 
   subject(:report) { described_class.new(issuers: nil, time_range: time_range) }
 
-  def create_event(user_id:, name:, service_provider: nil, event_properties: {}, cloudwatch_timestamp: time_range.begin + 1.day)
+  def create_event(
+    user_id:,
+    name:,
+    service_provider: nil,
+    event_properties: {},
+    cloudwatch_timestamp: time_range.begin + 1.day
+  )
     message_payload = {
       'properties' => {
         'user_id' => user_id,
@@ -55,7 +64,10 @@ RSpec.describe Reporting::IdentityVerificationReport do
         'doc_auth_result' => 'SomeOtherFailure',
       },
     )
-    create_event(user_id: 'u2', name: described_class::Events::IDV_DOC_AUTH_SOCURE_VERIFICATION_DATA)
+    create_event(
+      user_id: 'u2',
+      name: described_class::Events::IDV_DOC_AUTH_SOCURE_VERIFICATION_DATA,
+    )
     create_event(
       user_id: 'u2',
       name: described_class::Events::IDV_FINAL_RESOLUTION,
