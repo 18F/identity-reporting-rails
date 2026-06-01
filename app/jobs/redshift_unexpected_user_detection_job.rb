@@ -17,7 +17,6 @@ class RedshiftUnexpectedUserDetectionJob < ApplicationJob
     'postgres',
     'security_audit',
     'quicksight_connector',
-    'idp_connector',
     'marts',
     'qa_marts',
     'rails_worker',
