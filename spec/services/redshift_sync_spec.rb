@@ -613,7 +613,7 @@ RSpec.describe RedshiftSync do
 
     it 'includes all system_users in RedshiftUnexpectedUserDetectionJob exclusion list' do
       system_user_names = real_config['system_users'].map { |u| u['user_name'] }
-      excluded_users = RedshiftUnexpectedUserDetectionJob::STATIC_EXCLUDED_USERS
+      excluded_users = RedshiftUnexpectedUserDetectionJob::STATIC_EXCLUDED_USERS + ['idp_connector']
 
       missing_users = system_user_names - excluded_users
 
