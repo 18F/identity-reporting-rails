@@ -8,6 +8,23 @@ require 'yaml'
 class RedshiftUnexpectedUserDetectionJob < ApplicationJob
   queue_as :default
 
+  # System users that should be excluded from unexpected user detection
+  # These are defined in config/redshift_config.yaml under system_users
+  STATIC_EXCLUDED_USERS = [
+    'rdsdb',
+    'rdsadmin',
+    'superuser',
+    'postgres',
+    'security_audit',
+    'quicksight_connector',
+    'marts',
+    'qa_marts',
+    'rails_worker',
+    'fraudops_marts',
+    'fraudops_qa_marts',
+    'pii_reader',
+  ].freeze
+
   def perform(user_config_path = nil)
     @user_config_path = set_user_config_path(user_config_path)
     log_unexpected_local_users
@@ -34,10 +51,11 @@ class RedshiftUnexpectedUserDetectionJob < ApplicationJob
   end
 
   def local_users_query
+    excluded_list = STATIC_EXCLUDED_USERS.map { |user| "'#{user}'" }.join(', ')
     <<~SQL
       SELECT usename
       FROM pg_user
-      WHERE usename NOT IN ('rdsdb', 'rdsadmin', 'superuser', 'postgres', 'security_audit', 'quicksight_connector', 'marts', 'qa_marts', 'rails_worker')
+      WHERE usename NOT IN (#{excluded_list})
     SQL
   end
 
