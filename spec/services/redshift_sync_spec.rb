@@ -610,5 +610,25 @@ RSpec.describe RedshiftSync do
 
       expect(invalid_references).to be_empty, error_message
     end
+
+    it 'includes all system_users in RedshiftUnexpectedUserDetectionJob exclusion list' do
+      system_user_names = real_config['system_users'].map { |u| u['user_name'] }
+      excluded_users = RedshiftUnexpectedUserDetectionJob::STATIC_EXCLUDED_USERS
+
+      missing_users = system_user_names - excluded_users
+
+      error_message = [
+        'RedshiftUnexpectedUserDetectionJob::STATIC_EXCLUDED_USERS is missing system users!',
+        '',
+        'The following users from redshift_config.yaml system_users are NOT in ' \
+          'STATIC_EXCLUDED_USERS:',
+        missing_users.map { |u| "  - #{u}" }.join("\n"),
+        '',
+        'Add these to STATIC_EXCLUDED_USERS in app/jobs/redshift_unexpected_user_detection_job.rb',
+        'to prevent false alarms when these users are created by the sync script.',
+      ].join("\n")
+
+      expect(missing_users).to be_empty, error_message
+    end
   end
 end
