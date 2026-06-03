@@ -153,23 +153,14 @@ module Reporting
     # Ruby processing: Group by state and count
     def state_counts
       counts = Hash.new(0)
-      blank_states = 0
 
       user_data.each do |row|
         state = row['state']&.upcase
         if state.blank?
-          blank_states += 1
-          next
+          next # Expected for non-trivial amount of users verifying with passport
         end
 
         counts[state] += 1
-      end
-
-      # Log potential data quality issues
-      total_records = user_data.length
-      if blank_states > 0
-        Rails.logger.warn "Demographics state data quality: #{total_records} total records, " \
-                          "#{blank_states} with blank/nil state"
       end
 
       counts.sort.to_h
