@@ -9,8 +9,11 @@ module Reports
   class DemographicsMetricsReport < BaseReport
     include Reporting::IssuerStringToSpIdHelper
 
-    DATA_LAG_DAYS = 2 # 2 day lag to account for data sync delay into DW
-    DEFAULT_LOOK_BACK_DAYS = 4 # Cron job runs on 3rd, looks back 4 days
+    # Demographics report pull from logs data, which should replicate very quickly
+    # into data warehouse. Thus, there is no data lag to account for and look back
+    # days are 2
+    DATA_LAG_DAYS = 0 # 0 day lag to account for no data modeling delay into DW - log data
+    DEFAULT_LOOK_BACK_DAYS = 4 # Cron job runs on 1st, looks back 2 days
     SCHEMA_CUTOFF_DATE = Date.new(2025, 10, 1).freeze
     attr_reader :run_date, :days_back_for_time_period, :time_frame
 
@@ -101,7 +104,7 @@ module Reports
       # Get service provider ID for this issuer (from IssuerStringToSpIdHelper)
       sp_id = get_sp_id_for_issuer(issuer_string)
       unless sp_id
-        raise ArgumentError, "No service provider ID found for issuer: #{issuer_string}"
+        raise StandardError, "No service provider ID found for issuer: #{issuer_string}"
       end
 
       # Generate reports for this single issuer
@@ -161,6 +164,8 @@ module Reports
 
     # True (External) when quarter has ended + lag has passed
     # I.e. True if March 31st < April 6th - DATA_LAG_DAYS
+    # Note, as mentioned before, data_lag_days is irrelevant in this report
+    # because we are pulling log data with minimal data modeling delay
     def external_report?
       report_time_range.end.to_date < Date.current - DATA_LAG_DAYS.days
     end

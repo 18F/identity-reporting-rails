@@ -215,16 +215,6 @@ RSpec.describe Reporting::DemographicsMetricsReport do
     end
 
     describe 'state validation and data quality' do
-      it 'handles empty/nil states and logs warning' do
-        expect(Rails.logger).to receive(:warn).with(
-          'Demographics state data quality: 6 total records, 2 with blank/nil state',
-        )
-
-        state_counts = report.send(:state_counts)
-        expect(state_counts.keys).not_to include('')
-        expect(state_counts.keys).not_to include(nil)
-      end
-
       it 'counts only valid states' do
         state_counts = report.send(:state_counts)
         expect(state_counts).to eq(

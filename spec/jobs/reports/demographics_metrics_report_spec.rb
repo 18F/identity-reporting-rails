@@ -281,7 +281,7 @@ RSpec.describe Reports::DemographicsMetricsReport do
         ).and_return(nil)
       end
 
-      it 'raises ArgumentError and logs failure' do
+      it 'raises StandardError and logs failure' do
         expect(Rails.logger).to receive(:error).with(
           /Failed to generate demographics report for issuer.*No service provider ID found/,
         )
