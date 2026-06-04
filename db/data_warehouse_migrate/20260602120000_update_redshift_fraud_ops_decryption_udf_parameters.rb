@@ -11,6 +11,10 @@ class UpdateRedshiftFraudOpsDecryptionUdfParameters < ActiveRecord::Migration[7.
 
         dir.up do
           execute <<~SQL
+            DROP FUNCTION IF EXISTS fraudops.decrypt_udf(varchar);
+          SQL
+
+          execute <<~SQL
             CREATE OR REPLACE EXTERNAL FUNCTION fraudops.decrypt_udf (encrypted_value varchar, id bigint)
             RETURNS varchar(2048) STABLE
             LAMBDA '#{lambda_name}'
@@ -19,6 +23,10 @@ class UpdateRedshiftFraudOpsDecryptionUdfParameters < ActiveRecord::Migration[7.
         end
 
         dir.down do
+          execute <<~SQL
+            DROP FUNCTION IF EXISTS fraudops.decrypt_udf(varchar, bigint);
+          SQL
+
           execute <<~SQL
             CREATE OR REPLACE EXTERNAL FUNCTION fraudops.decrypt_udf (encrypted_value varchar)
             RETURNS varchar(2048) STABLE
