@@ -83,6 +83,8 @@ class FraudOpsPiiDecryptJob < ApplicationJob
       decrypted_events << {
         event_key: row['event_key'],
         message: decrypted,
+        user_id: decrypted[:user_uuid],
+        event_timestamp: decrypted[:occurred_at] && Time.zone.at(decrypted[:occurred_at]),
       }
       successful_ids << row['event_key']
     end
@@ -94,16 +96,21 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     return if decrypted_events.empty?
 
     value_fragment = using_redshift_adapter? ?
-      '(?, JSON_PARSE(?), CURRENT_TIMESTAMP)' :
-      '(?, ?::jsonb, CURRENT_TIMESTAMP)'
+      '(?, JSON_PARSE(?), ?, ?, CURRENT_TIMESTAMP)' :
+      '(?, ?::jsonb, ?, ?, CURRENT_TIMESTAMP)'
     placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
 
     values = decrypted_events.flat_map do |event|
-      [event[:event_key], JSON.generate(event[:message])]
+      [
+        event[:event_key],
+        JSON.generate(event[:message]),
+        event[:user_id],
+        event[:event_timestamp],
+      ]
     end
 
     insert_sql = <<~SQL.squish
-      INSERT INTO fraudops.frd_events (event_key, message, dw_created_at)
+      INSERT INTO fraudops.frd_events (event_key, message, user_id, event_timestamp, dw_created_at)
       VALUES #{placeholders}
     SQL
 

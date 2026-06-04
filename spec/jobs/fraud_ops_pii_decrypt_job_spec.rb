@@ -5,7 +5,14 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
   let(:private_key) { OpenSSL::PKey::RSA.generate(2048) }
   let(:private_key_pem) { private_key.to_pem }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
-  let(:sample_event_data) { { user_id: 123, action: 'login' } }
+  let(:sample_event_data) do
+    {
+      user_uuid: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+      occurred_at: 1_758_178_500.6519334,
+      action: 'login',
+    }
+  end
+  let(:sample_event_timestamp) { Time.zone.at(sample_event_data[:occurred_at]) }
   let(:encrypted_message) { 'encrypted_data_string' }
   let(:batch_size) { 1000 }
 
@@ -156,8 +163,18 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
   describe '#process_encrypted_events_bulk' do
     let(:decrypted_events) do
       [
-        { event_key: 'event_1', message: sample_event_data },
-        { event_key: 'event_2', message: sample_event_data },
+        {
+          event_key: 'event_1',
+          message: sample_event_data,
+          user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+          event_timestamp: sample_event_timestamp,
+        },
+        {
+          event_key: 'event_2',
+          message: sample_event_data,
+          user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+          event_timestamp: sample_event_timestamp,
+        },
       ]
     end
     let(:successful_ids) { ['event_1', 'event_2'] }
@@ -245,8 +262,18 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
         expect(decrypted).to eq(
           [
-            { event_key: 'event_1', message: sample_event_data },
-            { event_key: 'event_2', message: sample_event_data },
+            {
+              event_key: 'event_1',
+              message: sample_event_data,
+              user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+              event_timestamp: sample_event_timestamp,
+            },
+            {
+              event_key: 'event_2',
+              message: sample_event_data,
+              user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+              event_timestamp: sample_event_timestamp,
+            },
           ],
         )
         expect(ids).to eq(['event_1', 'event_2'])
@@ -263,7 +290,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
         expect(decrypted).to eq(
           [
-            { event_key: 'event_1', message: sample_event_data },
+            {
+              event_key: 'event_1',
+              message: sample_event_data,
+              user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+              event_timestamp: sample_event_timestamp,
+            },
           ],
         )
         expect(ids).to eq(['event_1'])
@@ -274,8 +306,18 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
   describe '#bulk_insert_decrypted_events' do
     let(:decrypted_events) do
       [
-        { event_key: 'event_1', message: sample_event_data },
-        { event_key: 'event_2', message: sample_event_data },
+        {
+          event_key: 'event_1',
+          message: sample_event_data,
+          user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+          event_timestamp: sample_event_timestamp,
+        },
+        {
+          event_key: 'event_2',
+          message: sample_event_data,
+          user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+          event_timestamp: sample_event_timestamp,
+        },
       ]
     end
 
@@ -293,7 +335,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses jsonb cast in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ event_timestamp,\ dw_created_at\)
                       \s*VALUES.*::jsonb}x
 
         expect(mock_connection).to receive(:execute).
@@ -316,7 +358,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ event_timestamp,\ dw_created_at\)
                       \s*VALUES.*JSON_PARSE}x
 
         expect(mock_connection).to receive(:execute).
