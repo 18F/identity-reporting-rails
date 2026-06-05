@@ -5,14 +5,24 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
   let(:private_key) { OpenSSL::PKey::RSA.generate(2048) }
   let(:private_key_pem) { private_key.to_pem }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
-  let(:sample_event_data) do
+  let(:sample_event_payload) do
     {
-      user_uuid: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
-      occurred_at: 1_758_178_500.6519334,
-      action: 'login',
+      occurred_at: 1_780_602_749.2548823,
+      user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
+      user_id: 1,
+      success: true,
     }
   end
-  let(:sample_event_timestamp) { Time.zone.at(sample_event_data[:occurred_at]) }
+  let(:sample_event_data) do
+    {
+      jti: '0fe9fb5e-a252-401f-bdb6-487713dc228f',
+      events: {
+        :'https://schemas.login.gov/secevent/attempts-api/event-type/login-email-and-password-auth' =>
+          sample_event_payload,
+      },
+    }
+  end
+  let(:sample_event_timestamp) { Time.zone.at(sample_event_payload[:occurred_at]) }
   let(:encrypted_message) { 'encrypted_data_string' }
   let(:batch_size) { 1000 }
 
@@ -166,13 +176,15 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
         {
           event_key: 'event_1',
           message: sample_event_data,
-          user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+          user_id: 1,
+          user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
         },
         {
           event_key: 'event_2',
           message: sample_event_data,
-          user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+          user_id: 1,
+          user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
         },
       ]
@@ -265,13 +277,15 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
             {
               event_key: 'event_1',
               message: sample_event_data,
-              user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+              user_id: 1,
+              user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
             },
             {
               event_key: 'event_2',
               message: sample_event_data,
-              user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+              user_id: 1,
+              user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
             },
           ],
@@ -293,7 +307,8 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
             {
               event_key: 'event_1',
               message: sample_event_data,
-              user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+              user_id: 1,
+              user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
             },
           ],
@@ -309,13 +324,15 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
         {
           event_key: 'event_1',
           message: sample_event_data,
-          user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+          user_id: 1,
+          user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
         },
         {
           event_key: 'event_2',
           message: sample_event_data,
-          user_id: 'ff0af8d5-8a29-40b4-85c4-60b2e1709d50',
+          user_id: 1,
+          user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
         },
       ]
@@ -335,7 +352,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses jsonb cast in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ user_id,\ event_timestamp,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,\ dw_created_at\)
                       \s*VALUES.*::jsonb}x
 
         expect(mock_connection).to receive(:execute).
@@ -358,7 +375,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ user_id,\ event_timestamp,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,\ dw_created_at\)
                       \s*VALUES.*JSON_PARSE}x
 
         expect(mock_connection).to receive(:execute).
@@ -411,6 +428,17 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
         job.send(:bulk_update_processed_timestamp, [])
       end
+    end
+  end
+
+  describe '#event_payload' do
+    it 'extracts fields from the nested events hash' do
+      expect(job.send(:event_payload, sample_event_data)).to eq(sample_event_payload)
+    end
+
+    it 'falls back to the top-level payload when events is missing' do
+      flat_payload = { user_uuid: 'flat-uuid', occurred_at: 1_780_602_749.0 }
+      expect(job.send(:event_payload, flat_payload)).to eq(flat_payload)
     end
   end
 

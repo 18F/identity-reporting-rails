@@ -4,18 +4,22 @@ class AddUserIdAndEventTimestampToFrdEvents < ActiveRecord::Migration[8.0]
       dir.up do
         if using_redshift_adapter?
           execute 'ALTER TABLE fraudops.frd_events ADD COLUMN user_id VARCHAR(256);'
+          execute 'ALTER TABLE fraudops.frd_events ADD COLUMN user_uuid VARCHAR(256);'
           execute 'ALTER TABLE fraudops.frd_events ADD COLUMN event_timestamp TIMESTAMP;'
         elsif table_exists?('frd_events')
           execute 'ALTER TABLE frd_events ADD COLUMN user_id VARCHAR(256);'
+          execute 'ALTER TABLE frd_events ADD COLUMN user_uuid VARCHAR(256);'
           execute 'ALTER TABLE frd_events ADD COLUMN event_timestamp TIMESTAMP;'
         end
       end
       dir.down do
         if using_redshift_adapter?
           execute 'ALTER TABLE fraudops.frd_events DROP COLUMN event_timestamp;'
+          execute 'ALTER TABLE fraudops.frd_events DROP COLUMN user_uuid;'
           execute 'ALTER TABLE fraudops.frd_events DROP COLUMN user_id;'
         elsif table_exists?('frd_events')
           execute 'ALTER TABLE frd_events DROP COLUMN event_timestamp;'
+          execute 'ALTER TABLE frd_events DROP COLUMN user_uuid;'
           execute 'ALTER TABLE frd_events DROP COLUMN user_id;'
         end
       end
