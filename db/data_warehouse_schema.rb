@@ -101,7 +101,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
     t.datetime "dw_created_at", precision: nil
     t.datetime "event_timestamp", precision: nil
     t.jsonb "message"
-    t.string "user_id", limit: 256
+    t.bigint "user_id"
     t.string "user_uuid", limit: 256
   end
 
