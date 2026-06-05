@@ -12,6 +12,7 @@
 
 ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
   create_schema "fraudops"
+  create_schema "idp"
   create_schema "logs"
   create_schema "marts"
   create_schema "qa_marts"
@@ -87,6 +88,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
   create_table "logs.unextracted_production", id: false, force: :cascade do |t|
     t.datetime "cloudwatch_timestamp", precision: nil
     t.jsonb "message"
+  end
+
+  create_table "idp.articles", id: false, force: :cascade do |t|
+    t.text "content"
+    t.datetime "created_at", null: false
+    t.integer "id"
+    t.string "title"
+    t.datetime "updated_at", null: false
   end
 
   create_table "fraudops.frd_encrypted_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|

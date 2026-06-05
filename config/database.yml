@@ -36,7 +36,7 @@ development:
   data_warehouse:
     <<: *defaults
     database: identity_reporting_rails_data_warehouse_<%= Rails.env %>
-    schema_search_path: 'logs,public,system_tables,fraudops,marts,qa_marts,fcms'
+    schema_search_path: 'logs,public,idp,system_tables,fraudops,marts,qa_marts,fcms'
     migrations_paths: db/data_warehouse_migrate
 
 test:
