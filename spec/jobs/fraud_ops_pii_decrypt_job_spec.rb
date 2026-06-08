@@ -20,7 +20,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
     {
       jti: '0fe9fb5e-a252-401f-bdb6-487713dc228f',
       events: {
-        login_event_type => sample_event_payload,
+        login_event_type.to_sym => sample_event_payload,
       },
     }
   end
