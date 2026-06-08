@@ -80,9 +80,14 @@ class FraudOpsPiiDecryptJob < ApplicationJob
       decrypted = decrypt_data(row['message'], private_key, row['event_key'])
       next unless decrypted
 
+      event_data = event_payload(decrypted)
+
       decrypted_events << {
         event_key: row['event_key'],
         message: decrypted,
+        user_id: event_data[:user_id],
+        user_uuid: event_data[:user_uuid],
+        event_timestamp: event_data[:occurred_at] && Time.zone.at(event_data[:occurred_at]),
       }
       successful_ids << row['event_key']
     end
@@ -94,16 +99,23 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     return if decrypted_events.empty?
 
     value_fragment = using_redshift_adapter? ?
-      '(?, JSON_PARSE(?), CURRENT_TIMESTAMP)' :
-      '(?, ?::jsonb, CURRENT_TIMESTAMP)'
+      '(?, JSON_PARSE(?), ?, ?, ?, CURRENT_TIMESTAMP)' :
+      '(?, ?::jsonb, ?, ?, ?, CURRENT_TIMESTAMP)'
     placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
 
     values = decrypted_events.flat_map do |event|
-      [event[:event_key], JSON.generate(event[:message])]
+      [
+        event[:event_key],
+        JSON.generate(event[:message]),
+        event[:user_id],
+        event[:user_uuid],
+        event[:event_timestamp],
+      ]
     end
 
     insert_sql = <<~SQL.squish
-      INSERT INTO fraudops.frd_events (event_key, message, dw_created_at)
+      INSERT INTO fraudops.frd_events
+        (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)
       VALUES #{placeholders}
     SQL
 
@@ -127,6 +139,13 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     connection.execute(sanitized)
 
     Rails.logger.info(log_format('Bulk update completed', updated_count: event_ids.size))
+  end
+
+  def event_payload(decrypted)
+    events = decrypted[:events]
+    return decrypted unless events.is_a?(Hash) && events.any?
+
+    events.values.first
   end
 
   def decrypt_data(encrypted_data, key, event_key)
