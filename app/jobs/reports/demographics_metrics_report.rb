@@ -12,6 +12,7 @@ module Reports
     # Demographics report pull from logs data, which should replicate very quickly
     # into data warehouse. Thus, there is no data lag to account for and look back
     # days are 2
+    REPORT_NAME = 'DemographicsMetricsReport' # Used for S3 file paths
     DATA_LAG_DAYS = 0 # 0 day lag to account for no data modeling delay into DW - log data
     DEFAULT_LOOK_BACK_DAYS = 4 # Cron job runs on 1st, looks back 2 days
     SCHEMA_CUTOFF_DATE = Date.new(2025, 10, 1).freeze
@@ -192,7 +193,7 @@ module Reports
 
       # Generate base path
       bucket_idp_path = generate_base_s3_path(directory: 'idp')
-      base_directory = "#{bucket_idp_path}DemographicsMetricsReport/#{sp_id}/"\
+      base_directory = "#{bucket_idp_path}#{REPORT_NAME}/#{sp_id}/"\
                       "#{@time_frame.downcase}/#{report_time_range_label}/"
 
       files_to_upload.each do |generated_filename|
