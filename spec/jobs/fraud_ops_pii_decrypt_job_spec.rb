@@ -5,6 +5,9 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
   let(:private_key) { OpenSSL::PKey::RSA.generate(2048) }
   let(:private_key_pem) { private_key.to_pem }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
+  let(:login_event_type) do
+    'https://schemas.login.gov/secevent/attempts-api/event-type/login-email-and-password-auth'
+  end
   let(:sample_event_payload) do
     {
       occurred_at: 1_780_602_749.2548823,
@@ -17,8 +20,7 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
     {
       jti: '0fe9fb5e-a252-401f-bdb6-487713dc228f',
       events: {
-        :'https://schemas.login.gov/secevent/attempts-api/event-type/login-email-and-password-auth' =>
-          sample_event_payload,
+        login_event_type => sample_event_payload,
       },
     }
   end
@@ -352,7 +354,8 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses jsonb cast in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ user_uuid,
+                      \s*event_timestamp,\ dw_created_at\)
                       \s*VALUES.*::jsonb}x
 
         expect(mock_connection).to receive(:execute).
@@ -375,7 +378,8 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ user_uuid,
+                      \s*event_timestamp,\ dw_created_at\)
                       \s*VALUES.*JSON_PARSE}x
 
         expect(mock_connection).to receive(:execute).
