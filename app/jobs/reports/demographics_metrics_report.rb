@@ -14,7 +14,7 @@ module Reports
     # days are 2
     REPORT_NAME = 'DemographicsMetricsReport' # Used for S3 file paths
     DATA_LAG_DAYS = 0 # 0 day lag to account for no data modeling delay into DW - log data
-    DEFAULT_LOOK_BACK_DAYS = 4 # Cron job runs on 1st, looks back 2 days
+    DEFAULT_LOOK_BACK_DAYS = 2 # Cron job runs on 1st, looks back 2 days
     SCHEMA_CUTOFF_DATE = Date.new(2025, 10, 1).freeze
     attr_reader :run_date, :days_back_for_time_period, :time_frame
 
