@@ -83,6 +83,11 @@ else
         cron: cron_monthly,
         args: -> { [Time.zone.yesterday.end_of_day] },
       },
+      monthly_key_metrics_idv_s3_report: {
+        class: 'Reports::MonthlyKeyMetricsIdvS3Report',
+        cron: cron_24h_and_a_bit, # staggered a bit so logs can sync to redshift?
+        args: -> { [Time.zone.yesterday.end_of_day] },
+      },
       # Idv Legacy Conversion Supplement Report to S3
       idv_legacy_conversion_supplement_report: {
         class: 'Reports::IdvLegacyConversionSupplementReport',
