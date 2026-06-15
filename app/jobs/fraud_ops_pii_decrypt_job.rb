@@ -98,31 +98,53 @@ class FraudOpsPiiDecryptJob < ApplicationJob
   def bulk_insert_decrypted_events(decrypted_events)
     return if decrypted_events.empty?
 
-    value_fragment = using_redshift_adapter? ?
-      '(?, JSON_PARSE(?), ?, ?, ?, CURRENT_TIMESTAMP)' :
-      '(?, ?::jsonb, ?, ?, ?, CURRENT_TIMESTAMP)'
-    placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
-
-    values = decrypted_events.flat_map do |event|
-      [
-        event[:event_key],
-        JSON.generate(event[:message]),
-        event[:user_id],
-        event[:user_uuid],
-        event[:event_timestamp],
-      ]
+    if using_redshift_adapter?
+      values_sql = decrypted_events.map { |event| redshift_insert_values(event) }.join(', ')
+      connection.execute(<<~SQL.squish)
+        INSERT INTO fraudops.frd_events
+          (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)
+        VALUES #{values_sql}
+      SQL
+    else
+      value_fragment = '(?, ?::jsonb, ?, ?, ?, CURRENT_TIMESTAMP)'
+      placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
+      values = decrypted_events.flat_map do |event|
+        [
+          event[:event_key],
+          JSON.generate(event[:message]),
+          event[:user_id],
+          event[:user_uuid],
+          event[:event_timestamp],
+        ]
+      end
+      insert_sql = <<~SQL.squish
+        INSERT INTO fraudops.frd_events
+          (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)
+        VALUES #{placeholders}
+      SQL
+      sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [insert_sql, *values])
+      connection.execute(sanitized)
     end
 
-    insert_sql = <<~SQL.squish
-      INSERT INTO fraudops.frd_events
-        (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)
-      VALUES #{placeholders}
-    SQL
-
-    sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [insert_sql, *values])
-    connection.execute(sanitized)
-
     Rails.logger.info(log_format('Bulk insert completed', row_count: decrypted_events.size))
+  end
+
+  def redshift_insert_values(event)
+    json_literal = dollar_quote(JSON.generate(event[:message]))
+    [
+      connection.quote(event[:event_key]),
+      "JSON_PARSE(#{json_literal})",
+      event[:user_id] || 'NULL',
+      event[:user_uuid] ? connection.quote(event[:user_uuid]) : 'NULL',
+      event[:event_timestamp] ? connection.quote(event[:event_timestamp]) : 'NULL',
+      'CURRENT_TIMESTAMP',
+    ].then { |parts| "(#{parts.join(', ')})" }
+  end
+
+  def dollar_quote(str)
+    tag = 'json'
+    tag = "j#{SecureRandom.hex(4)}" while str.include?("$#{tag}$")
+    "$#{tag}$#{str}$#{tag}$"
   end
 
   def bulk_update_processed_timestamp(event_ids)

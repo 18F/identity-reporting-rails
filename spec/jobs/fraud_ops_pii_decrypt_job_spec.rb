@@ -374,18 +374,47 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
       before do
         allow(job).to receive(:using_redshift_adapter?).and_return(true)
         allow(mock_connection).to receive(:execute)
+        allow(mock_connection).to receive(:quote) do |val|
+          ActiveRecord::Base.connection.quote(val)
+        end
       end
 
-      it 'uses JSON_PARSE in insert statement' do
+      it 'uses dollar-quoted JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
                       \s*\(event_key,\ message,\ user_id,\ user_uuid,
                       \s*event_timestamp,\ dw_created_at\)
-                      \s*VALUES.*JSON_PARSE}x
+                      \s*VALUES.*JSON_PARSE\(\$json\$}x
 
         expect(mock_connection).to receive(:execute).
           with(a_string_matching(expected_pattern))
 
         job.send(:bulk_insert_decrypted_events, decrypted_events)
+      end
+
+      it 'does not single-quote JSON inside JSON_PARSE' do
+        escaped_payload = sample_event_data.merge(
+          events: {
+            login_event_type.to_sym => sample_event_payload.merge(
+              user_agent: 'Mozilla/5.0 (compatible; "bot"\n)',
+            ),
+          },
+        )
+        events = [
+          {
+            event_key: 'event_1',
+            message: escaped_payload,
+            user_id: 1,
+            user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
+            event_timestamp: sample_event_timestamp,
+          },
+        ]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('JSON_PARSE($json$')
+          expect(sql).not_to match(/JSON_PARSE\('/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
       end
     end
 
