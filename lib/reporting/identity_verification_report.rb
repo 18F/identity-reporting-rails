@@ -32,6 +32,7 @@ module Reporting
       IDV_FINAL_RESOLUTION_VERIFIED = 'IdV: final resolution - Verified'
       IDV_FINAL_RESOLUTION_FRAUD_REVIEW = 'IdV: final resolution - Fraud Review Pending'
       IDV_FINAL_RESOLUTION_GPO = 'IdV: final resolution - GPO Pending'
+      # Note the lowercase v - this was there in IdP repo as well, so just copying
       IDV_FINAL_RESOLUTION_GPO_FRAUD_REVIEW =
         'Idv: final resolution - GPO Pending + Fraud Review Pending'
       IDV_FINAL_RESOLUTION_IN_PERSON = 'IdV: final resolution - In Person Proofing'
