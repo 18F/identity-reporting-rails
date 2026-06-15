@@ -30,6 +30,9 @@ module Reports
 
       @report_date = perform_report_date || report_date || Time.zone.yesterday
       raise ArgumentError, 'report_date is required' if @report_date.blank?
+      if report_date.to_date > Time.zone.today
+        raise ArgumentError, 'report_date cannot be in the future'
+      end
 
       Rails.logger.info(
         "#{REPORT_NAME}: generating IDV key metrics reports for #{report_date.to_date}",
@@ -135,12 +138,15 @@ module Reports
     end
 
     def paths_for(filename)
-      date_prefix = report_date.to_date.strftime('%Y%m%d')
-      base_path = "#{generate_base_s3_path(directory: 'idp')}#{REPORT_NAME}/"
+      report_day = report_date.to_date
+      date_prefix = report_day.strftime('%Y%m%d')
+      year = report_day.strftime('%Y')
+      month = report_day.strftime('%m')
+
+      base_path = "#{generate_base_s3_path(directory: 'idp')}#{REPORT_NAME}/#{year}/#{month}/"
 
       [
         "#{base_path}#{date_prefix}_monthly_#{filename}.csv",
-        "#{base_path}latest_#{filename}.csv",
       ]
     end
 
