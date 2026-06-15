@@ -26,6 +26,29 @@
     {
       "warning_type": "SQL Injection",
       "warning_code": 0,
+      "fingerprint": "afa74256da2a931714a8625ae3cb6b21b92932efad54da3b9686dd95a19d2378",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/jobs/fraud_ops_pii_decrypt_job.rb",
+      "line": 106,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "connection.execute(\"INSERT INTO fraudops.frd_events\\n  (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)\\nVALUES #{decrypted_events.map do\n redshift_insert_values(event)\n end.join(\", \")}\\n\".squish)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "FraudOpsPiiDecryptJob",
+        "method": "bulk_insert_decrypted_events"
+      },
+      "user_input": "decrypted_events.map do\n redshift_insert_values(event)\n end.join(\", \")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": ""
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
       "fingerprint": "f484d00b78f7bf680b72321f5121683f6c093b267aae19cb334262d3c6432edf",
       "check_name": "SQL",
       "message": "Possible SQL injection",
