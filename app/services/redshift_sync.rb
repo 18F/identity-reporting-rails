@@ -6,6 +6,7 @@ require 'aws-sdk-secretsmanager'
 require 'optparse'
 require 'digest'
 require 'json'
+require 'securerandom'
 
 require_relative '../../config/environment'
 class RedshiftSync
@@ -47,7 +48,71 @@ class RedshiftSync
     Rails.logger.info('Redshift user sync completed successfully')
   end
 
+  # Rotates the Redshift login password for one or more system users.
+  def rotate_password(usernames: nil)
+    targets = rotation_targets(usernames)
+
+    if targets.empty?
+      Rails.logger.warn('No matching system users with a secret_id to rotate')
+      return
+    end
+
+    targets.each do |system_user|
+      rotate_user_password(system_user['user_name'], system_user['secret_id'])
+    end
+
+    Rails.logger.info('Redshift password rotation completed successfully')
+  end
+
   private
+
+  # System users eligible for rotation: those backed by a Secrets Manager
+  def rotation_targets(usernames)
+    candidates = system_users.reject { |u| u['secret_id'].nil? }
+
+    return candidates if usernames.nil? || usernames.empty?
+
+    requested = Array(usernames)
+    selected = candidates.select { |u| requested.include?(u['user_name']) }
+
+    missing = requested - selected.map { |u| u['user_name'] }
+    missing.each do |name|
+      Rails.logger.warn("Skipping #{name}: not a known system user with a secret_id")
+    end
+
+    selected
+  end
+
+  def rotate_user_password(user_name, secret_id)
+    Rails.logger.info("Rotating password for system user #{user_name}")
+
+    unless user_exists?(user_name)
+      Rails.logger.warn("Skipping #{user_name}: user does not exist in Redshift")
+      return
+    end
+
+    new_password = generate_password
+
+    execute_query(
+      "ALTER USER #{user_name} PASSWORD #{md5_password(new_password, user_name)};",
+    )
+
+    store_password_secret(secret_id, new_password)
+
+    Rails.logger.info("Successfully rotated password for #{user_name}")
+  end
+
+  # Writes the new password into Secrets Manager, preserving any other keys
+  # already present in the secret's JSON payload (e.g. host, port, username).
+  def store_password_secret(secret_id, password)
+    raw = secrets_manager_client.get_secret_value(secret_id: secret_id).secret_string
+    existing = raw ? JSON.parse(raw) : {}
+
+    secrets_manager_client.put_secret_value(
+      secret_id: secret_id,
+      secret_string: existing.merge('password' => password).to_json,
+    )
+  end
 
   def env_name
     @env_name ||= Identity::Hostdata.env
@@ -130,7 +195,21 @@ class RedshiftSync
   def redshift_secret(user_name, secret_id)
     secret_value = secrets_manager_client.get_secret_value(secret_id: secret_id)
     password = JSON.parse(secret_value['secret_string'])['password']
+    md5_password(password, user_name)
+  end
+
+  # Redshift stores passwords as 'md5' + MD5(password + username).
+  def md5_password(password, user_name)
     "'md5#{Digest::MD5.hexdigest(password + user_name)}'"
+  end
+
+  PASSWORD_LENGTH = 32
+  PASSWORD_PUNCTUATION = '!#$%&*+-=?@^_'
+
+  # Generates a random password with mixed case, digits, and punctuation.
+  def generate_password
+    charset = [*'a'..'z', *'A'..'Z', *'0'..'9', *PASSWORD_PUNCTUATION.chars]
+    SecureRandom.alphanumeric(PASSWORD_LENGTH, chars: charset)
   end
 
   def user_groups
