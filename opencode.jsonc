@@ -3,6 +3,7 @@
   "permission": {
     "edit": "allow",
     "bash": {
+      "date *": "allow",
       "echo *": "allow",
       "fd *": "allow",
       "find *": "allow",
@@ -13,9 +14,10 @@
       "glab *": "ask",
       "glab issue list*": "allow",
       "glab issue view *": "allow",
+      "glab mr diff *": "allow",
       "glab mr list*": "allow",
       "glab mr view *": "allow",
-      "glab mr diff *": "allow",
+      "mkdir *": "allow",
       "printf *": "allow",
       "read *": "allow",
       "rg *": "allow",
