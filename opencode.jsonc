@@ -7,18 +7,25 @@
       "fd *": "allow",
       "find *": "allow",
       "git branch *": "allow",
+      "git check-attr *": "allow",
+      "git ls-files *": "allow",
       "git remote *": "allow",
-      "grep *": "allow",
       "printf *": "allow",
       "read *": "allow",
       "rg *": "allow",
-      "sed *": "allow",
       "sort *": "allow",
       "tail *": "allow",
       "terraform fmt *": "allow",
       "tr *": "allow",
       "uniq *": "allow",
       "wc *": "allow"
+    },
+    "read": {
+      "**/credentials.yml.enc": "deny",
+      "**/config/application.yml": "deny",
+      "**/.databag_secret": "deny",
+      "**/databag_secrets.json": "deny",
+      ".envrc": "deny"
     },
     "webfetch": "allow",
     "websearch": "allow"

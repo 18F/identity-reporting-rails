@@ -90,12 +90,17 @@ target database. Migration linting runs via `scripts/migration_check`.
 
 ## Security & Sensitive Data
 
-This is a federal (GSA / Login.gov) project handling PII and credentials.
+This is a federal (GSA / Login.gov) reporting and warehouse-management app. It
+is not the primary store of end-user PII, but it does have meaningful security
+surface: it manages credentials (AWS Secrets Manager, Redshift user/role
+passwords), and it contains code that processes and guards warehouse PII
+(retention enforcement, PII row checks, masking, decryption UDFs). Treat that
+surface with care; you do not need to treat every file in the repo as sensitive.
 
 - **Never** read, print, or commit secrets, `.env*` files, keys, or
   `config/credentials.yml.enc` contents.
-- Be cautious with PII-related code (`pii_retention.yml`, masking jobs,
-  decryption UDFs). Do not log or expose decrypted PII.
+- When working on PII-handling code (`pii_retention.yml`, `PiiRowCheckerJob`,
+  masking jobs, decryption UDFs), do not log or expose decrypted PII.
 - `make brakeman` and `bundle exec bundler-audit` run as part of CI; keep them
   passing.
 
