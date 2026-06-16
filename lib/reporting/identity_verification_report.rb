@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 require 'csv'
-require 'json'
 
 module Reporting
   class IdentityVerificationReport
+    include Reporting::JsonPathHelper
+
     attr_reader :time_range
 
     module Events
@@ -48,11 +49,19 @@ module Reporting
       IDV_REJECT_PHONE_FINDER = 'IdV Reject: Phone Finder'
     end
 
+    # Because historically fraud-related events were not tagged with SP data,
+    # we need to pull these out-of-band events *even if* they are marked as
+    # pending fraud review. This allows us to attribute untagged fraud-related
+    # events (by matching on user_id). We filter these events for counting
+    # purposes, though.
     EVENTS_TO_IGNORE_IF_FRAUD_REVIEW_PENDING = [
       Events::GPO_VERIFICATION_SUBMITTED,
       Events::GPO_VERIFICATION_SUBMITTED_OLD,
       Events::USPS_ENROLLMENT_STATUS_UPDATED,
     ].to_set.freeze
+
+    # For batch streaming redshift results
+    BATCH_SIZE = 50_000
 
     def initialize(time_range:, data: nil)
       @time_range = time_range
@@ -113,8 +122,32 @@ module Reporting
       data[Results::IDV_FINAL_RESOLUTION_VERIFIED].count
     end
 
+    def idv_final_resolution_fraud_review
+      data[Results::IDV_FINAL_RESOLUTION_FRAUD_REVIEW].count
+    end
+
+    def idv_final_resolution_gpo
+      data[Results::IDV_FINAL_RESOLUTION_GPO].count
+    end
+
+    def idv_final_resolution_gpo_fraud_review
+      data[Results::IDV_FINAL_RESOLUTION_GPO_FRAUD_REVIEW].count
+    end
+
     def idv_final_resolution_in_person
       data[Results::IDV_FINAL_RESOLUTION_IN_PERSON].count
+    end
+
+    def idv_final_resolution_in_person_fraud_review
+      data[Results::IDV_FINAL_RESOLUTION_IN_PERSON_FRAUD_REVIEW].count
+    end
+
+    def idv_final_resolution_gpo_in_person
+      data[Results::IDV_FINAL_RESOLUTION_GPO_IN_PERSON].count
+    end
+
+    def idv_final_resolution_gpo_in_person_fraud_review
+      data[Results::IDV_FINAL_RESOLUTION_GPO_IN_PERSON_FRAUD_REVIEW].count
     end
 
     def gpo_verification_submitted
@@ -169,35 +202,34 @@ module Reporting
       @verified_user_count ||= connection.select_value(verified_user_count_query).to_i
     end
 
+    # rubocop:disable Layout/LineLength
     # rubocop:disable Metrics/BlockLength
+    # Turns query results into a hash keyed by event name; values are Sets of unique
+    # user_ids for that event. Flag columns ('1'/'0') are computed in SQL (see #select_columns)
+    # to avoid parsing the SUPER `message` blob in Ruby. This mirrors the prior CloudWatch
+    # implementation, which precomputed the same flags in the Logs Insights query.
+    # @return [Hash<String, Set<String>>]
     def data
       @data ||= begin
-        users = Hash.new { |hash, key| hash[key] = Set.new }
+        users = Hash.new { |hash, event_name| hash[event_name] = Set.new }
 
         fetch_results.each do |row|
           event = row['name']
           user_id = row['user_id']
           next if user_id.blank?
 
-          event_properties = extract_event_properties(row['message'])
-          success = event_success(row, event_properties)
+          success = row['success'] == '1'
+          fraud_review_pending = row['fraud_review_pending'] == '1'
+          gpo_verification_pending = row['gpo_verification_pending'] == '1'
+          in_person_verification_pending = row['in_person_verification_pending'] == '1'
+          profile_not_pending = row['profile_not_pending'] == '1'
+          doc_auth_failed_non_fraud = row['doc_auth_failed_non_fraud'] == '1'
 
-          fraud_review_pending = fraud_review_pending?(event_properties)
-          gpo_verification_pending =
-            true_value?(event_properties['gpo_verification_pending'])
-          in_person_verification_pending =
-            true_value?(event_properties['in_person_verification_pending'])
-          has_other_deactivation_reason =
-            event_properties['deactivation_reason'].present?
-
-          profile_not_pending =
-            !fraud_review_pending &&
-            !gpo_verification_pending &&
-            !in_person_verification_pending &&
-            !has_other_deactivation_reason
-
-          next if skip_event?(event, event_properties, success)
-
+          # NOTE: source-level filters (USPS passed=1, GPO success=1 and
+          # !pending_in_person_enrollment, fraud-passed success=1) are applied in SQL
+          # (see #where_clause), mirroring the old CloudWatch `| filter` clauses.
+          # The per-user fraud-attribution filter below stays in Ruby because it
+          # depends on the user's fraud state, not just the row.
           ignore_event_for_user =
             fraud_review_pending &&
             EVENTS_TO_IGNORE_IF_FRAUD_REVIEW_PENDING.include?(event)
@@ -206,6 +238,22 @@ module Reporting
 
           case event
           when Events::IDV_FINAL_RESOLUTION
+            # We count users for each final resolution outcome, considering the
+            # combinations of pending states and fraud review status:
+            #
+            # | fraud_review_pending | gpo_verification_pending | in_person_verification_pending | IDV_FINAL_RESOLUTION_      |
+            # |----------------------|--------------------------|--------------------------------|----------------------------|
+            # | false                | false                    | false                          | VERIFIED                   |
+            # | true                 | false                    | false                          | FRAUD_REVIEW               |
+            # | false                | true                     | false                          | GPO                        |
+            # | true                 | true                     | false                          | GPO_FRAUD_REVIEW           |
+            # | false                | false                    | true                           | IN_PERSON                  |
+            # | true                 | false                    | true                           | IN_PERSON_FRAUD_REVIEW     |
+            # | false                | true                     | true                           | GPO_IN_PERSON              |
+            # | true                 | true                     | true                           | GPO_IN_PERSON_FRAUD_REVIEW |
+            #
+            # `profile_not_pending` means all three pending flags are false AND there
+            # is no deactivation_reason recorded.
             categorize_final_resolution(
               users: users,
               user_id: user_id,
@@ -215,9 +263,7 @@ module Reporting
               in_person_verification_pending: in_person_verification_pending,
             )
           when Events::IDV_DOC_AUTH_IMAGE_UPLOAD
-            if doc_auth_failed_non_fraud?(event_properties, success)
-              users[Results::IDV_REJECT_DOC_AUTH] << user_id
-            end
+            users[Results::IDV_REJECT_DOC_AUTH] << user_id if doc_auth_failed_non_fraud
           when Events::IDV_DOC_AUTH_VERIFY_RESULTS
             users[Results::IDV_REJECT_VERIFY] << user_id unless success
           when Events::IDV_PHONE_FINDER_RESULTS
@@ -229,60 +275,212 @@ module Reporting
       end
     end
     # rubocop:enable Metrics/BlockLength
+    # rubocop:enable Layout/LineLength
 
     private
 
-    BATCH_SIZE = 50_000
+    # Streams results from Redshift in batches to avoid loading the full result set
+    # (potentially tens of millions of rows) into memory at once
     def fetch_results
       return enum_for(:fetch_results) unless block_given?
 
-      cursor_ts = time_range.begin
+      last_ts = nil
+      last_id = nil
+
       loop do
-        rows = connection.execute(page_query(cursor_ts)).to_a
+        rows = connection.execute(page_query(last_ts, last_id)).to_a
         break if rows.empty?
 
         rows.each { |row| yield row }
 
-        cursor_ts = rows.last['cloudwatch_timestamp']
+        new_last = rows.last
+        new_ts = new_last['cloudwatch_timestamp']
+        new_id = new_last['id']
+
+        # Safety guard: if the cursor did not advance, stop to avoid an infinite loop
+        break if new_ts == last_ts && new_id == last_id
+
+        last_ts = new_ts
+        last_id = new_id
       end
     end
 
-    # Query for batch streaming
-    def page_query(from_ts)
+    # Builds one page of the keyset-paginated query
+    # When last_ts/last_id are nil we're on the first page (no lower keyset bound)
+    def page_query(last_ts, last_id)
+      keyset_clause =
+        if last_ts.nil?
+          ''
+        else
+          <<~SQL
+            AND (
+              cloudwatch_timestamp > #{connection.quote(last_ts)}
+              OR (
+                cloudwatch_timestamp = #{connection.quote(last_ts)}
+                AND id > #{connection.quote(last_id)}
+              )
+            )
+          SQL
+        end
+
       <<~SQL
-        SELECT name, user_id, success, message, cloudwatch_timestamp
+        SELECT
+          #{select_columns}
         FROM logs.events
-        WHERE name IN (#{quoted(Events.all_events)})
-          AND cloudwatch_timestamp >= #{connection.quote(from_ts)}
-          AND cloudwatch_timestamp <= #{connection.quote(time_range.end)}
-        ORDER BY cloudwatch_timestamp ASC
+        WHERE #{where_clause}
+          #{keyset_clause}
+        ORDER BY cloudwatch_timestamp ASC, id ASC
         LIMIT #{BATCH_SIZE}
       SQL
     end
 
-    def verified_user_count_query
+    # All flag derivation happens here in SQL so Ruby never touches the SUPER `message`
+    # blob. Each flag is emitted as '1'/'0' text to preserve the contract the Ruby `data`
+    # method relies on (row['flag'] == '1'). Mirrors the old CloudWatch query's `fields`.
+    def select_columns
       <<~SQL
-        SELECT COUNT(*)
-        FROM idp.profiles
-        WHERE active = TRUE
-          AND verified_at <= #{connection.quote(time_range.end.end_of_day)}
+        id,
+        name,
+        #{extract_json_path('message', 'properties.user_id')} AS user_id,
+        cloudwatch_timestamp,
+
+        CASE WHEN #{bool_true(success_path)} THEN '1' ELSE '0' END AS success,
+        CASE WHEN #{fraud_review_pending_sql} THEN '1' ELSE '0' END AS fraud_review_pending,
+        CASE WHEN #{bool_true(gpo_pending_path)} THEN '1' ELSE '0' END AS gpo_verification_pending,
+        CASE WHEN #{bool_true(in_person_pending_path)} THEN '1' ELSE '0' END AS in_person_verification_pending,
+        CASE WHEN #{deactivation_reason_present_sql} THEN '1' ELSE '0' END AS has_other_deactivation_reason,
+        CASE WHEN #{doc_auth_failed_non_fraud_sql} THEN '1' ELSE '0' END AS doc_auth_failed_non_fraud,
+
+        CASE
+          WHEN NOT (#{fraud_review_pending_sql})
+            AND #{bool_not_true(gpo_pending_path)}
+            AND #{bool_not_true(in_person_pending_path)}
+            AND NOT (#{deactivation_reason_present_sql})
+          THEN '1' ELSE '0'
+        END AS profile_not_pending
       SQL
     end
 
-    def skip_event?(event, event_properties, success)
-      if event == Events::USPS_ENROLLMENT_STATUS_UPDATED
-        return true unless true_value?(event_properties['passed'])
-      end
+    # Source-level row filters, mirroring the old CloudWatch filter clauses
+    def where_clause
+      <<~SQL
+        name IN (#{quoted(Events.all_events)})
 
-      if [
+        AND (
+          name != #{connection.quote(Events::USPS_ENROLLMENT_STATUS_UPDATED)}
+          OR #{bool_true(usps_passed_path)}
+        )
+
+        AND (
+          name NOT IN (#{quoted(gpo_submission_events)})
+          OR (
+            #{bool_true(success_path)}
+            AND #{bool_not_true(gpo_pending_in_person_path)}
+          )
+        )
+
+        AND (
+          name != #{connection.quote(Events::FRAUD_REVIEW_PASSED)}
+          OR #{bool_true(success_path)}
+        )
+
+        AND cloudwatch_timestamp >= #{connection.quote(time_range.begin)}
+        AND cloudwatch_timestamp <= #{connection.quote(time_range.end)}
+      SQL
+    end
+
+    # The normalized fraud-review-pending expression, ported from the old CloudWatch
+    # `normalized_fraud_review_pending`. NOTE: fraud_pending_reason is present on
+    # 'IdV: final resolution' events; for GPO / IPP it will be set but the
+    # fraud_review_pending flag is 0, so we must consider it independently.
+    def fraud_review_pending_sql
+      <<~SQL.strip
+        COALESCE(
+          (
+            #{bool_true(fraud_review_pending_path)}
+            OR #{fraud_pending_reason_path}::varchar IS NOT NULL
+            OR #{bool_true(fraud_check_failed_path)}
+            OR COALESCE(#{tmx_status_path}::varchar, '') IN ('threatmetrix_review', 'threatmetrix_reject')
+          ),
+          FALSE
+        )
+      SQL
+    end
+
+    # success = '0' AND doc_auth_result NOT IN ('Failed', 'Attention'),
+    # mirroring the old CloudWatch `doc_auth_failed_non_fraud` field.
+    def doc_auth_failed_non_fraud_sql
+      <<~SQL.strip
+        (
+          #{bool_not_true(success_path)}
+          AND COALESCE(#{doc_auth_result_path}::varchar, '') NOT IN ('Failed', 'Attention')
+        )
+      SQL
+    end
+
+    def deactivation_reason_present_sql
+      "#{deactivation_reason_path}::varchar IS NOT NULL"
+    end
+
+    def success_path
+      extract_json_path('message', 'properties.event_properties.success')
+    end
+
+    def fraud_review_pending_path
+      extract_json_path(
+        'message', 'properties.event_properties.fraud_review_pending'
+      )
+    end
+
+    def fraud_pending_reason_path
+      extract_json_path('message', 'properties.event_properties.fraud_pending_reason')
+    end
+
+    def fraud_check_failed_path
+      extract_json_path(
+        'message', 'properties.event_properties.fraud_check_failed'
+      )
+    end
+
+    def tmx_status_path
+      extract_json_path('message', 'properties.event_properties.tmx_status')
+    end
+
+    def gpo_pending_path
+      extract_json_path(
+        'message', 'properties.event_properties.gpo_verification_pending'
+      )
+    end
+
+    def in_person_pending_path
+      extract_json_path(
+        'message', 'properties.event_properties.in_person_verification_pending'
+      )
+    end
+
+    def deactivation_reason_path
+      extract_json_path('message', 'properties.event_properties.deactivation_reason')
+    end
+
+    def doc_auth_result_path
+      extract_json_path('message', 'properties.event_properties.doc_auth_result')
+    end
+
+    def usps_passed_path
+      extract_json_path('message', 'properties.event_properties.passed')
+    end
+
+    def gpo_pending_in_person_path
+      extract_json_path(
+        'message', 'properties.event_properties.pending_in_person_enrollment'
+      )
+    end
+
+    def gpo_submission_events
+      [
         Events::GPO_VERIFICATION_SUBMITTED,
         Events::GPO_VERIFICATION_SUBMITTED_OLD,
-      ].include?(event)
-        return true unless success
-        return true if true_value?(event_properties['pending_in_person_enrollment'])
-      end
-
-      event == Events::FRAUD_REVIEW_PASSED && !success
+      ]
     end
 
     def categorize_final_resolution(
@@ -313,6 +511,15 @@ module Reporting
       end
     end
 
+    def verified_user_count_query
+      <<~SQL
+        SELECT COUNT(*)
+        FROM idp.profiles
+        WHERE active = TRUE
+          AND verified_at <= #{connection.quote(time_range.end.end_of_day)}
+      SQL
+    end
+
     def quoted(values)
       values.map { |value| connection.quote(value) }.join(', ')
     end
@@ -321,53 +528,21 @@ module Reporting
       DataWarehouseApplicationRecord.connection
     end
 
-    def extract_event_properties(message)
-      payload =
-        case message
-        when Hash
-          message
-        when String
-          JSON.parse(message)
-        else
-          {}
-        end
-
-      payload.fetch('properties', {}).fetch('event_properties', {}) || {}
-    rescue JSON::ParserError
-      {}
-    end
-
-    def event_success(row, event_properties)
-      if event_properties.key?('success')
-        true_value?(event_properties['success'])
-      else
-        true_value?(row['success'])
-      end
-    end
-
-    def true_value?(value)
-      value == true ||
-        value.to_s == '1' ||
-        value.to_s.casecmp('true').zero?
-    end
-
-    def fraud_review_pending?(event_properties)
-      true_value?(event_properties['fraud_review_pending']) ||
-        event_properties['fraud_pending_reason'].present? ||
-        true_value?(event_properties['fraud_check_failed']) ||
-        %w[threatmetrix_review threatmetrix_reject].include?(
-          event_properties['tmx_status'],
-        )
-    end
-
-    def doc_auth_failed_non_fraud?(event_properties, success)
-      !success && !%w[Failed Attention].include?(event_properties['doc_auth_result'].to_s)
-    end
-
     def safely_divide(numerator, denominator)
       return 0.0 if denominator.to_f.zero?
 
       numerator.to_f / denominator.to_f
+    end
+
+    # SUPER boolean fields: Redshift coerces them in an `= TRUE` equality
+    # comparison, but rejects IS TRUE and turns ::varchar casts into NULL.
+    # COALESCE(..., FALSE) makes absent/NULL keys read as not-true.
+    def bool_true(path)
+      "COALESCE(#{path} = TRUE, FALSE)"
+    end
+
+    def bool_not_true(path)
+      "NOT COALESCE(#{path} = TRUE, FALSE)"
     end
   end
 end
