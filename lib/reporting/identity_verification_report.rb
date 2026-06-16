@@ -232,21 +232,31 @@ module Reporting
 
     private
 
+    BATCH_SIZE = 50_000
     def fetch_results
-      connection.execute(query).to_a
+      return enum_for(:fetch_results) unless block_given?
+
+      cursor_ts = time_range.begin
+      loop do
+        rows = connection.execute(page_query(cursor_ts)).to_a
+        break if rows.empty?
+
+        rows.each { |row| yield row }
+
+        cursor_ts = rows.last['cloudwatch_timestamp']
+      end
     end
 
-    def query
+    # Query for batch streaming
+    def page_query(from_ts)
       <<~SQL
-        SELECT
-          name,
-          user_id,
-          success,
-          message
+        SELECT name, user_id, success, message, cloudwatch_timestamp
         FROM logs.events
         WHERE name IN (#{quoted(Events.all_events)})
-          AND cloudwatch_timestamp BETWEEN #{connection.quote(time_range.begin)}
-          AND #{connection.quote(time_range.end)}
+          AND cloudwatch_timestamp >= #{connection.quote(from_ts)}
+          AND cloudwatch_timestamp <= #{connection.quote(time_range.end)}
+        ORDER BY cloudwatch_timestamp ASC
+        LIMIT #{BATCH_SIZE}
       SQL
     end
 
