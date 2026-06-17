@@ -115,7 +115,6 @@ class RedshiftSync
     raw ? JSON.parse(raw) : {}
   end
 
-  # Writes the given payload back to Secrets Manager as a new secret version.
   def store_password_secret(secret_id, payload)
     secrets_manager_client.put_secret_value(
       secret_id: secret_id,
@@ -207,7 +206,6 @@ class RedshiftSync
     md5_password(password, user_name)
   end
 
-  # Redshift stores passwords as 'md5' + MD5(password + username).
   def md5_password(password, user_name)
     "'md5#{Digest::MD5.hexdigest(password + user_name)}'"
   end
@@ -215,7 +213,6 @@ class RedshiftSync
   PASSWORD_LENGTH = 32
   PASSWORD_PUNCTUATION = '!#$%&*+-=?@^_'
 
-  # Generates a random password with mixed case, digits, and punctuation.
   def generate_password
     charset = [*'a'..'z', *'A'..'Z', *'0'..'9', *PASSWORD_PUNCTUATION.chars]
     SecureRandom.alphanumeric(PASSWORD_LENGTH, chars: charset)
