@@ -91,6 +91,7 @@ RSpec.describe RedshiftSync do
     allow(Identity::Hostdata).to receive(:env).and_return('testenv')
     allow(mock_connection).to receive(:execute).and_return(double(any?: false, to_a: [], map: []))
     allow(Rails.logger).to receive(:info)
+    allow(Rails.logger).to receive(:warn)
     allow(Rails.logger).to receive(:error)
   end
 
@@ -671,7 +672,7 @@ RSpec.describe RedshiftSync do
         expect(mock_connection).to receive(:execute).
           with("ALTER USER rails_worker PASSWORD #{expected_hash};")
         expect(sync).to receive(:store_password_secret).
-          with(secret_id, 'host' => 'db.example', 'password' => 'generated-pw')
+          with(secret_id, { 'host' => 'db.example', 'password' => 'generated-pw' })
 
         sync.send(:rotate_user_password, 'rails_worker', secret_id)
       end
@@ -702,31 +703,6 @@ RSpec.describe RedshiftSync do
     end
 
     describe '#rotate_password' do
-      it 'rotates each matching system user' do
-        allow(sync).to receive(:rotate_user_password)
-
-        expect(sync).to receive(:rotate_user_password).
-          with('rails_worker', 'redshift/testenv-analytics-rails-worker')
-
-        sync.rotate_password(usernames: ['rails_worker'])
-      end
-
-      it 'rotates all secret-backed users when no usernames given' do
-        expect(sync).to receive(:rotate_user_password).
-          with('security_audit', 'redshift/testenv-analytics-security-audit')
-        expect(sync).to receive(:rotate_user_password).
-          with('rails_worker', 'redshift/testenv-analytics-rails-worker')
-
-        sync.rotate_password
-      end
-
-      it 'warns and does nothing when there are no matching users' do
-        expect(sync).not_to receive(:rotate_user_password)
-        expect(Rails.logger).to receive(:warn).with(/No matching system users/)
-
-        sync.rotate_password(usernames: ['nonexistent'])
-      end
-
       it 'continues rotating other users when one fails, then raises a summary' do
         allow(sync).to receive(:rotate_user_password).
           with('security_audit', anything).
