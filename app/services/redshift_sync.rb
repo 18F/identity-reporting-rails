@@ -57,8 +57,16 @@ class RedshiftSync
       return
     end
 
+    failures = []
     targets.each do |system_user|
       rotate_user_password(system_user['user_name'], system_user['secret_id'])
+    rescue StandardError => e
+      failures << system_user['user_name']
+      Rails.logger.error("Failed to rotate password for #{system_user['user_name']}: #{e.message}")
+    end
+
+    if failures.any?
+      raise "Redshift password rotation failed for: #{failures.join(', ')}"
     end
 
     Rails.logger.info('Redshift password rotation completed successfully')
@@ -91,26 +99,29 @@ class RedshiftSync
       return
     end
 
+    existing_secret = fetch_secret(secret_id)
+
     new_password = generate_password
 
     execute_query(
       "ALTER USER #{user_name} PASSWORD #{md5_password(new_password, user_name)};",
     )
 
-    store_password_secret(secret_id, new_password)
+    store_password_secret(secret_id, existing_secret.merge('password' => new_password))
 
     Rails.logger.info("Successfully rotated password for #{user_name}")
   end
 
-  # Writes the new password into Secrets Manager, preserving any other keys
-  # already present in the secret's JSON payload (e.g. host, port, username).
-  def store_password_secret(secret_id, password)
+  def fetch_secret(secret_id)
     raw = secrets_manager_client.get_secret_value(secret_id: secret_id).secret_string
-    existing = raw ? JSON.parse(raw) : {}
+    raw ? JSON.parse(raw) : {}
+  end
 
+  # Writes the given payload back to Secrets Manager as a new secret version.
+  def store_password_secret(secret_id, payload)
     secrets_manager_client.put_secret_value(
       secret_id: secret_id,
-      secret_string: existing.merge('password' => password).to_json,
+      secret_string: payload.to_json,
     )
   end
 
