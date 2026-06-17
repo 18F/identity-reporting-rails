@@ -84,9 +84,7 @@ class RedshiftSync
     selected = candidates.select { |u| requested.include?(u['user_name']) }
 
     missing = requested - selected.map { |u| u['user_name'] }
-    missing.each do |name|
-      Rails.logger.warn("Skipping #{name}: not a known system user with a secret_id")
-    end
+    raise "Unknown rotation target(s): #{missing.join(', ')}" if missing.any?
 
     selected
   end

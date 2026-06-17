@@ -608,11 +608,10 @@ RSpec.describe RedshiftSync do
         expect(targets).to eq(['rails_worker'])
       end
 
-      it 'warns about and skips unknown usernames' do
-        expect(Rails.logger).to receive(:warn).with(/nonexistent.*not a known system user/)
-
-        targets = sync.send(:rotation_targets, ['nonexistent']).map { |u| u['user_name'] }
-        expect(targets).to be_empty
+      it 'raises when a requested username is not a known rotatable system user' do
+        expect do
+          sync.send(:rotation_targets, ['nonexistent'])
+        end.to raise_error(/Unknown rotation target.*nonexistent/)
       end
     end
 
