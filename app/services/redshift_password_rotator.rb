@@ -12,7 +12,12 @@ class RedshiftPasswordRotator
   PASSWORD_LENGTH = 32
   PASSWORD_PUNCTUATION = '!#$%&*+-=?@^_'
 
-  def rotate(usernames: nil)
+  # Token that explicitly opts in to rotating every secret-backed system user.
+  ALL = 'all'
+
+  # Rotates Redshift login passwords for system users.
+  # @param usernames [String, Array<String>, nil, all]
+  def rotate(usernames = nil)
     targets = rotation_targets(usernames)
 
     if targets.empty?
@@ -40,15 +45,26 @@ class RedshiftPasswordRotator
   def rotation_targets(usernames)
     candidates = system_users.reject { |u| u['secret_id'].nil? }
 
-    return candidates if usernames.nil? || usernames.empty?
+    requested = normalize_usernames(usernames)
 
-    requested = Array(usernames)
+    if requested.empty?
+      raise ArgumentError,
+            "Specify usernames to rotate, or '#{ALL}' to rotate every system user"
+    end
+
+    return candidates if requested == [ALL]
+
     selected = candidates.select { |u| requested.include?(u['user_name']) }
 
     missing = requested - selected.map { |u| u['user_name'] }
     raise "Unknown rotation target(s): #{missing.join(', ')}" if missing.any?
 
     selected
+  end
+
+  def normalize_usernames(usernames)
+    tokens = usernames.is_a?(Array) ? usernames : usernames.to_s.split(/[\s,]+/)
+    tokens.map(&:to_s).map(&:strip).reject(&:empty?)
   end
 
   def rotate_user_password(user_name, secret_id)

@@ -3,13 +3,9 @@
 # frozen_string_literal: true
 
 namespace :redshift do
-  desc 'Rotate Redshift login passwords for system users (optionally pass usernames)'
+  desc 'Rotate Redshift login passwords for system users (pass usernames, or "all")'
   task :rotate_password, [:usernames] => :environment do |_task, args|
-    # Accepts a comma- or space-separated list of usernames, e.g.
-    #   rake "redshift:rotate_password[pii_reader rails_worker]"
-    # With no argument, rotates every system user that has a secret_id.
-    usernames = args[:usernames].to_s.split(/[\s,]+/).reject(&:empty?)
-
-    RedshiftPasswordRotator.new.rotate(usernames: usernames)
+    #   rake "redshift:rotate_password[pii_reader rails_worker] or [all]"
+    RedshiftPasswordRotator.new.rotate(args[:usernames])
   end
 end

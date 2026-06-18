@@ -60,19 +60,31 @@ RSpec.describe RedshiftPasswordRotator do
   end
 
   describe '#rotation_targets' do
-    it 'returns all secret-backed system users when no usernames given' do
-      targets = rotator.send(:rotation_targets, nil).map { |u| u['user_name'] }
+    it "returns all secret-backed system users for the 'all' token" do
+      targets = rotator.send(:rotation_targets, 'all').map { |u| u['user_name'] }
       expect(targets).to contain_exactly('security_audit', 'rails_worker')
     end
 
-    it 'excludes system users without a secret_id' do
-      targets = rotator.send(:rotation_targets, nil).map { |u| u['user_name'] }
+    it "excludes system users without a secret_id from 'all'" do
+      targets = rotator.send(:rotation_targets, 'all').map { |u| u['user_name'] }
       expect(targets).not_to include('passwordless_user')
+    end
+
+    it 'raises when no usernames are given' do
+      expect do
+        rotator.send(:rotation_targets, nil)
+      end.to raise_error(ArgumentError, /Specify usernames.*or 'all'/)
     end
 
     it 'filters to the requested usernames' do
       targets = rotator.send(:rotation_targets, ['rails_worker']).map { |u| u['user_name'] }
       expect(targets).to eq(['rails_worker'])
+    end
+
+    it 'accepts a raw space-separated string of usernames' do
+      targets = rotator.send(:rotation_targets, 'security_audit rails_worker').
+        map { |u| u['user_name'] }
+      expect(targets).to contain_exactly('security_audit', 'rails_worker')
     end
 
     it 'raises when a requested username is not a known rotatable system user' do
@@ -169,13 +181,19 @@ RSpec.describe RedshiftPasswordRotator do
   end
 
   describe '#rotate' do
-    it 'rotates all secret-backed users when no usernames given' do
+    it "rotates all secret-backed users for the 'all' token" do
       expect(rotator).to receive(:rotate_user_password).
         with('security_audit', 'redshift/testenv-analytics-security-audit')
       expect(rotator).to receive(:rotate_user_password).
         with('rails_worker', 'redshift/testenv-analytics-rails-worker')
 
-      rotator.rotate
+      rotator.rotate('all')
+    end
+
+    it 'raises without rotating anything when called with no arguments' do
+      expect(rotator).not_to receive(:rotate_user_password)
+
+      expect { rotator.rotate }.to raise_error(ArgumentError, /Specify usernames.*or 'all'/)
     end
 
     it 'rotates only the requested user' do
@@ -184,7 +202,7 @@ RSpec.describe RedshiftPasswordRotator do
       expect(rotator).to receive(:rotate_user_password).
         with('rails_worker', 'redshift/testenv-analytics-rails-worker')
 
-      rotator.rotate(usernames: ['rails_worker'])
+      rotator.rotate(['rails_worker'])
     end
 
     it 'warns and does nothing when there are no matching users' do
@@ -193,7 +211,7 @@ RSpec.describe RedshiftPasswordRotator do
       expect(rotator).not_to receive(:rotate_user_password)
       expect(Rails.logger).to receive(:warn).with(/No matching system users/)
 
-      rotator.rotate
+      rotator.rotate('all')
     end
 
     it 'continues rotating other users when one fails, then raises a summary' do
@@ -207,7 +225,7 @@ RSpec.describe RedshiftPasswordRotator do
       expect(rotator).to receive(:rotate_user_password).with('rails_worker', anything)
       expect(Rails.logger).to receive(:error).with(/security_audit.*boom/)
 
-      expect { rotator.rotate }.to raise_error(/failed for: security_audit/)
+      expect { rotator.rotate('all') }.to raise_error(/failed for: security_audit/)
     end
   end
 end
