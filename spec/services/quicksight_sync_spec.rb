@@ -83,7 +83,9 @@ RSpec.describe QuicksightSync do
   end
 
   def stub_list_users(users)
-    allow(quicksight_client).to receive(:list_users).and_return(double(user_list: users))
+    allow(quicksight_client).to receive(:list_users).and_return(
+      double(user_list: users, next_token: nil),
+    )
   end
 
   describe 'environment detection' do
@@ -158,14 +160,12 @@ RSpec.describe QuicksightSync do
       expect(mapping).to eq('DWUser/jdoe@example.com' => 'jdoe@example.com')
     end
 
-    it 'creates an entry per valid role for multi-role users' do
+    it 'creates an entry only for the highest-priority role for multi-role users' do
       allow(sync).to receive(:users_yaml).and_return(
         'multi.role' => { 'aws_groups' => ['dwuser', 'dwadmin'] },
       )
       mapping = sync.send(:expected_qs_username_to_email)
-      expect(mapping.keys).to contain_exactly(
-        'DWUser/multi.role', 'DWAdmin/multi.role'
-      )
+      expect(mapping).to eq('DWAdmin/multi.role' => 'multi.role@gsa.gov')
     end
   end
 
@@ -226,6 +226,42 @@ RSpec.describe QuicksightSync do
       end
     end
 
+    context 'when QuickSight users span multiple pages' do
+      before do
+        allow(sync).to receive(:users_yaml).and_return({})
+        allow(quicksight_client).to receive(:list_users).with(
+          aws_account_id: account_id,
+          namespace: 'default',
+        ).and_return(
+          double(
+            user_list: [qs_user(user_name: 'DWUser/first.page', email: 'first.page@gsa.gov')],
+            next_token: 'next-page-token',
+          ),
+        )
+        allow(quicksight_client).to receive(:list_users).with(
+          aws_account_id: account_id,
+          namespace: 'default',
+          next_token: 'next-page-token',
+        ).and_return(
+          double(
+            user_list: [qs_user(user_name: 'DWUser/second.page', email: 'second.page@gsa.gov')],
+            next_token: nil,
+          ),
+        )
+      end
+
+      it 'syncs users from every page' do
+        expect(quicksight_client).to receive(:delete_user).with(
+          hash_including(user_name: 'DWUser/first.page'),
+        )
+        expect(quicksight_client).to receive(:delete_user).with(
+          hash_including(user_name: 'DWUser/second.page'),
+        )
+
+        sync.sync
+      end
+    end
+
     context 'protected accounts' do
       before do
         allow(sync).to receive(:users_yaml).and_return({})
@@ -280,6 +316,32 @@ RSpec.describe QuicksightSync do
 
       it 'does not create the lower-priority account' do
         expect(quicksight_client).not_to receive(:register_user)
+        sync.sync
+      end
+    end
+
+    context 'when a lower-priority account already exists' do
+      before do
+        allow(sync).to receive(:users_yaml).and_return(
+          'multi.role' => { 'aws_groups' => ['dwuser', 'dwadmin'] },
+        )
+        stub_list_users(
+          [
+            qs_user(user_name: 'DWUser/multi.role', email: 'multi.role@gsa.gov'),
+          ],
+        )
+        allow(quicksight_client).to receive(:register_user)
+        allow(quicksight_client).to receive(:create_group_membership)
+      end
+
+      it 'replaces it with the highest-priority account' do
+        expect(quicksight_client).to receive(:delete_user).with(
+          hash_including(user_name: 'DWUser/multi.role'),
+        )
+        expect(quicksight_client).to receive(:register_user).with(
+          hash_including(email: 'multi.role@gsa.gov', user_role: 'ADMIN'),
+        )
+
         sync.sync
       end
     end

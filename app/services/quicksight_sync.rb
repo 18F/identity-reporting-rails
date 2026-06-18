@@ -95,10 +95,23 @@ class QuicksightSync
   end
 
   def list_quicksight_users
-    quicksight_client.list_users(
-      aws_account_id: aws_account_id,
-      namespace: 'default',
-    ).user_list
+    users = []
+    next_token = nil
+
+    loop do
+      params = {
+        aws_account_id: aws_account_id,
+        namespace: 'default',
+      }
+      params[:next_token] = next_token if next_token.present?
+
+      response = quicksight_client.list_users(**params)
+      users.concat(response.user_list)
+      next_token = response.next_token
+      break if next_token.blank?
+    end
+
+    users
   end
 
   def strip_email_domain(email)
@@ -151,18 +164,17 @@ class QuicksightSync
     email_to_username
   end
 
-  # qs_username -> email for every valid (role, user) combination
+  # qs_username -> email for each user's highest-priority valid role
   def expected_qs_username_to_email
     mapping = {}
 
     filtered_yaml_email_mapping.each do |email, yaml_username|
       aws_groups = users_yaml[yaml_username]['aws_groups'] || []
-      aws_groups.each do |aws_group|
-        normalized_role = normalize_aws_role(aws_group)
-        next unless normalized_role
+      normalized_roles = aws_groups.filter_map { |aws_group| normalize_aws_role(aws_group) }
+      highest_role = normalized_roles.max_by { |role| role_priority(role) }
+      next unless highest_role
 
-        mapping[build_qs_username(normalized_role, email)] = email
-      end
+      mapping[build_qs_username(highest_role, email)] = email
     end
 
     mapping
