@@ -3,6 +3,7 @@ git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
 gem 'activerecord-redshift-adapter'
+gem 'aws-sdk-quicksight'
 gem 'rails', '~> 8.1.3'
 gem 'bootsnap', '~> 1.0', require: false
 gem 'csv'
