@@ -10,6 +10,6 @@ namespace :redshift do
     # With no argument, rotates every system user that has a secret_id.
     usernames = args[:usernames].to_s.split(/[\s,]+/).reject(&:empty?)
 
-    RedshiftSync.new.rotate_password(usernames: usernames)
+    RedshiftPasswordRotator.new.rotate(usernames: usernames)
   end
 end
