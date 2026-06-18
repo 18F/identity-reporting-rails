@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+
   "permission": {
     "edit": "allow",
     "bash": {
@@ -13,11 +14,17 @@
       "git remote *": "allow",
       "glab *": "ask",
       "glab auth status *": "allow",
+      "glab issue close *": "deny",
+      "glab issue delete *": "deny",
       "glab issue list *": "allow",
       "glab issue view *": "allow",
+      "glab mr close *": "deny",
+      "glab mr delete *": "deny",
       "glab mr diff *": "allow",
       "glab mr list *": "allow",
+      "glab mr merge *": "deny",
       "glab mr view *": "allow",
+      "glab release *": "deny",
       "head *": "allow",
       "mkdir *": "allow",
       "printf *": "allow",
@@ -40,6 +47,11 @@
     "webfetch": "allow",
     "websearch": "allow"
   },
+
+  "plugin": [
+    "superpowers@git+https://github.com/obra/superpowers.git"
+  ],
+
   "mcp": {
     "context7": {
       "type": "remote",
