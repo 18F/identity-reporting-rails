@@ -7,7 +7,7 @@ require 'json'
 require 'securerandom'
 
 # Rotates the Redshift login passwords for system users defined in
-# config/redshift_config.yaml. For each target user it:
+# config/redshift_config.yaml.
 class RedshiftPasswordRotator
   PASSWORD_LENGTH = 32
   PASSWORD_PUNCTUATION = '!#$%&*+-=?@^_'
