@@ -49,7 +49,7 @@ Run `make help` to list all available targets.
 - Ruby is linted with **RuboCop** (`rubocop-rails`, `rubocop-rspec`,
   `rubocop-performance`). Config in `.rubocop.yml` (`DisabledByDefault: true` —
   only explicitly enabled cops run).
-- Target Ruby 3.4, Target Rails 8.0.
+- Target Ruby 3.4, Target Rails 8.1.
 - Run `make lint` before finishing a change; use `make lintfix` to auto-correct.
 - Prefer self-documenting code over excessive comments.
 - The `README.md` is **auto-generated** from `docs/`. Do not edit it directly —
@@ -123,8 +123,7 @@ This project is hosted on a self-hosted GitLab instance
 
 - Authenticate once with `glab auth login --hostname gitlab.login.gov` (or via
   a `GITLAB_TOKEN` env var). `glab auth status` confirms you are logged in. A
-  single `GITLAB_TOKEN` is applied to every configured host, so `glab auth
-  status` may report a `401` for `gitlab.com` even when `gitlab.login.gov`
+  single `GITLAB_TOKEN` is applied to every configured host, so `glab auth status` may report a `401` for `gitlab.com` even when `gitlab.login.gov`
   works fine — that warning is safe to ignore for this repo.
 - This repo (`lg/identity-reporting-rails`) generally has **no** issues of its
   own. Team Data issues — including ones that touch this app (the
