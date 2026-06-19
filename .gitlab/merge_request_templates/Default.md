@@ -1,6 +1,6 @@
 ## :ticket: Ticket
 
-[issue-XXXX](https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/issues/XXXX)
+[issue-<issue-id>](https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/issues/<issue-id>)
 
 ## :tools: Summary
 
