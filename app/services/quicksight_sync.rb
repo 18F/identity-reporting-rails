@@ -125,11 +125,11 @@ class QuicksightSync
   def normalize_aws_role(aws_group)
     return nil if env_type == 'prod' && aws_group.end_with?('nonprod')
 
-    quicksight_config['aws_role_map'][aws_group]
+    redshift_config['aws_role_map'][aws_group]
   end
 
   def role_priority(aws_role)
-    quicksight_config['role_priority'].fetch(aws_role, 0)
+    redshift_config['role_priority'].fetch(aws_role, 0)
   end
 
   def quicksight_aws_role(aws_role)

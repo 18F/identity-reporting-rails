@@ -7,19 +7,6 @@ RSpec.describe QuicksightSync do
 
   let(:test_quicksight_config) do
     {
-      'aws_role_map' => {
-        'dwadmin' => 'DWAdmin',
-        'dwadminnonprod' => 'DWAdmin',
-        'dwpoweruser' => 'DWPowerUser',
-        'dwpowerusernonprod' => 'DWPowerUser',
-        'dwuser' => 'DWUser',
-        'dwusernonprod' => 'DWUser',
-      },
-      'role_priority' => {
-        'DWAdmin' => 3,
-        'DWPowerUser' => 2,
-        'DWUser' => 1,
-      },
       'quicksight_aws_role' => {
         'DWAdmin' => 'ADMIN',
         'DWPowerUser' => 'AUTHOR',
@@ -40,6 +27,19 @@ RSpec.describe QuicksightSync do
 
   let(:test_redshift_config) do
     {
+      'aws_role_map' => {
+        'dwadmin' => 'DWAdmin',
+        'dwadminnonprod' => 'DWAdmin',
+        'dwpoweruser' => 'DWPowerUser',
+        'dwpowerusernonprod' => 'DWPowerUser',
+        'dwuser' => 'DWUser',
+        'dwusernonprod' => 'DWUser',
+      },
+      'role_priority' => {
+        'DWAdmin' => 3,
+        'DWPowerUser' => 2,
+        'DWUser' => 1,
+      },
       'enabled_aws_groups' => {
         'prod' => ['dwuser', 'dwpoweruser', 'dwadmin'],
         'sandbox' => ['dwuser', 'dwusernonprod', 'dwpoweruser', 'dwpowerusernonprod', 'dwadmin',
