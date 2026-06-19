@@ -41,14 +41,17 @@ devenv path unless you have a reason not to.
 All common tasks are exposed through the `Makefile`. Prefer these over raw
 commands.
 
-- `make setup` — Full setup (config files, gems, brew packages, databases).
+- `make setup` — Run setup scripts (`bin/setup`): packages, dependencies, databases, config files.
 - `make fast_setup` — Abbreviated setup that skips linking some files.
-- `make run` — Start the development server (runs the `Procfile`: web + worker).
+- `make run` — Start the development server (runs the `Procfile`: `web` =
+  `rackup config.ru`, `worker` = `good_job start`).
 - `make test` — Run the full RSpec suite (`RAILS_ENV=test`).
+- `make test_serial` — Run RSpec serially (non-parallel).
 - `make fast_test` — RSpec without accessibility specs.
 - `make lint` — Run all linters (rubocop, brakeman, lockfile/readme/migration checks).
 - `make lintfix` — Auto-fix rubocop + normalize YAML.
 - `make brakeman` — Security scan.
+- `make audit` — `bundler-audit` dependency vulnerability check.
 - `make check` — Runs `lint` then `test`.
 - `make update` — `bundle install` + `rails db:migrate` (after a git pull).
 
@@ -102,7 +105,8 @@ This app connects to **multiple databases** (see `config/database.yml`):
 
 Migrations are separated by database:
 
-- `db/primary_migrate/`
+- `db/primary_migrate/` (configured in `config/database.yml`; the primary DB
+  has no migrations yet — `db/schema.rb` is currently empty/version 0).
 - `db/worker_jobs_migrate/`
 - `db/data_warehouse_migrate/` (+ `db/data_warehouse_test_migrate/` for tests)
 
