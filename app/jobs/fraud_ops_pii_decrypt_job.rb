@@ -1,5 +1,11 @@
 class FraudOpsPiiDecryptJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :default
+
+  good_job_control_concurrency_with(
+    total_limit: 1,
+  )
 
   def perform(batch_size: 1000)
     unless job_enabled?
