@@ -167,6 +167,39 @@ RSpec.describe QuicksightSync do
       mapping = sync.send(:expected_qs_username_to_email)
       expect(mapping).to eq('DWAdmin/multi.role' => 'multi.role@gsa.gov')
     end
+
+    it 'keeps the first user and warns when two users share an email' do
+      allow(sync).to receive(:users_yaml).and_return(
+        'first.user' => { 'aws_groups' => ['dwuser'], 'email' => ['shared@gsa.gov'] },
+        'second.user' => { 'aws_groups' => ['dwadmin'], 'email' => ['shared@gsa.gov'] },
+      )
+      expect(Rails.logger).to receive(:warn).with(/duplicate email shared@gsa.gov/)
+      mapping = sync.send(:expected_qs_username_to_email)
+      expect(mapping).to eq('DWUser/shared' => 'shared@gsa.gov')
+    end
+
+    it 'creates the configured extra accounts for an allowlisted user' do
+      allow(sync).to receive(:quicksight_config).and_return(
+        test_quicksight_config.merge(
+          'multi_account_allowlist' => { 'jane.smith' => ['FullAdministrator'] },
+        ),
+      )
+      mapping = sync.send(:expected_qs_username_to_email)
+      expect(mapping).to include(
+        'DWAdmin/jane.smith' => 'jane.smith@gsa.gov',
+        'FullAdministrator/jane.smith' => 'jane.smith@gsa.gov',
+      )
+    end
+
+    it 'ignores the allowlist for users not in users.yaml or not enabled' do
+      allow(sync).to receive(:quicksight_config).and_return(
+        test_quicksight_config.merge(
+          'multi_account_allowlist' => { 'bob.jones' => ['FullAdministrator'] },
+        ),
+      )
+      mapping = sync.send(:expected_qs_username_to_email)
+      expect(mapping.keys).not_to include(a_string_matching(%r{bob.jones}))
+    end
   end
 
   describe '#sync' do
@@ -298,6 +331,32 @@ RSpec.describe QuicksightSync do
           hash_including(email: 'multi.role@gsa.gov', user_role: 'ADMIN'),
         )
         allow(quicksight_client).to receive(:create_group_membership)
+        sync.sync
+      end
+    end
+
+    context 'allowlisted multi-account user' do
+      before do
+        allow(sync).to receive(:quicksight_config).and_return(
+          test_quicksight_config.merge(
+            'multi_account_allowlist' => { 'jane.smith' => ['FullAdministrator'] },
+          ),
+        )
+        allow(sync).to receive(:users_yaml).and_return(
+          'jane.smith' => { 'aws_groups' => ['dwadmin'] },
+        )
+        stub_list_users([])
+        allow(quicksight_client).to receive(:create_group_membership)
+      end
+
+      it 'creates both the highest-priority and the allowlisted account' do
+        expect(quicksight_client).to receive(:register_user).with(
+          hash_including(iam_arn: "arn:aws:iam::#{account_id}:role/DWAdmin"),
+        )
+        expect(quicksight_client).to receive(:register_user).with(
+          hash_including(iam_arn: "arn:aws:iam::#{account_id}:role/FullAdministrator"),
+        )
+
         sync.sync
       end
     end

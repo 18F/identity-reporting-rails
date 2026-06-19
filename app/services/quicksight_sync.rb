@@ -146,7 +146,9 @@ class QuicksightSync
     )
   end
 
-  # email -> users.yaml username, filtered to enabled groups and human accounts
+  # email -> users.yaml username, filtered to enabled groups and human accounts.
+  # The first user encountered wins a given email; later collisions are skipped
+  # and logged, so two users.yaml entries can never claim the same email.
   def filtered_yaml_email_mapping
     email_to_username = {}
 
@@ -158,13 +160,27 @@ class QuicksightSync
       next unless aws_groups.intersect?(enabled_aws_groups)
 
       email = user_data.fetch('email', ["#{username}@#{default_email_domain}"]).first
+
+      if email_to_username.key?(email)
+        Rails.logger.warn(
+          "QS: skipping user #{username} with duplicate email #{email} " \
+          "(already claimed by #{email_to_username[email]})",
+        )
+        next
+      end
+
       email_to_username[email] = username
     end
 
     email_to_username
   end
 
-  # qs_username -> email for each user's highest-priority valid role
+  def multi_account_allowlist
+    quicksight_config.fetch('multi_account_allowlist', {})
+  end
+
+  # qs_username -> email for each user's highest-priority valid role, plus any
+  # extra roles configured for allowlisted users.
   def expected_qs_username_to_email
     mapping = {}
 
@@ -175,6 +191,10 @@ class QuicksightSync
       next unless highest_role
 
       mapping[build_qs_username(highest_role, email)] = email
+
+      multi_account_allowlist.fetch(yaml_username, []).each do |extra_role|
+        mapping[build_qs_username(extra_role, email)] = email
+      end
     end
 
     mapping
@@ -223,6 +243,8 @@ class QuicksightSync
 
   # Mirrors the Lambda's #1318 create_users logic: one account per user,
   # highest-priority role, upgrade only if no higher-priority account exists.
+  # Accounts whose role is explicitly allowlisted for a user are exempt from
+  # the one-account-per-user collapse and are always created when missing.
   def create_users(expected_users, quicksight_users)
     Rails.logger.info('QS: creating new users')
     errors = []
@@ -233,17 +255,29 @@ class QuicksightSync
     users_to_create = expected - existing
     return errors if users_to_create.empty?
 
+    allowlisted, standard = users_to_create.partition do |qs_username|
+      allowlisted_account?(qs_username)
+    end
+
+    allowlisted.each do |qs_username|
+      aws_role = qs_username.split('/')[0]
+      errors << safe_create(expected_users[qs_username], aws_role, qs_username)
+    end
+
     new_accounts_by_user = Hash.new { |h, k| h[k] = [] }
-    users_to_create.each do |qs_username|
+    standard.each do |qs_username|
       username_part = qs_username.split('/')[1]
       new_accounts_by_user[username_part] << qs_username
     end
 
     # drop_users has already deleted any existing account not in expected, so
     # ignore those here to avoid treating a just-dropped account as still present.
+    # Allowlisted accounts are also ignored so they don't suppress a user's
+    # highest-priority account via the higher_exists check.
     existing_by_user = Hash.new { |h, k| h[k] = [] }
     quicksight_users.each do |user|
       next unless expected.include?(user.user_name)
+      next if allowlisted_account?(user.user_name)
 
       username_part = user.user_name.split('/')[1]
       existing_by_user[username_part] << user.user_name
@@ -275,6 +309,12 @@ class QuicksightSync
     end
 
     errors.compact
+  end
+
+  # Whether a qs_username's role is allowlisted for that user (username part).
+  def allowlisted_account?(qs_username)
+    aws_role, username_part = qs_username.split('/')
+    multi_account_allowlist.fetch(username_part, []).include?(aws_role)
   end
 
   def safe_create(email, aws_role, qs_username)
