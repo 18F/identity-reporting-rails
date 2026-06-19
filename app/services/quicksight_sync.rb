@@ -241,8 +241,7 @@ class QuicksightSync
     )
   end
 
-  # Mirrors the Lambda's #1318 create_users logic: one account per user,
-  # highest-priority role, upgrade only if no higher-priority account exists.
+  # One account per user, highest-priority role, upgrade only if no higher-priority account exists.
   # Accounts whose role is explicitly allowlisted for a user are exempt from
   # the one-account-per-user collapse and are always created when missing.
   def create_users(expected_users, quicksight_users)
