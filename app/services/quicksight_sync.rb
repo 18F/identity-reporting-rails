@@ -8,6 +8,8 @@ require 'aws-sdk-core'
 require_relative '../../config/environment'
 
 class QuicksightSync
+  include UserSyncConfig
+
   def sync
     Rails.logger.info('Starting QuickSight user sync')
 
@@ -30,42 +32,12 @@ class QuicksightSync
 
   private
 
-  def env_name
-    @env_name ||= Identity::Hostdata.env
-  end
-
-  def env_type
-    return 'prod' if ['prod', 'dm', 'staging'].include?(env_name)
-
-    'sandbox'
-  end
-
   def quicksight_config
     @quicksight_config ||= YAML.safe_load(File.read(quicksight_config_path))
   end
 
   def quicksight_config_path
     Rails.root.join('config/quicksight_config.yaml')
-  end
-
-  def redshift_config
-    @redshift_config ||= YAML.safe_load(File.read(redshift_config_path))
-  end
-
-  def redshift_config_path
-    Rails.root.join('config/redshift_config.yaml')
-  end
-
-  def users_yaml
-    @users_yaml ||= YAML.safe_load(File.read(users_yaml_path))['users']
-  end
-
-  def users_yaml_path
-    @users_yaml_path ||= IdentityConfig.identity_devops_users_yaml_path
-  end
-
-  def enabled_aws_groups
-    redshift_config['enabled_aws_groups'][env_type]
   end
 
   def non_human_accounts

@@ -9,6 +9,8 @@ require 'json'
 
 require_relative '../../config/environment'
 class RedshiftSync
+  include UserSyncConfig
+
   def sync
     Rails.logger.info('Starting Redshift user sync')
 
@@ -49,28 +51,6 @@ class RedshiftSync
 
   private
 
-  def env_name
-    @env_name ||= Identity::Hostdata.env
-  end
-
-  def env_type
-    return 'prod' if ['prod', 'dm', 'staging'].include?(env_name)
-
-    'sandbox'
-  end
-
-  def redshift_config
-    @redshift_config ||= YAML.safe_load(File.read(redshift_config_path))
-  end
-
-  def redshift_config_path
-    Rails.root.join('config/redshift_config.yaml')
-  end
-
-  def users_yaml
-    @users_yaml ||= YAML.safe_load(File.read(users_yaml_path))['users']
-  end
-
   def config_file
     @config_file ||= begin
       terraform_config_path = IdentityConfig.local_devops_path(
@@ -79,10 +59,6 @@ class RedshiftSync
       )
       File.read(terraform_config_path)
     end
-  end
-
-  def users_yaml_path
-    @users_yaml_path ||= IdentityConfig.identity_devops_users_yaml_path
   end
 
   def interpolate_env_name(str)
@@ -101,10 +77,6 @@ class RedshiftSync
     else
       hash
     end
-  end
-
-  def enabled_aws_groups
-    redshift_config['enabled_aws_groups'][env_type]
   end
 
   def feature_enabled?(feature_flag)
