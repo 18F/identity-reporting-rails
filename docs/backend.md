@@ -13,10 +13,13 @@ belong to) stays in `identity-devops`.
     their `aws_groups`. Read locally via
     `IdentityConfig.identity_devops_users_yaml_path` (no runtime GitHub fetch).
 - **Execution (in this repo):**
-  - `config/redshift_config.yaml` — single source of truth for
-    `enabled_aws_groups` (which DW groups are active per environment), shared by
-    both syncs.
-  - `config/quicksight_config.yaml` — QuickSight-specific role/group mappings.
+  - `config/redshift_config.yaml` — single source of truth for the DW role
+    model shared by both syncs: `enabled_aws_groups` (which DW groups are active
+    per environment), `aws_role_map` (`aws_group` → normalized DW role), and
+    `role_priority` (which role wins when a user has several).
+  - `config/quicksight_config.yaml` — QuickSight-specific mappings only
+    (`quicksight_aws_role`, `quicksight_group`, `protected_accounts`,
+    `non_human_accounts`, `default_email_domain`, `multi_account_allowlist`).
 
 ### Redshift sync
 
@@ -60,3 +63,16 @@ bundle exec rspec spec/jobs/quicksight_sync_job_spec.rb
 
 The service specs stub `Aws::QuickSight::Client`, `Aws::STS::Client`, and
 `users_yaml`, so no live AWS or GitHub access is needed.
+
+### Known follow-ups / tech debt
+
+- **Unify the DW role model in one place.** The `aws_group` → DW role
+  relationship is currently defined twice: declaratively in
+  `config/redshift_config.yaml` (`aws_role_map`, consumed by
+  `QuicksightSync`) and imperatively as the hardcoded
+  `RedshiftMasking::UserResolver::IAM_ROLE_GROUPS` constant
+  (`app/services/redshift_masking/user_resolver.rb`). These encode the same
+  knowledge in two forms and can drift apart. A future change should drive
+  `UserResolver` from `redshift_config.yaml`'s `aws_role_map` (or a shared
+  loader) so there is a single source of truth. Verify all `UserResolver`
+  consumers and the redshift masking specs when doing this.
