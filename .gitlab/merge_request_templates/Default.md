@@ -6,7 +6,7 @@
 
 <!-- What changed and why. A short paragraph is fine; use bullets for larger changes. -->
 
-## :scroll: Testing Plan
+## :mag: Verification
 
 <!-- How this was verified, e.g. "Tested locally", "Verified in `<env>`",
      relevant rspec commands, or before/after screenshots. -->
