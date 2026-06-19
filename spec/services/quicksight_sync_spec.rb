@@ -459,8 +459,32 @@ RSpec.describe QuicksightSync do
         )
       end
 
-      it 'logs a warning for PRO roles' do
-        expect(Rails.logger).to receive(:warn).with(/PRO roles/)
+      it 'logs a structured warning with pro_users_detected' do
+        expect(Rails.logger).to receive(:warn).with(
+          {
+            name: 'QuicksightSyncJob',
+            pro_users_detected: 'FullAdministrator/admin',
+          }.to_json,
+        )
+        sync.sync
+      end
+    end
+
+    context 'with no PRO roles' do
+      before do
+        allow(sync).to receive(:users_yaml).and_return({})
+        stub_list_users(
+          [
+            qs_user(
+              user_name: 'FullAdministrator/admin', email: 'admin@gsa.gov',
+              role: 'ADMIN'
+            ),
+          ],
+        )
+      end
+
+      it 'does not log a PRO roles warning' do
+        expect(Rails.logger).not_to receive(:warn)
         sync.sync
       end
     end

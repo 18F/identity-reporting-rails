@@ -345,12 +345,18 @@ class QuicksightSync
   end
 
   def flag_users_with_pro_roles(quicksight_users)
-    pro_users = quicksight_users.select { |user| user.role.to_s.end_with?('_PRO') }
-    if pro_users.any?
-      Rails.logger.warn(
-        "Quicksight users with PRO roles found: #{pro_users.map(&:user_name)}",
-      )
-    end
+    pro_users = quicksight_users.
+      select { |user| user.role.to_s.end_with?('_PRO') }.
+      map(&:user_name)
+
+    return if pro_users.empty?
+
+    Rails.logger.warn(
+      {
+        name: 'QuicksightSyncJob',
+        pro_users_detected: pro_users.join(', '),
+      }.to_json,
+    )
   end
 end
 
