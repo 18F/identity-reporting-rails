@@ -239,8 +239,12 @@ class QuicksightSync
       new_accounts_by_user[username_part] << qs_username
     end
 
+    # drop_users has already deleted any existing account not in expected, so
+    # ignore those here to avoid treating a just-dropped account as still present.
     existing_by_user = Hash.new { |h, k| h[k] = [] }
     quicksight_users.each do |user|
+      next unless expected.include?(user.user_name)
+
       username_part = user.user_name.split('/')[1]
       existing_by_user[username_part] << user.user_name
     end

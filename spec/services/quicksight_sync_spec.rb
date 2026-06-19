@@ -346,6 +346,32 @@ RSpec.describe QuicksightSync do
       end
     end
 
+    context 'when a user is demoted to a lower-priority role' do
+      before do
+        allow(sync).to receive(:users_yaml).and_return(
+          'demoted.user' => { 'aws_groups' => ['dwuser'] },
+        )
+        stub_list_users(
+          [
+            qs_user(user_name: 'DWAdmin/demoted.user', email: 'demoted.user@gsa.gov'),
+          ],
+        )
+        allow(quicksight_client).to receive(:register_user)
+        allow(quicksight_client).to receive(:create_group_membership)
+      end
+
+      it 'deletes the old higher-priority account and creates the new lower-priority one' do
+        expect(quicksight_client).to receive(:delete_user).with(
+          hash_including(user_name: 'DWAdmin/demoted.user'),
+        )
+        expect(quicksight_client).to receive(:register_user).with(
+          hash_including(email: 'demoted.user@gsa.gov', user_role: 'AUTHOR'),
+        )
+
+        sync.sync
+      end
+    end
+
     context 'nonprod groups in prod' do
       before do
         allow(Identity::Hostdata).to receive(:env).and_return('prod')
