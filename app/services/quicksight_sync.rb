@@ -122,6 +122,14 @@ class QuicksightSync
     "#{aws_role}/#{strip_email_domain(email)}"
   end
 
+  def role_part(qs_username)
+    qs_username.split('/', 2)[0]
+  end
+
+  def user_part(qs_username)
+    qs_username.split('/', 2)[1]
+  end
+
   def normalize_aws_role(aws_group)
     return nil if env_type == 'prod' && aws_group.end_with?('nonprod')
 
@@ -246,74 +254,83 @@ class QuicksightSync
   # the one-account-per-user collapse and are always created when missing.
   def create_users(expected_users, quicksight_users)
     Rails.logger.info('QS: creating new users')
-    errors = []
 
     expected = expected_users.keys.to_set
     existing = quicksight_users.map(&:user_name).to_set
 
     users_to_create = expected - existing
-    return errors if users_to_create.empty?
+    return [] if users_to_create.empty?
 
     allowlisted, standard = users_to_create.partition do |qs_username|
       allowlisted_account?(qs_username)
     end
 
-    allowlisted.each do |qs_username|
-      aws_role = qs_username.split('/')[0]
-      errors << safe_create(expected_users[qs_username], aws_role, qs_username)
-    end
-
-    new_accounts_by_user = Hash.new { |h, k| h[k] = [] }
-    standard.each do |qs_username|
-      username_part = qs_username.split('/')[1]
-      new_accounts_by_user[username_part] << qs_username
-    end
-
-    # drop_users has already deleted any existing account not in expected, so
-    # ignore those here to avoid treating a just-dropped account as still present.
-    # Allowlisted accounts are also ignored so they don't suppress a user's
-    # highest-priority account via the higher_exists check.
-    existing_by_user = Hash.new { |h, k| h[k] = [] }
-    quicksight_users.each do |user|
-      next unless expected.include?(user.user_name)
-      next if allowlisted_account?(user.user_name)
-
-      username_part = user.user_name.split('/')[1]
-      existing_by_user[username_part] << user.user_name
-    end
-
-    new_accounts_by_user.each do |username_part, accounts|
-      existing_accounts = existing_by_user[username_part]
-
-      if existing_accounts.empty?
-        highest = accounts.max_by { |acc| role_priority(acc.split('/')[0]) }
-        email = expected_users[highest]
-        aws_role = highest.split('/')[0]
-        errors << safe_create(email, aws_role, highest)
-      else
-        accounts.each do |qs_username|
-          aws_role = qs_username.split('/')[0]
-          priority = role_priority(aws_role)
-
-          higher_exists = existing_accounts.any? do |existing_account|
-            role_priority(existing_account.split('/')[0]) > priority
-          end
-
-          next if higher_exists
-
-          email = expected_users[qs_username]
-          errors << safe_create(email, aws_role, qs_username)
-        end
-      end
-    end
+    errors = create_allowlisted_accounts(allowlisted, expected_users)
+    errors.concat(
+      create_standard_accounts(standard, expected_users, quicksight_users, expected),
+    )
 
     errors.compact
   end
 
+  def create_allowlisted_accounts(allowlisted, expected_users)
+    allowlisted.map do |qs_username|
+      safe_create(expected_users[qs_username], role_part(qs_username), qs_username)
+    end
+  end
+
+  def create_standard_accounts(standard, expected_users, quicksight_users, expected)
+    new_accounts_by_user = group_by_user(standard)
+    existing_by_user = existing_standard_accounts_by_user(quicksight_users, expected)
+
+    errors = []
+    new_accounts_by_user.each do |username_part, accounts|
+      existing_accounts = existing_by_user[username_part]
+
+      if existing_accounts.empty?
+        highest = accounts.max_by { |acc| role_priority(role_part(acc)) }
+        errors << safe_create(expected_users[highest], role_part(highest), highest)
+      else
+        accounts.each do |qs_username|
+          next if higher_priority_account_exists?(qs_username, existing_accounts)
+
+          errors << safe_create(
+            expected_users[qs_username], role_part(qs_username), qs_username
+          )
+        end
+      end
+    end
+    errors
+  end
+
+  def group_by_user(qs_usernames)
+    grouped = Hash.new { |h, k| h[k] = [] }
+    qs_usernames.each { |qs_username| grouped[user_part(qs_username)] << qs_username }
+    grouped
+  end
+
+  # drop_users has already deleted any existing account not in expected, so
+  # ignore those here to avoid treating a just-dropped account as still present.
+  # Allowlisted accounts are also ignored so they don't suppress a user's
+  # highest-priority account via the higher_priority_account_exists? check.
+  def existing_standard_accounts_by_user(quicksight_users, expected)
+    relevant = quicksight_users.select do |user|
+      expected.include?(user.user_name) && !allowlisted_account?(user.user_name)
+    end.map(&:user_name)
+
+    group_by_user(relevant)
+  end
+
+  def higher_priority_account_exists?(qs_username, existing_accounts)
+    priority = role_priority(role_part(qs_username))
+    existing_accounts.any? do |existing_account|
+      role_priority(role_part(existing_account)) > priority
+    end
+  end
+
   # Whether a qs_username's role is allowlisted for that user (username part).
   def allowlisted_account?(qs_username)
-    aws_role, username_part = qs_username.split('/')
-    multi_account_allowlist.fetch(username_part, []).include?(aws_role)
+    multi_account_allowlist.fetch(user_part(qs_username), []).include?(role_part(qs_username))
   end
 
   def safe_create(email, aws_role, qs_username)
