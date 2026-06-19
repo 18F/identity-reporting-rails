@@ -34,8 +34,8 @@ until that is in production.
 - Migrating the QuickSight Terraform infra (groups, IAM, alarms) — that stays in
   `identity-devops`.
 - Touching the separate GitLab Go user-sync (`bin/users/sync.go`).
-- Refactoring the existing Redshift sync code beyond reading one shared config
-  key.
+- Refactoring the existing Redshift sync code beyond reading shared config keys
+  (`enabled_aws_groups`, `aws_role_map`, `role_priority`).
 
 ## Architecture
 
@@ -90,7 +90,9 @@ env var (`prod`/`sandbox`). `QuicksightSync` instead reuses
 and `sandbox` otherwise. This means `dm` and `staging` are treated as `prod` in
 the Rails version, consistent with the sibling Redshift sync.
 
-`config/quicksight_config.yaml` holds only QuickSight-specific mappings:
+The shared DW role model lives in `config/redshift_config.yaml` (alongside
+`enabled_aws_groups`), since it is not QuickSight-specific and is also the basis
+for the Redshift role mapping:
 
 ```yaml
 # users.yaml aws_group -> normalized DW role
@@ -107,7 +109,11 @@ role_priority:
   DWAdmin: 3
   DWPowerUser: 2
   DWUser: 1
+```
 
+`config/quicksight_config.yaml` holds only QuickSight-specific mappings:
+
+```yaml
 # DW role -> QuickSight API role (register_user)
 quicksight_aws_role:
   DWAdmin: ADMIN
@@ -131,6 +137,13 @@ protected_accounts:
 non_human_accounts:
   - root
   - project_21_bot
+
+# users.yaml username -> extra QS roles to create in addition to the user's
+# highest-priority role. Lets a single user have multiple accounts on one email
+# (e.g. both DWAdmin/x and FullAdministrator/x) for special cases such as
+# troubleshooting. Two *different* users.yaml entries can never share an email;
+# the first wins and the rest are skipped (with a warning).
+multi_account_allowlist: {}
 
 # Default email domain: used both to build a default email for users with no
 # explicit email in users.yaml ("<user>@gsa.gov") and to strip from the email
@@ -167,13 +180,14 @@ Private helpers (ported from the Python source, mappings driven by config):
 | `env_name` / `env_type` | (copied from `RedshiftSync`) | prod/dm/staging → `prod`, else `sandbox` |
 | `users_yaml` | `load_users_yaml` | local file read, no GitHub |
 | `enabled_aws_groups` | `enabled_aws_groups` | from `redshift_config.yaml` |
-| `normalize_aws_role` | lines 74–87 | from `aws_role_map` |
-| `role_priority` | `get_role_priority` | from `role_priority` |
+| `normalize_aws_role` | lines 74–87 | from `aws_role_map` (in `redshift_config.yaml`) |
+| `role_priority` | `get_role_priority` | from `role_priority` (in `redshift_config.yaml`) |
 | `quicksight_aws_role` | lines 111–121 | from `quicksight_aws_role` |
 | `quicksight_group` | lines 123–132 | from `quicksight_group` |
 | `build_qs_username` | line 38 | `"#{role}/#{email.sub('@gsa.gov', '')}"` — strips only `@gsa.gov` |
 | `highest_aws_role` | lines 102–108 | max valid role by `role_priority`; `nil` if none |
-| `filtered_yaml_email_mapping` | lines 202–218 | skip `non_human_accounts` + users with no `aws_groups`; default email `"<user>@gsa.gov"` |
+| `filtered_yaml_email_mapping` | lines 202–218 | skip `non_human_accounts` + users with no `aws_groups`; default email `"<user>@gsa.gov"`; duplicate emails resolved first-wins with a warning |
+| `multi_account_allowlist` | — (Rails addition) | per-user extra roles always created alongside the highest-priority account (e.g. `FullAdministrator`); exempt from the one-account-per-user collapse |
 | `create_users` | lines 135–187 | #1318 logic: one account per user, highest-priority role, upgrade only if no higher-priority account exists |
 | `drop_users` | lines 189–199 | skip `protected_accounts` (by Email) and `FullAdministrator/*` (by UserName prefix) |
 | `flag_users_with_pro_roles` | lines 235–238 | log warn on `*_PRO` roles |
@@ -242,8 +256,9 @@ Scheduled every 15 minutes (`cron_15m`) in
 - `spec/services/quicksight_sync_spec.rb`: stub `Aws::QuickSight::Client` (and
   STS) with `instance_double`, stub `users_yaml`, assert the correct
   create/delete/group-membership calls for a representative `users.yaml`. Cover:
-  new user, removed user, protected-account skip, role upgrade, highest-priority
-  selection, `*nonprod`-in-prod exclusion, and per-user error aggregation.
+  new user, removed user, protected-account skip, role upgrade, role demotion,
+  highest-priority selection, `*nonprod`-in-prod exclusion, duplicate-email
+  first-wins, the `multi_account_allowlist`, and per-user error aggregation.
 - `spec/jobs/quicksight_sync_job_spec.rb`: assert the service is invoked and
   success/failure logging behaves like `RedshiftSyncJob`.
 - Follow the existing `redshift_sync_spec.rb` stubbing conventions
