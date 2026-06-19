@@ -15,6 +15,27 @@ warehouse. Its primary responsibilities are:
 Ruby on Rails 8.1 app. Ruby version is pinned in `.ruby-version` (currently
 3.4.5). Background jobs use ActiveJob + GoodJob.
 
+## Dev Environment (devenv / Nix)
+
+The canonical development environment is managed by
+[devenv](https://devenv.sh/) (Nix-based) and auto-activated by
+[direnv](https://direnv.net/):
+
+- `.envrc` runs `use devenv`, so entering the repo directory activates the
+  environment automatically (`direnv allow` on first use). Without direnv, run
+  `devenv shell` manually.
+- `devenv.nix` provisions Ruby (from `.ruby-version`), Bundler, PostgreSQL 16,
+  and CLI tools (`glab`, `gnumake`, `detect-secrets`). A `bundle install` task
+  runs on shell entry.
+- A **`detect-secrets` pre-commit git hook** is configured in `devenv.nix`. It
+  blocks commits containing high-entropy strings (likely secrets), checked
+  against `.secrets.baseline`. Commits made by agents will run this hook.
+- PostgreSQL is provided by devenv, not a system install, when using this path.
+
+A manual Homebrew + rbenv path is also documented in
+`docs/local-development.md` (uses the `Brewfile` and `make setup`). Prefer the
+devenv path unless you have a reason not to.
+
 ## Setup & Common Commands
 
 All common tasks are exposed through the `Makefile`. Prefer these over raw
@@ -109,7 +130,7 @@ surface with care; you do not need to treat every file in the repo as sensitive.
 See `CONTRIBUTING.md` for full details.
 
 - Write commit summaries in the imperative ("Fix bug", not "Fixed bug").
-- Include the Jira ticket ID in the title when applicable
+- Include the GitLab issue ID in the title when applicable
   (e.g. "LG-1234 Add the stuff to the thing").
 - In the body, explain **why** the change is needed, then **how**.
 - Keep pull requests small and focused on a single topic.
