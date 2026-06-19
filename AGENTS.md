@@ -45,7 +45,7 @@ commands.
 - `make fast_setup` — Abbreviated setup that skips linking some files.
 - `make run` — Start the development server (runs the `Procfile`: `web` =
   `rackup config.ru`, `worker` = `good_job start`).
-- `make test` — Run the full RSpec suite (`RAILS_ENV=test`).
+- `make test` — Run the full local RSpec suite (`RAILS_ENV=test`, `bundle exec rspec`).
 - `make test_serial` — Run RSpec serially (non-parallel).
 - `make fast_test` — RSpec without accessibility specs.
 - `make lint` — Run all linters (rubocop, brakeman, lockfile/readme/migration checks).
@@ -62,6 +62,8 @@ Run `make help` to list all available targets.
 - Framework: **RSpec** (`rspec-rails`), with FactoryBot, Shoulda Matchers,
   WebMock, and SimpleCov.
 - Specs live in `spec/`. Factories live in `spec/factories/`.
+- Local `make test` runs `bundle exec rspec`. CI parallelizes specs with
+  Knapsack across GitLab nodes.
 - Prefer running a single spec file or example during development rather than
   the full suite:
   - `bundle exec rspec spec/jobs/data_freshness_job_spec.rb`
@@ -122,8 +124,8 @@ passwords), and it contains code that processes and guards warehouse PII
 (retention enforcement, PII row checks, masking, decryption UDFs). Treat that
 surface with care; you do not need to treat every file in the repo as sensitive.
 
-- **Never** read, print, or commit secrets, `.env*` files, keys, or
-  `config/credentials.yml.enc` contents.
+- **Never** read, print, or commit secrets, `.env*` files, keys,
+  `config/application.yml`, or `config/credentials.yml.enc` contents.
 - When working on PII-handling code (`pii_retention.yml`, `PiiRowCheckerJob`,
   masking jobs, decryption UDFs), do not log or expose decrypted PII.
 - `make brakeman` and `bundle exec bundler-audit` run as part of CI; keep them
