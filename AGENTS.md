@@ -125,7 +125,18 @@ surface with care; you do not need to treat every file in the repo as sensitive.
 - `make brakeman` and `bundle exec bundler-audit` run as part of CI; keep them
   passing.
 
-## Git & Pull Requests
+## Git, GitLab & Pull Requests
+
+This project is hosted on a self-hosted GitLab instance
+(`git@gitlab.login.gov:lg/identity-reporting-rails.git`), **not** GitHub. The
+`gh` CLI does not work here — use the GitLab CLI (`glab`) instead.
+
+**Only commit, push, or open MRs/PRs when explicitly asked.** This applies to
+any `glab` command that creates, closes, merges, or calls the API directly
+(`glab api ...`); prefer the **read-only** verbs (`issue list/view`,
+`mr list/view/diff`).
+
+### Commit & MR conventions
 
 See `CONTRIBUTING.md` for full details.
 
@@ -133,33 +144,27 @@ See `CONTRIBUTING.md` for full details.
 - Include the GitLab issue ID in the title when applicable
   (e.g. "LG-1234 Add the stuff to the thing").
 - In the body, explain **why** the change is needed, then **how**.
-- Keep pull requests small and focused on a single topic.
-- Only commit, push, or open PRs when explicitly asked.
+- Keep merge requests small and focused on a single topic.
+- A new MR uses the template at `.gitlab/merge_request_templates/Default.md`.
 
-## GitLab (issues, MRs)
-
-This project is hosted on a self-hosted GitLab instance
-(`git@gitlab.login.gov:lg/identity-reporting-rails.git`), **not** GitHub. The
-`gh` CLI does not work here — use the GitLab CLI (`glab`) instead.
+### GitLab tooling (`glab`)
 
 - Authenticate once with `glab auth login --hostname gitlab.login.gov` (or via
   a `GITLAB_TOKEN` env var). `glab auth status` confirms you are logged in. A
   single `GITLAB_TOKEN` is applied to every configured host, so `glab auth status` may report a `401` for `gitlab.com` even when `gitlab.login.gov`
   works fine — that warning is safe to ignore for this repo.
-- This repo (`lg/identity-reporting-rails`) generally has **no** issues of its
-  own. Team Data issues — including ones that touch this app (the
-  `reportingRails-*` alerts/jobs) — live in
-  `lg-teams/Team-Data/data-warehouse-ag`. Pass that path with `-R`:
-  - `glab issue list -R lg-teams/Team-Data/data-warehouse-ag`
-  - `glab issue view <id> -R lg-teams/Team-Data/data-warehouse-ag --comments`
-  - `glab mr list -R lg/identity-reporting-rails`
-  - `glab mr view <id> -R lg/identity-reporting-rails`
-- Prefer the **read-only** verbs above (`issue list/view`, `mr list/view/diff`).
-  Treat `glab` commands that create, close, merge, or call the API directly
-  (`glab api ...`) as write actions: follow the "only when explicitly asked"
-  rule above.
-- A new MR uses the template at
-  `.gitlab/merge_request_templates/Default.md`.
+- `glab mr list -R lg/identity-reporting-rails`
+- `glab mr view <id> -R lg/identity-reporting-rails`
+
+### Issues
+
+This repo (`lg/identity-reporting-rails`) generally has **no** issues of its
+own. Team Data issues — including ones that touch this app (the
+`reportingRails-*` alerts/jobs) — live in `lg-teams/Team-Data/data-warehouse-ag`.
+Pass that path with `-R`:
+
+- `glab issue list -R lg-teams/Team-Data/data-warehouse-ag`
+- `glab issue view <id> -R lg-teams/Team-Data/data-warehouse-ag --comments`
 
 ## Further Documentation
 
