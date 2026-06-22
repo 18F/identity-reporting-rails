@@ -29,10 +29,18 @@ module Reports
       end
 
       @report_date = perform_report_date || report_date || Time.zone.yesterday
-      raise ArgumentError, 'report_date is required' if @report_date.blank?
-      if report_date.to_date > Time.zone.today
+
+      allowed_types = [Date, Time, ActiveSupport::TimeWithZone]
+      unless allowed_types.any? { |type| @report_date.is_a?(type) }
+        raise ArgumentError, 'report_date must be a valid Date or Time object'
+      end
+      if @report_date.to_date > Time.zone.today
         raise ArgumentError, 'report_date cannot be in the future'
       end
+
+      # Normalize to the calendar date, anchored in UTC — avoids end-of-day
+      # local timestamps rolling into the next UTC day.
+      @report_date = @report_date.to_date.in_time_zone('UTC')
 
       Rails.logger.info(
         "#{REPORT_NAME}: generating IDV key metrics reports for #{report_date.to_date}",
@@ -102,13 +110,20 @@ module Reports
 
     def monthly_idv_report
       @monthly_idv_report ||= Reporting::IdentityVerificationReport.new(
-        time_range: report_date.all_month,
+        time_range: monthly_range,
       )
     end
 
     def trailing_30_day_report
       @trailing_30_day_report ||= Reporting::IdentityVerificationReport.new(
         time_range: trailing_30_day_range,
+      )
+    end
+
+    def monthly_range
+      Range.new(
+        report_date.beginning_of_month.beginning_of_day,
+        report_date.end_of_month.end_of_day,
       )
     end
 
