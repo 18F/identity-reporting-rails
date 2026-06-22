@@ -5,12 +5,20 @@ require 'rails_helper'
 RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
   subject(:report) { described_class.new(report_date) }
 
-  let(:report_date) { Time.zone.parse('2026-03-15').end_of_day }
+  let(:report_date) { Date.new(2026, 3, 15).in_time_zone('UTC') }
+  let(:normalized_date) { report_date }
+
+  let(:monthly_range) do
+    normalized_date.beginning_of_month.beginning_of_day..normalized_date.end_of_month.end_of_day
+  end
+  let(:trailing_range) do
+    (normalized_date - 30.days).beginning_of_day..normalized_date.end_of_day
+  end
 
   let(:mock_monthly_report) do
     instance_double(
       Reporting::IdentityVerificationReport,
-      time_range: report_date.all_month,
+      time_range: monthly_range,
       idv_started: 100,
       successfully_verified_users: 70,
       blanket_proofing_rate: 0.7,
@@ -23,7 +31,7 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
   let(:mock_trailing_report) do
     instance_double(
       Reporting::IdentityVerificationReport,
-      time_range: ((report_date - 30.days).beginning_of_day..report_date.end_of_day),
+      time_range: trailing_range,
       idv_started: 200,
       idv_doc_auth_welcome_submitted: 180,
       idv_doc_auth_image_vendor_submitted: 150,
@@ -46,13 +54,11 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
     allow(report).to receive(:generate_base_s3_path).and_return('s3-base-path/')
     allow(report).to receive(:upload_file_to_s3_bucket)
 
-    allow(Reporting::IdentityVerificationReport).to receive(:new).with(
-      time_range: report_date.all_month,
-    ).and_return(mock_monthly_report)
+    allow(Reporting::IdentityVerificationReport).to receive(:new).
+      with(time_range: monthly_range).and_return(mock_monthly_report)
 
-    allow(Reporting::IdentityVerificationReport).to receive(:new).with(
-      time_range: (report_date - 30.days).beginning_of_day..report_date.end_of_day,
-    ).and_return(mock_trailing_report)
+    allow(Reporting::IdentityVerificationReport).to receive(:new).
+      with(time_range: trailing_range).and_return(mock_trailing_report)
   end
 
   describe '#perform' do
@@ -96,7 +102,7 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
       it 'raises an ArgumentError' do
         allow(Time.zone).to receive(:yesterday).and_return(nil)
         expect { described_class.new.perform(nil) }.to raise_error(
-          ArgumentError, 'report_date is required'
+          ArgumentError, 'report_date must be a valid Date or Time object'
         )
       end
     end
@@ -111,15 +117,44 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
       end
     end
 
+    context 'when report_date is a non-UTC end-of-day time' do
+      # 2026-03-15 23:59:59 in a negative-offset zone would roll to 2026-03-16
+      # in UTC if not normalized via .to_date first.
+      let(:report_date) do
+        Time.use_zone('America/Puerto_Rico') { Time.zone.parse('2026-03-15').end_of_day }
+      end
+
+      let(:expected_monthly_range) do
+        d = Date.new(2026, 3, 15).in_time_zone('UTC')
+        d.beginning_of_month.beginning_of_day..d.end_of_month.end_of_day
+      end
+
+      let(:expected_trailing_range) do
+        d = Date.new(2026, 3, 15).in_time_zone('UTC')
+        (d - 30.days).beginning_of_day..d.end_of_day
+      end
+
+      it 'normalizes to the UTC calendar date before building windows and paths' do
+        expect(Reporting::IdentityVerificationReport).to receive(:new).
+          with(time_range: expected_monthly_range).and_return(mock_monthly_report)
+        expect(Reporting::IdentityVerificationReport).to receive(:new).
+          with(time_range: expected_trailing_range).and_return(mock_trailing_report)
+
+        expect(report).to receive(:upload_file_to_s3_bucket).with(
+          hash_including(path: a_string_including('20260315_monthly_condensed_idv.csv')),
+        )
+        allow(report).to receive(:upload_file_to_s3_bucket)
+
+        report.perform(report_date)
+      end
+    end
+
     context 'when both redshift and s3 are enabled' do
       it 'builds the monthly and trailing 30 day reports' do
-        expect(Reporting::IdentityVerificationReport).to receive(:new).with(
-          time_range: report_date.all_month,
-        ).and_return(mock_monthly_report)
-
-        expect(Reporting::IdentityVerificationReport).to receive(:new).with(
-          time_range: (report_date - 30.days).beginning_of_day..report_date.end_of_day,
-        ).and_return(mock_trailing_report)
+        expect(Reporting::IdentityVerificationReport).to receive(:new).
+          with(time_range: monthly_range).and_return(mock_monthly_report)
+        expect(Reporting::IdentityVerificationReport).to receive(:new).
+          with(time_range: trailing_range).and_return(mock_trailing_report)
 
         report.perform(report_date)
       end

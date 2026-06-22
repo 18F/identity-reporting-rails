@@ -2,6 +2,7 @@
 
 require 'rails_helper'
 require 'reporting/identity_verification_report'
+require 'reporting/json_path_helper'
 
 RSpec.describe Reporting::IdentityVerificationReport do
   let(:time_range) { Date.new(2022, 1, 1).in_time_zone('UTC').all_day }
@@ -10,7 +11,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
 
   before(:each) { @event_seq = 0 }
 
-  def create_event(user_id:, name:, success: nil, event_properties: {})
+  def create_event(user_id:, name:, success: nil, event_properties: {}, **overrides)
     props = event_properties.dup
     props[:success] = success unless success.nil?
 
@@ -25,11 +26,12 @@ RSpec.describe Reporting::IdentityVerificationReport do
       success: success,
       message: { properties: { event_properties: props } }.to_json,
       new_event: true,
+      **overrides,
     )
   end
 
   before do
-    # --- user1: online verification, failed each vendor once then succeeded ---
+    # --- user1: online verification, failed each vendor once then succeeded -> Verified ---
     create_event(user_id: 'user1', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user1', name: 'IdV: doc auth welcome submitted')
     create_event(
@@ -39,28 +41,18 @@ RSpec.describe Reporting::IdentityVerificationReport do
       event_properties: { doc_auth_result: 'Passed' }, # non-fraud failure -> doc auth reject
     )
     create_event(
-      user_id: 'user1',
-      name: 'IdV: doc auth image upload vendor submitted',
-      success: true,
+      user_id: 'user1', name: 'IdV: doc auth image upload vendor submitted', success: true,
     )
-    create_event(
-      user_id: 'user1', name: 'IdV: doc auth verify proofing results', success: false,
-    )
-    create_event(
-      user_id: 'user1', name: 'IdV: doc auth verify proofing results', success: true,
-    )
+    create_event(user_id: 'user1', name: 'IdV: doc auth verify proofing results', success: false)
+    create_event(user_id: 'user1', name: 'IdV: doc auth verify proofing results', success: true)
     create_event(user_id: 'user1', name: 'IdV: phone confirmation vendor', success: false)
     create_event(user_id: 'user1', name: 'IdV: phone confirmation vendor', success: true)
-    create_event(
-      user_id: 'user1', name: 'IdV: final resolution', success: true,
-    ) # no pending flags -> profile_not_pending -> Verified
+    create_event(user_id: 'user1', name: 'IdV: final resolution', success: true) # Verified
 
     # --- user2: GPO (mailed code) pending, incomplete ---
     create_event(user_id: 'user2', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user2', name: 'IdV: doc auth welcome submitted')
-    create_event(
-      user_id: 'user2', name: 'idv_socure_verification_data_requested', success: true,
-    )
+    create_event(user_id: 'user2', name: 'idv_socure_verification_data_requested', success: true)
     create_event(
       user_id: 'user2',
       name: 'IdV: final resolution',
@@ -72,7 +64,8 @@ RSpec.describe Reporting::IdentityVerificationReport do
     create_event(user_id: 'user3', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user3', name: 'IdV: doc auth welcome submitted')
     create_event(
-      user_id: 'user3', name: 'IdV: doc auth image upload vendor submitted', success: true,
+      user_id: 'user3', name: 'IdV: doc auth image upload vendor submitted',
+      success: true
     )
     create_event(
       user_id: 'user3',
@@ -86,7 +79,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
     create_event(user_id: 'user4', name: 'IdV: GPO verification submitted', success: true)
     create_event(user_id: 'user4', name: 'Fraud: Profile review passed', success: true)
 
-    # --- user5: in-person pending at final resolution, doc auth failed (non-fraud), USPS passed ---
+    # --- user5: in-person pending, doc auth failed (non-fraud), USPS passed ---
     create_event(user_id: 'user5', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user5', name: 'IdV: doc auth welcome submitted')
     create_event(
@@ -121,7 +114,8 @@ RSpec.describe Reporting::IdentityVerificationReport do
     create_event(user_id: 'user7', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user7', name: 'IdV: doc auth welcome submitted')
     create_event(
-      user_id: 'user7', name: 'IdV: doc auth image upload vendor submitted', success: true,
+      user_id: 'user7', name: 'IdV: doc auth image upload vendor submitted',
+      success: true
     )
     create_event(
       user_id: 'user7',
@@ -155,39 +149,81 @@ RSpec.describe Reporting::IdentityVerificationReport do
     create_event(user_id: 'user11', name: 'IdV: doc auth welcome visited')
   end
 
-  describe '#data' do
-    it 'counts unique users per event and derived result as a hash' do
-      expect(report.data.transform_values(&:count)).to eq(
-        # events
-        'IdV: doc auth welcome visited' => 7,
-        'IdV: doc auth welcome submitted' => 6,
-        'IdV: doc auth image upload vendor submitted' => 5,
-        'idv_socure_verification_data_requested' => 1,
-        'IdV: doc auth verify proofing results' => 1,
-        'IdV: phone confirmation vendor' => 1,
-        'IdV: final resolution' => 5,
-        'IdV: GPO verification submitted' => 1,
-        'GetUspsProofingResultsJob: Enrollment status updated' => 1,
-        'Fraud: Profile review passed' => 3,
-        'Fraud: Profile review rejected' => 3,
-
-        # derived results
-        'IdV: final resolution - Verified' => 1,
-        'IdV: final resolution - Fraud Review Pending' => 2,
-        'IdV: final resolution - GPO Pending' => 1,
-        'IdV: final resolution - In Person Proofing' => 1,
-        'IdV Reject: Doc Auth' => 3,
-        'IdV Reject: Verify' => 1,
-        'IdV Reject: Phone Finder' => 1,
-      )
+  describe 'event-level counts' do
+    it '#idv_started counts unique users across welcome and getting started events' do
+      expect(report.idv_started).to eq(7)
     end
 
+    it '#idv_doc_auth_welcome_submitted counts users who submitted the welcome screen' do
+      expect(report.idv_doc_auth_welcome_submitted).to eq(6)
+    end
+
+    it '#idv_doc_auth_image_vendor_submitted counts users who submitted images' do
+      expect(report.idv_doc_auth_image_vendor_submitted).to eq(5)
+    end
+
+    it '#idv_doc_auth_socure_verification_data_requested counts socure data requests' do
+      expect(report.idv_doc_auth_socure_verification_data_requested).to eq(1)
+    end
+
+    it '#idv_final_resolution counts users who reached final resolution' do
+      expect(report.idv_final_resolution).to eq(5)
+    end
+  end
+
+  describe 'final-resolution bucket counts' do
+    it 'counts the Verified bucket' do
+      expect(report.idv_final_resolution_verified).to eq(1) # user1
+    end
+
+    it 'counts the GPO Pending bucket' do
+      expect(report.idv_final_resolution_gpo).to eq(1) # user2
+    end
+
+    it 'counts the In Person Proofing bucket' do
+      expect(report.idv_final_resolution_in_person).to eq(1) # user5
+    end
+
+    it 'counts the Fraud Review Pending bucket' do
+      expect(report.idv_final_resolution_fraud_review).to eq(2) # user3, user7
+    end
+  end
+
+  describe 'reject / fraud counts' do
+    it '#reject_doc_auth counts non-fraud doc auth failures' do
+      expect(report.reject_doc_auth).to eq(3) # user1, user5, user6
+    end
+
+    it '#reject_verify counts verify failures' do
+      expect(report.reject_verify).to eq(1) # user1
+    end
+
+    it '#reject_phone counts phone failures' do
+      expect(report.reject_phone).to eq(1) # user1
+    end
+
+    it '#idv_fraud_rejected counts users who failed fraud review (automatic + manual)' do
+      expect(report.idv_fraud_rejected).to eq(3) # user7, user8, user9
+    end
+
+    it '#idv_doc_auth_rejected is rejects MINUS verified/in-person (set subtraction)' do
+      # reject union = {user1, user5, user6}; minus verified {user1} and in-person {user5} = {user6}
+      expect(report.idv_doc_auth_rejected).to eq(1)
+    end
+  end
+
+  describe '#successfully_verified_users' do
+    it 'counts users who verified, completed GPO/USPS, or passed fraud review' do
+      # user1 (verified), user4 (gpo submit), user5 (usps), user3 + user10 (fraud passed) = 5
+      expect(report.successfully_verified_users).to eq(5)
+    end
+  end
+
+  describe 'source-level filters (applied in SQL)' do
     it 'ignores GPO/USPS events for a user whose final resolution is fraud-review pending' do
-      # user9's GPO submission carries fraud_review_pending, so it is not counted
-      # as a GPO verification submitted event.
-      gpo_users = report.data['IdV: GPO verification submitted']
-      expect(gpo_users).to include('user4')
-      expect(gpo_users).not_to include('user9')
+      # user9's GPO submission carries fraud_review_pending, so it is not counted toward
+      # successfully_verified_users; user4's clean GPO submission is.
+      expect(report.successfully_verified_users).to eq(5)
     end
 
     it 'skips USPS enrollment updates that did not pass' do
@@ -197,79 +233,34 @@ RSpec.describe Reporting::IdentityVerificationReport do
         event_properties: { passed: false },
       )
 
-      expect(report.data['GetUspsProofingResultsJob: Enrollment status updated']).
-        not_to include('user12')
+      # user12 should NOT be added to successfully verified
+      expect(report.successfully_verified_users).to eq(5)
     end
 
     it 'skips fraud review passed events that were not successful' do
-      FactoryBot.create(
-        :event,
-        id: 'event_fraud_failed',
+      create_event(
         user_id: 'user13',
         name: 'Fraud: Profile review passed',
-        cloudwatch_timestamp: time_range.begin + 1.hour,
         success: false,
-        message: { properties: { event_properties: { success: false } } }.to_json,
-        new_event: true,
       )
 
-      expect(report.data['Fraud: Profile review passed']).not_to include('user13')
+      expect(report.successfully_verified_users).to eq(5)
     end
-  end
 
-  describe '#idv_started' do
-    it 'counts unique users across welcome and getting started events' do
+    it 'skips rows with a blank user_id' do
+      create_event(user_id: nil, name: 'IdV: doc auth welcome visited')
+
       expect(report.idv_started).to eq(7)
     end
-  end
 
-  describe '#idv_doc_auth_welcome_submitted' do
-    it 'counts users who submitted the welcome screen' do
-      expect(report.idv_doc_auth_welcome_submitted).to eq(6)
-    end
-  end
+    it 'excludes events outside the time range' do
+      create_event(
+        user_id: 'user_out_of_range',
+        name: 'IdV: doc auth welcome visited',
+        cloudwatch_timestamp: time_range.end + 5.days,
+      )
 
-  describe '#idv_doc_auth_image_vendor_submitted' do
-    it 'counts users who submitted images' do
-      expect(report.idv_doc_auth_image_vendor_submitted).to eq(5)
-    end
-  end
-
-  describe '#idv_doc_auth_socure_verification_data_requested' do
-    it 'counts socure verification data requests' do
-      expect(report.idv_doc_auth_socure_verification_data_requested).to eq(1)
-    end
-  end
-
-  describe '#idv_final_resolution' do
-    it 'counts users who reached final resolution' do
-      expect(report.idv_final_resolution).to eq(5)
-    end
-  end
-
-  describe '#idv_doc_auth_rejected' do
-    it 'is the count of users who failed proofing and never verified' do
-      # Set union of doc-auth/verify/phone rejects = {user1, user5, user6},
-      # minus verified {user1} and in-person {user5} = {user6}
-      expect(report.idv_doc_auth_rejected).to eq(1)
-    end
-  end
-
-  describe '#idv_fraud_rejected' do
-    it 'counts users who failed fraud review (automatic + manual)' do
-      expect(report.idv_fraud_rejected).to eq(3)
-    end
-  end
-
-  describe '#fraud_review_passed' do
-    it 'counts users who passed fraud review' do
-      expect(report.fraud_review_passed).to eq(3)
-    end
-  end
-
-  describe '#successfully_verified_users' do
-    it 'is the count of users who verified, completed GPO/USPS, or passed fraud review' do
-      expect(report.successfully_verified_users).to eq(5)
+      expect(report.idv_started).to eq(7)
     end
   end
 
@@ -306,11 +297,10 @@ RSpec.describe Reporting::IdentityVerificationReport do
       end
     end
 
-    context 'when there is no data' do
-      let(:empty_data) { Hash.new { |hash, key| hash[key] = Set.new } }
-
-      subject(:report) { described_class.new(time_range: time_range, data: empty_data) }
-
+    context 'when there is no data in the time range' do
+      subject(:report) do
+        described_class.new(time_range: Date.new(1999, 1, 1).in_time_zone('UTC').all_day)
+      end
       it 'safely returns 0.0 for all rates instead of raising' do
         aggregate_failures do
           expect(report.blanket_proofing_rate).to eq(0.0)
@@ -351,57 +341,9 @@ RSpec.describe Reporting::IdentityVerificationReport do
     end
   end
 
-  describe 'event property parsing' do
-    it 'falls back to the top-level success column when event_properties lacks success' do
-      # Build an event whose message has no success in event_properties,
-      # but the column is set.
-      FactoryBot.create(
-        :event,
-        id: 'event_top_level',
-        user_id: 'user_top_level',
-        name: 'IdV: doc auth verify proofing results',
-        cloudwatch_timestamp: time_range.begin + 1.hour,
-        success: false,
-        message: { properties: { event_properties: {} } }.to_json,
-        new_event: true,
-      )
-
-      expect(report.data['IdV Reject: Verify']).to include('user_top_level')
-    end
-
-    it 'gracefully handles malformed JSON messages' do
-      FactoryBot.create(
-        :event,
-        id: 'event_bad_json',
-        user_id: 'user_bad_json',
-        name: 'IdV: doc auth welcome visited',
-        cloudwatch_timestamp: time_range.begin + 1.hour,
-        message: 'not-valid-json',
-        new_event: true,
-      )
-
-      expect { report.data }.not_to raise_error
-      expect(report.data['IdV: doc auth welcome visited']).to include('user_bad_json')
-    end
-
-    it 'skips rows with a blank user_id' do
-      FactoryBot.create(
-        :event,
-        id: 'event_blank_user',
-        user_id: nil,
-        name: 'IdV: doc auth welcome visited',
-        cloudwatch_timestamp: time_range.begin + 1.hour,
-        message: { properties: { event_properties: {} } }.to_json,
-        new_event: true,
-      )
-
-      expect(report.idv_started).to eq(7)
-    end
-  end
-
-  describe '#query' do
+  describe '#metrics_query' do
     it 'filters by the configured event names' do
-      query = report.send(:query)
+      query = report.send(:metrics_query)
 
       aggregate_failures do
         Reporting::IdentityVerificationReport::Events.all_events.each do |event|
@@ -410,34 +352,19 @@ RSpec.describe Reporting::IdentityVerificationReport do
       end
     end
 
-    it 'filters on the time range bounds' do
-      query = report.send(:query)
+    it 'scopes to logs.events and the time range bounds' do
+      query = report.send(:metrics_query)
 
       aggregate_failures do
-        expect(query).to include('cloudwatch_timestamp BETWEEN')
         expect(query).to include('logs.events')
+        expect(query).to include('cloudwatch_timestamp >=')
+        expect(query).to include('cloudwatch_timestamp <=')
       end
     end
   end
 
-  describe 'time range scoping' do
-    it 'excludes events outside the time range' do
-      FactoryBot.create(
-        :event,
-        id: 'event_out_of_range',
-        user_id: 'user_out_of_range',
-        name: 'IdV: doc auth welcome visited',
-        cloudwatch_timestamp: time_range.end + 5.days,
-        message: { properties: { event_properties: {} } }.to_json,
-        new_event: true,
-      )
-
-      expect(report.data['IdV: doc auth welcome visited']).not_to include('user_out_of_range')
-    end
-  end
-
-  describe '#categorize_final_resolution branches' do
-    # Isolate these cases so they don't affect the main fixture's counts.
+  describe 'final-resolution categorization matrix' do
+    # Isolate these so they don't perturb the main fixture counts.
     before { Event.delete_all }
 
     def final_resolution(user_id:, **event_properties)
@@ -449,6 +376,22 @@ RSpec.describe Reporting::IdentityVerificationReport do
       )
     end
 
+    it 'categorizes a fully resolved profile as Verified when nothing is pending' do
+      final_resolution(user_id: 'verified_user')
+
+      expect(report.idv_final_resolution_verified).to eq(1)
+    end
+
+    it 'categorizes GPO pending (no fraud) as GPO Pending only' do
+      final_resolution(user_id: 'gpo', gpo_verification_pending: true)
+
+      aggregate_failures do
+        expect(report.idv_final_resolution_gpo).to eq(1)
+        expect(report.idv_final_resolution_gpo_fraud_review).to eq(0)
+        expect(report.idv_final_resolution_verified).to eq(0)
+      end
+    end
+
     it 'categorizes GPO pending + fraud review' do
       final_resolution(
         user_id: 'gpo_fraud',
@@ -456,13 +399,11 @@ RSpec.describe Reporting::IdentityVerificationReport do
         fraud_review_pending: true,
       )
 
-      data = report.data
-      expect(data['Idv: final resolution - GPO Pending + Fraud Review Pending']).
-        to include('gpo_fraud')
-      # not the plain GPO Pending bucket
-      expect(data['IdV: final resolution - GPO Pending']).not_to include('gpo_fraud')
-      # fraud review pending means profile is pending -> not Verified
-      expect(data['IdV: final resolution - Verified']).not_to include('gpo_fraud')
+      aggregate_failures do
+        expect(report.idv_final_resolution_gpo_fraud_review).to eq(1)
+        expect(report.idv_final_resolution_gpo).to eq(0)
+        expect(report.idv_final_resolution_verified).to eq(0)
+      end
     end
 
     it 'categorizes in-person pending + fraud review' do
@@ -472,11 +413,11 @@ RSpec.describe Reporting::IdentityVerificationReport do
         fraud_review_pending: true,
       )
 
-      data = report.data
-      expect(data['IdV: final resolution - In Person Proofing + Fraud Review Pending']).
-        to include('ipp_fraud')
-      expect(data['IdV: final resolution - In Person Proofing']).not_to include('ipp_fraud')
-      expect(data['IdV: final resolution - Verified']).not_to include('ipp_fraud')
+      aggregate_failures do
+        expect(report.idv_final_resolution_in_person_fraud_review).to eq(1)
+        expect(report.idv_final_resolution_in_person).to eq(0)
+        expect(report.idv_final_resolution_verified).to eq(0)
+      end
     end
 
     it 'categorizes GPO pending + in-person pending (no fraud)' do
@@ -486,11 +427,10 @@ RSpec.describe Reporting::IdentityVerificationReport do
         in_person_verification_pending: true,
       )
 
-      data = report.data
-      expect(data['IdV: final resolution - GPO Pending + In Person Pending']).
-        to include('gpo_ipp')
-      # pending profile -> not Verified
-      expect(data['IdV: final resolution - Verified']).not_to include('gpo_ipp')
+      aggregate_failures do
+        expect(report.idv_final_resolution_gpo_in_person).to eq(1)
+        expect(report.idv_final_resolution_verified).to eq(0)
+      end
     end
 
     it 'categorizes GPO pending + in-person pending + fraud review' do
@@ -501,33 +441,24 @@ RSpec.describe Reporting::IdentityVerificationReport do
         fraud_review_pending: true,
       )
 
-      data = report.data
-      expect(data['IdV: final resolution - GPO Pending + In Person Pending + Fraud Review']).
-        to include('gpo_ipp_fraud')
-      expect(data['IdV: final resolution - GPO Pending + In Person Pending']).
-        not_to include('gpo_ipp_fraud')
-      expect(data['IdV: final resolution - Verified']).not_to include('gpo_ipp_fraud')
-    end
-
-    it 'categorizes a fully resolved profile as Verified when nothing is pending' do
-      final_resolution(user_id: 'verified_user')
-
-      data = report.data
-      expect(data['IdV: final resolution - Verified']).to include('verified_user')
+      aggregate_failures do
+        expect(report.idv_final_resolution_gpo_in_person_fraud_review).to eq(1)
+        expect(report.idv_final_resolution_gpo_in_person).to eq(0)
+        expect(report.idv_final_resolution_verified).to eq(0)
+      end
     end
 
     it 'does not mark a profile Verified when it has a deactivation reason' do
-      final_resolution(
-        user_id: 'deactivated',
-        deactivation_reason: 'password_reset',
-      )
+      final_resolution(user_id: 'deactivated', deactivation_reason: 'password_reset')
 
-      data = report.data
-      # has_other_deactivation_reason -> profile_not_pending is false
-      expect(data['IdV: final resolution - Verified']).not_to include('deactivated')
-      # no pending flags, so it falls into the fraud-review branch guard but
-      # fraud_review_pending is false -> lands in no pending bucket
-      expect(data['IdV: final resolution - Fraud Review Pending']).not_to include('deactivated')
+      aggregate_failures do
+        # has_deactivation_reason -> profile_not_pending is false -> not Verified
+        expect(report.idv_final_resolution_verified).to eq(0)
+        # no pending flags and fraud_review_pending is false -> lands in no pending bucket
+        expect(report.idv_final_resolution_fraud_review).to eq(0)
+        # but it IS still a final-resolution event
+        expect(report.idv_final_resolution).to eq(1)
+      end
     end
   end
 end
