@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'reporting/json_path_helper'
+
 module Reporting
   class IdentityVerificationReport
     include Reporting::JsonPathHelper
@@ -315,10 +317,10 @@ module Reporting
 
           COUNT(DISTINCT CASE
                 WHEN fr_verified
-                  OR name = #{connection.quote(Events::USPS_ENROLLMENT_STATUS_UPDATED)}
+                  OR (name = #{connection.quote(Events::USPS_ENROLLMENT_STATUS_UPDATED)} AND keep_for_event_bucket)
                   OR name = #{connection.quote(Events::FRAUD_REVIEW_PASSED)}
-                  OR name IN (#{connection.quote(Events::GPO_VERIFICATION_SUBMITTED)},
-                              #{connection.quote(Events::GPO_VERIFICATION_SUBMITTED_OLD)})
+                  OR (name IN (#{connection.quote(Events::GPO_VERIFICATION_SUBMITTED)},
+                              #{connection.quote(Events::GPO_VERIFICATION_SUBMITTED_OLD)}) AND keep_for_event_bucket)
                 THEN user_id END) AS successfully_verified_users,
 
           COUNT(DISTINCT CASE
@@ -335,6 +337,15 @@ module Reporting
           ) AS idv_doc_auth_rejected
 
         FROM counted
+      SQL
+    end
+
+    def verified_user_count_query
+      <<~SQL
+        SELECT COUNT(*)
+        FROM idp.profiles
+        WHERE active = TRUE
+          AND verified_at <= #{connection.quote(time_range.end.end_of_day)}
       SQL
     end
 
