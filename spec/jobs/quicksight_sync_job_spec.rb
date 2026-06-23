@@ -10,9 +10,33 @@ RSpec.describe QuicksightSyncJob, type: :job do
   before do
     allow(QuicksightSync).to receive(:new).and_return(quicksight_sync)
     allow(IdentityJobLogSubscriber).to receive(:new).and_return(job_log_subscriber)
+    allow(IdentityConfig.store).to receive(:quicksight_sync_enabled).and_return(true)
   end
 
   describe '#perform' do
+    context 'when quicksight_sync_enabled is false' do
+      before do
+        allow(IdentityConfig.store).to receive(:quicksight_sync_enabled).and_return(false)
+        allow(logger).to receive(:info)
+      end
+
+      it 'does not invoke QuicksightSync' do
+        allow(quicksight_sync).to receive(:sync)
+        subject.perform
+        expect(quicksight_sync).not_to have_received(:sync)
+      end
+
+      it 'logs that it was skipped' do
+        expect(logger).to receive(:info).with(
+          {
+            name: 'QuicksightSyncJob',
+            skipped: 'quicksight_sync_enabled is false',
+          }.to_json,
+        )
+        subject.perform
+      end
+    end
+
     context 'when sync succeeds' do
       before do
         allow(quicksight_sync).to receive(:sync)

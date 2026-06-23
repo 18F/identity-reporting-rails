@@ -10,6 +10,16 @@ class QuicksightSyncJob < ApplicationJob
   )
 
   def perform
+    unless IdentityConfig.store.quicksight_sync_enabled
+      logger.info(
+        {
+          name: 'QuicksightSyncJob',
+          skipped: 'quicksight_sync_enabled is false',
+        }.to_json,
+      )
+      return
+    end
+
     QuicksightSync.new.sync
 
     logger.info(
