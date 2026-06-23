@@ -19,7 +19,12 @@ belong to) stays in `identity-devops`.
     `role_priority` (which role wins when a user has several).
   - `config/quicksight_config.yaml` — QuickSight-specific mappings only
     (`quicksight_aws_role`, `quicksight_group`, `protected_accounts`,
-    `non_human_accounts`, `default_email_domain`, `multi_account_allowlist`).
+    `non_human_accounts`, `default_email_domain`).
+  - `quicksight_multi_account_allowlist` (an `IdentityConfig` value, set via the
+    deployed `application.yml`) — `users.yaml` username → extra QS roles to
+    create alongside a user's highest-priority account. It lives in deployed
+    config rather than this public repo so individual usernames are not
+    committed here. Defaults to `{}`.
 
 ### Redshift sync
 

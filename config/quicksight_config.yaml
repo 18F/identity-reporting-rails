@@ -23,14 +23,6 @@ non_human_accounts:
   - root
   - project_21_bot
 
-# users.yaml username -> extra QS roles to create in addition to the user's
-# highest-priority role. Lets a single user have multiple accounts on the same
-# email (e.g. both DWAdmin/x and FullAdministrator/x).
-multi_account_allowlist:
-  basilio.bogado:
-    - DWPowerUser
-    - DWUser
-
 # Default email domain: used both to build a default email for users with no
 # explicit email in users.yaml ("<user>@gsa.gov") and to strip from the email
 # when building the QS username.

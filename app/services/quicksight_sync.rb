@@ -156,7 +156,7 @@ class QuicksightSync
   end
 
   def multi_account_allowlist
-    quicksight_config.fetch('multi_account_allowlist', {})
+    @multi_account_allowlist ||= IdentityConfig.store.quicksight_multi_account_allowlist || {}
   end
 
   # qs_username -> email for each user's highest-priority valid role, plus any

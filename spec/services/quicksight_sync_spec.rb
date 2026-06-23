@@ -71,6 +71,7 @@ RSpec.describe QuicksightSync do
     allow(sync).to receive(:quicksight_config).and_return(test_quicksight_config)
     allow(sync).to receive(:redshift_config).and_return(test_redshift_config)
     allow(sync).to receive(:users_yaml).and_return(test_users_yaml)
+    allow(sync).to receive(:multi_account_allowlist).and_return({})
     allow(sync).to receive(:quicksight_client).and_return(quicksight_client)
     allow(sync).to receive(:sts_client).and_return(sts_client)
     allow(Identity::Hostdata).to receive(:env).and_return('int')
@@ -179,10 +180,8 @@ RSpec.describe QuicksightSync do
     end
 
     it 'creates the configured extra accounts for an allowlisted user' do
-      allow(sync).to receive(:quicksight_config).and_return(
-        test_quicksight_config.merge(
-          'multi_account_allowlist' => { 'jane.smith' => ['FullAdministrator'] },
-        ),
+      allow(sync).to receive(:multi_account_allowlist).and_return(
+        'jane.smith' => ['FullAdministrator'],
       )
       mapping = sync.send(:expected_qs_username_to_email)
       expect(mapping).to include(
@@ -192,13 +191,31 @@ RSpec.describe QuicksightSync do
     end
 
     it 'ignores the allowlist for users not in users.yaml or not enabled' do
-      allow(sync).to receive(:quicksight_config).and_return(
-        test_quicksight_config.merge(
-          'multi_account_allowlist' => { 'bob.jones' => ['FullAdministrator'] },
-        ),
+      allow(sync).to receive(:multi_account_allowlist).and_return(
+        'bob.jones' => ['FullAdministrator'],
       )
       mapping = sync.send(:expected_qs_username_to_email)
       expect(mapping.keys).not_to include(a_string_matching(%r{bob.jones}))
+    end
+  end
+
+  describe '#multi_account_allowlist' do
+    it 'reads from IdentityConfig so usernames stay out of this repo' do
+      allow(sync).to receive(:multi_account_allowlist).and_call_original
+      allow(IdentityConfig.store).to receive(:quicksight_multi_account_allowlist).
+        and_return('jane.smith' => ['FullAdministrator'])
+
+      expect(sync.send(:multi_account_allowlist)).to eq(
+        'jane.smith' => ['FullAdministrator'],
+      )
+    end
+
+    it 'defaults to an empty hash when unset' do
+      allow(sync).to receive(:multi_account_allowlist).and_call_original
+      allow(IdentityConfig.store).to receive(:quicksight_multi_account_allowlist).
+        and_return(nil)
+
+      expect(sync.send(:multi_account_allowlist)).to eq({})
     end
   end
 
@@ -337,10 +354,8 @@ RSpec.describe QuicksightSync do
 
     context 'allowlisted multi-account user' do
       before do
-        allow(sync).to receive(:quicksight_config).and_return(
-          test_quicksight_config.merge(
-            'multi_account_allowlist' => { 'jane.smith' => ['FullAdministrator'] },
-          ),
+        allow(sync).to receive(:multi_account_allowlist).and_return(
+          'jane.smith' => ['FullAdministrator'],
         )
         allow(sync).to receive(:users_yaml).and_return(
           'jane.smith' => { 'aws_groups' => ['dwadmin'] },

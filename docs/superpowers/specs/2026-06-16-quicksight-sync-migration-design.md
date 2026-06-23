@@ -138,19 +138,20 @@ non_human_accounts:
   - root
   - project_21_bot
 
-# users.yaml username -> extra QS roles to create in addition to the user's
-# highest-priority role. Lets a single user have multiple accounts on one email
-# (e.g. both DWAdmin/x and FullAdministrator/x) for special cases such as
-# troubleshooting. Two *different* users.yaml entries can never share an email;
-# the first wins and the rest are skipped (with a warning).
-multi_account_allowlist: {}
-
 # Default email domain: used both to build a default email for users with no
 # explicit email in users.yaml ("<user>@gsa.gov") and to strip from the email
 # when building the QS username. Verified hardcoded to gsa.gov in the Lambda
 # (strip_email_domain, line 34; default email, line 215).
 default_email_domain: gsa.gov
 ```
+
+The `multi_account_allowlist` (users.yaml username → extra QS roles to create in
+addition to the user's highest-priority role, for special cases such as
+troubleshooting) is **not** stored in this public repo. It is an `IdentityConfig`
+value (`quicksight_multi_account_allowlist`, JSON, default `{}`) set via the
+deployed `application.yml`, so individual usernames are never committed here.
+Two *different* users.yaml entries can never share an email; the first wins and
+the rest are skipped (with a warning).
 
 `*nonprod` groups are excluded from prod via the `enabled_aws_groups` filter, so
 they never reach role mapping in prod (matching the Lambda's
@@ -187,7 +188,7 @@ Private helpers (ported from the Python source, mappings driven by config):
 | `build_qs_username` | line 38 | `"#{role}/#{email.sub('@gsa.gov', '')}"` — strips only `@gsa.gov` |
 | `highest_aws_role` | lines 102–108 | max valid role by `role_priority`; `nil` if none |
 | `filtered_yaml_email_mapping` | lines 202–218 | skip `non_human_accounts` + users with no `aws_groups`; default email `"<user>@gsa.gov"`; duplicate emails resolved first-wins with a warning |
-| `multi_account_allowlist` | — (Rails addition) | per-user extra roles always created alongside the highest-priority account (e.g. `FullAdministrator`); exempt from the one-account-per-user collapse |
+| `multi_account_allowlist` | — (Rails addition) | per-user extra roles always created alongside the highest-priority account (e.g. `FullAdministrator`); exempt from the one-account-per-user collapse. Sourced from `IdentityConfig.store.quicksight_multi_account_allowlist` (deployed config), not committed to this public repo |
 | `create_users` | lines 135–187 | #1318 logic: one account per user, highest-priority role, upgrade only if no higher-priority account exists |
 | `drop_users` | lines 189–199 | skip `protected_accounts` (by Email) and `FullAdministrator/*` (by UserName prefix) |
 | `flag_users_with_pro_roles` | lines 235–238 | log warn on `*_PRO` roles |
