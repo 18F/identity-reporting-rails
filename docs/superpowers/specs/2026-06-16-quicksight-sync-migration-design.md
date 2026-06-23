@@ -28,6 +28,9 @@ until that is in production.
 - [ ] Behavior matches or improves upon the existing Lambda.
 - [ ] Documentation describes the config-vs-execution split and how to run/test
       QuickSight usersync locally.
+- [ ] Only one environment per AWS account actually performs the sync, gated by
+      a per-environment `quicksight_sync_enabled` flag (the QuickSight
+      subscription is account-scoped, but the job is scheduled per environment).
 
 ## Non-Goals
 
@@ -252,6 +255,71 @@ Scheduled every 15 minutes (`cron_15m`) in
 `config/initializers/job_configurations.rb`, consistent with
 `redshift_sync_job` (upgraded from the Lambda's hourly cadence).
 
+### Single-environment-per-account guard
+
+The QuickSight subscription is per **AWS account**, but the cron is scheduled
+per **environment**, and multiple environments share a single account (on both
+the sandbox and prod sides). If every environment ran the sync against the
+shared subscription, the runs would:
+
+- race each other creating/deleting the same QuickSight users (churn, API
+  throttling, and false `reportingRails-*-failed` alarms), and
+- compute *different* expected user sets — each environment's
+  `enabled_aws_groups`/filtering differs — so they would actively fight, one
+  environment deleting what another just created.
+
+Exactly one environment per account must perform the sync.
+
+**Mechanism — per-environment boolean flag.** A new `IdentityConfig` boolean,
+`quicksight_sync_enabled` (type `:boolean`, default `false`), is set to `true`
+in `application.yml` for exactly **one designated environment per account** and
+left `false` everywhere else. The cron remains scheduled in all environments;
+non-designated environments no-op immediately.
+
+This mirrors the existing job-guard convention in this repo — every
+conditionally-run job checks an `IdentityConfig.store.*_enabled` boolean in its
+`perform`, logs an info "skipped" message, and returns early:
+
+- `PiiRetentionEnforcementJob#perform` (`app/jobs/pii_retention_enforcement_job.rb:7`)
+- `RedshiftMaskingJob#perform` (`app/jobs/redshift_masking_job.rb:7`)
+- `FraudOpsPiiDecryptJob#perform` (`app/jobs/fraud_ops_pii_decrypt_job.rb:11`)
+- `IdvRedisToRedshiftJob#perform` (`app/jobs/idv_redis_to_redshift_job.rb:10`)
+
+**Where the guard lives — in the job, not the service.** `QuicksightSyncJob#perform`
+gets the early-return guard. The `QuicksightSync` service stays a pure,
+environment-agnostic unit (testable without env/account stubbing); the job
+remains the layer that decides "should I run in this environment at all",
+consistent with the four jobs above.
+
+```ruby
+def perform
+  unless IdentityConfig.store.quicksight_sync_enabled
+    logger.info(
+      { name: 'QuicksightSyncJob', skipped: 'quicksight_sync_enabled is false' }.to_json,
+    )
+    return
+  end
+  # ... existing body (QuicksightSync.new.sync, success/error logging) ...
+end
+```
+
+**Configuration changes:**
+
+1. `lib/identity_config.rb` — add `config.add(:quicksight_sync_enabled, type: :boolean)`
+   (alphabetical, next to the existing `quicksight_multi_account_allowlist` key).
+2. `app/jobs/quicksight_sync_job.rb` — add the early-return guard above.
+3. Deploy/config (in `identity-devops`, outside this repo) — set
+   `quicksight_sync_enabled: true` in exactly one environment's `application.yml`
+   per AWS account; `false` (the default) everywhere else.
+
+**Trade-off (deliberate):** this is an *operational* invariant enforced by
+convention, not a *self-policing* one. If the flag is mistakenly set `true` in
+two environments sharing an account, the conflict returns. This matches every
+other `*_enabled` flag in the repo (none are self-enforcing) and keeps the
+change minimal. A self-enforcing alternative — STS `get_caller_identity`
+account-id leader election — was considered and rejected: it adds runtime AWS
+calls and coordination state for a problem the config convention already solves.
+
 ## Testing
 
 - `spec/services/quicksight_sync_spec.rb`: stub `Aws::QuickSight::Client` (and
@@ -261,7 +329,10 @@ Scheduled every 15 minutes (`cron_15m`) in
   highest-priority selection, `*nonprod`-in-prod exclusion, duplicate-email
   first-wins, the `multi_account_allowlist`, and per-user error aggregation.
 - `spec/jobs/quicksight_sync_job_spec.rb`: assert the service is invoked and
-  success/failure logging behaves like `RedshiftSyncJob`.
+  success/failure logging behaves like `RedshiftSyncJob`. Add the
+  single-environment guard cases: when `quicksight_sync_enabled` is `false`,
+  `QuicksightSync` is **not** instantiated/invoked and a skip is logged; when
+  `true`, the job behaves as it does today.
 - Follow the existing `redshift_sync_spec.rb` stubbing conventions
   (RSpec + WebMock already in the suite).
 
@@ -269,7 +340,9 @@ Scheduled every 15 minutes (`cron_15m`) in
 
 Update backend docs to describe the config-vs-execution split (config in
 `identity-devops` `users.yaml` + `redshift_config.yaml`; execution in this repo)
-and how to run/test QuickSight usersync locally.
+and how to run/test QuickSight usersync locally. Document that
+`quicksight_sync_enabled` must be `true` in exactly one environment per AWS
+account, since the QuickSight subscription is account-scoped.
 
 ## Verified Against Lambda Source (2026-06-16)
 
