@@ -39,6 +39,5 @@ Refer to the [_Local Development_ documentation](./docs/local-development.md) to
 
 - [Back-end Architecture](docs/backend.md)
 - [Local Development](docs/local-development.md)
-- [QuickSight User Sync Migration to Rails](docs/superpowers/specs/2026-06-16-quicksight-sync-migration-design.md)
 - [Security](docs/SECURITY.md)
 - [Troubleshooting Local Development](docs/troubleshooting.md)
