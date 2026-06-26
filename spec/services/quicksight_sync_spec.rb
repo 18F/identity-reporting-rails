@@ -85,7 +85,7 @@ RSpec.describe QuicksightSync do
 
   def stub_list_users(users)
     allow(quicksight_client).to receive(:list_users).and_return(
-      double(user_list: users, next_token: nil),
+      [double(user_list: users)],
     )
   end
 
@@ -283,20 +283,14 @@ RSpec.describe QuicksightSync do
           aws_account_id: account_id,
           namespace: 'default',
         ).and_return(
-          double(
-            user_list: [qs_user(user_name: 'DWUser/first.page', email: 'first.page@gsa.gov')],
-            next_token: 'next-page-token',
-          ),
-        )
-        allow(quicksight_client).to receive(:list_users).with(
-          aws_account_id: account_id,
-          namespace: 'default',
-          next_token: 'next-page-token',
-        ).and_return(
-          double(
-            user_list: [qs_user(user_name: 'DWUser/second.page', email: 'second.page@gsa.gov')],
-            next_token: nil,
-          ),
+          [
+            double(
+              user_list: [qs_user(user_name: 'DWUser/first.page', email: 'first.page@gsa.gov')],
+            ),
+            double(
+              user_list: [qs_user(user_name: 'DWUser/second.page', email: 'second.page@gsa.gov')],
+            ),
+          ],
         )
       end
 

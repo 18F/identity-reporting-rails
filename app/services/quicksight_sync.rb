@@ -10,6 +10,8 @@ require_relative '../../config/environment'
 class QuicksightSync
   include UserSyncConfig
 
+  NAMESPACE = 'default'
+
   def sync
     Rails.logger.info('Starting QuickSight user sync')
 
@@ -67,23 +69,10 @@ class QuicksightSync
   end
 
   def list_quicksight_users
-    users = []
-    next_token = nil
-
-    loop do
-      params = {
-        aws_account_id: aws_account_id,
-        namespace: 'default',
-      }
-      params[:next_token] = next_token if next_token.present?
-
-      response = quicksight_client.list_users(**params)
-      users.concat(response.user_list)
-      next_token = response.next_token
-      break if next_token.blank?
-    end
-
-    users
+    quicksight_client.list_users(
+      aws_account_id: aws_account_id,
+      namespace: NAMESPACE,
+    ).flat_map(&:user_list)
   end
 
   def strip_email_domain(email)
@@ -192,7 +181,7 @@ class QuicksightSync
       iam_arn: "arn:aws:iam::#{aws_account_id}:role/#{aws_role}",
       session_name: strip_email_domain(email),
       aws_account_id: aws_account_id,
-      namespace: 'default',
+      namespace: NAMESPACE,
     )
 
     assign_group_membership(email, aws_role)
@@ -207,7 +196,7 @@ class QuicksightSync
       member_name: qs_username,
       group_name: qs_group,
       aws_account_id: aws_account_id,
-      namespace: 'default',
+      namespace: NAMESPACE,
     )
   end
 
@@ -217,7 +206,7 @@ class QuicksightSync
     quicksight_client.delete_user(
       user_name: username,
       aws_account_id: aws_account_id,
-      namespace: 'default',
+      namespace: NAMESPACE,
     )
   end
 
