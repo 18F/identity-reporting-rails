@@ -11,6 +11,8 @@ class QuicksightSync
   include UserSyncConfig
 
   NAMESPACE = 'default'
+  FULL_ADMIN_ROLE_PREFIX = 'FullAdministrator/'
+  PRO_ROLE_SUFFIX = '_PRO'
 
   def sync
     Rails.logger.info('Starting QuickSight user sync')
@@ -295,40 +297,49 @@ class QuicksightSync
   end
 
   def safe_create(email, aws_role, qs_username)
-    create_quicksight_user(email, aws_role)
-    nil
-  rescue Aws::QuickSight::Errors::ServiceError => e
-    Rails.logger.error("QS: failed to create user #{qs_username}: #{e.message}")
-    { user: qs_username, error: e }
+    with_error_capture(qs_username, 'create') do
+      create_quicksight_user(email, aws_role)
+    end
   end
 
   def drop_users(expected_users, quicksight_users)
     Rails.logger.info('QS: dropping removed users')
-    errors = []
 
     expected = expected_users.keys.to_set
     existing = quicksight_users.reject do |user|
       protected_accounts.include?(user.email) ||
-        user.user_name.start_with?('FullAdministrator/')
+        user.user_name.start_with?(FULL_ADMIN_ROLE_PREFIX)
     end.map(&:user_name).to_set
 
-    (existing - expected).each do |qs_username|
-      delete_quicksight_user(qs_username)
-    rescue Aws::QuickSight::Errors::ServiceError => e
-      Rails.logger.error("QS: failed to delete user #{qs_username}: #{e.message}")
-      errors << { user: qs_username, error: e }
-    end
+    (existing - expected).map do |qs_username|
+      with_error_capture(qs_username, 'delete') do
+        delete_quicksight_user(qs_username)
+      end
+    end.compact
+  end
 
-    errors
+  # Runs an AWS-mutating block, returning nil on success or an
+  # { user:, error: } hash if the QuickSight API call fails.
+  def with_error_capture(qs_username, action)
+    yield
+    nil
+  rescue Aws::QuickSight::Errors::ServiceError => e
+    Rails.logger.error("QS: failed to #{action} user #{qs_username}: #{e.message}")
+    { user: qs_username, error: e }
   end
 
   def flag_users_with_pro_roles(quicksight_users)
     pro_users = quicksight_users.
-      select { |user| user.role.to_s.end_with?('_PRO') }.
+      select { |user| user.role.to_s.end_with?(PRO_ROLE_SUFFIX) }.
       map(&:user_name)
 
     return if pro_users.empty?
 
+    # NOTE: This is intentionally structured JSON (unlike the plain-string logs
+    # elsewhere in this file) and must keep name: 'QuicksightSyncJob'. A
+    # CloudWatch metric filter / alarm matches on
+    # { $.name = "QuicksightSyncJob" && $.pro_users_detected = "*" }.
+    # Changing either the shape or the name value breaks that alarm.
     Rails.logger.warn(
       {
         name: 'QuicksightSyncJob',
