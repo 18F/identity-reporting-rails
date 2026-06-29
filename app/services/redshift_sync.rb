@@ -462,7 +462,9 @@ class RedshiftSync
 
   def create_user_group_privileges(group_name, schema_name, schema_privileges, table_privileges,
                                    restricted_tables = [])
-    sql = +"GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{group_name};\n"
+    sql = +<<~SQL
+      GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{group_name};
+    SQL
 
     if dbt_user_schema?(schema_name) && user_exists?(schema_name)
       sql += <<~SQL
@@ -475,7 +477,9 @@ class RedshiftSync
     end
 
     restricted_tables.each do |table|
-      sql += "REVOKE ALL PRIVILEGES ON TABLE #{schema_name}.#{table} FROM GROUP #{group_name};\n"
+      sql += <<~SQL
+        REVOKE ALL PRIVILEGES ON TABLE #{schema_name}.#{table} FROM GROUP #{group_name};
+      SQL
     end
 
     sql
