@@ -364,9 +364,11 @@ class RedshiftSync
                    tables.map { |table| "#{schema_name}.#{table}" }.join(', ')
                  end
 
-    sql + <<~SQL
+    sql += <<~SQL
       GRANT #{table_privileges} ON #{table_list} TO #{user_name};
     SQL
+
+    sql
   end
 
   def create_user_group(user_group)
