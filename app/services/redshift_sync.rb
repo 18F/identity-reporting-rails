@@ -352,7 +352,9 @@ class RedshiftSync
       schema_privileges
     ) ? "CREATE SCHEMA IF NOT EXISTS #{schema_name};\n" : ''
 
-    sql = +"#{schema_creation}GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO #{user_name};\n"
+    sql = +<<~SQL
+      #{schema_creation}GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO #{user_name};
+    SQL
 
     return sql if tables.blank? && dbt_user?(user_name) && user_name == schema_name
 
@@ -362,7 +364,9 @@ class RedshiftSync
                    tables.map { |table| "#{schema_name}.#{table}" }.join(', ')
                  end
 
-    sql + "GRANT #{table_privileges} ON #{table_list} TO #{user_name};\n"
+    sql + <<~SQL
+      GRANT #{table_privileges} ON #{table_list} TO #{user_name};
+    SQL
   end
 
   def create_user_group(user_group)
@@ -435,7 +439,9 @@ class RedshiftSync
         ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} GRANT #{table_privileges} ON TABLES TO GROUP #{group_name};
       SQL
     else
-      sql += "GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP #{group_name};\n"
+      sql += <<~SQL
+        GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP #{group_name};
+      SQL
     end
 
     restricted_tables.each do |table|
