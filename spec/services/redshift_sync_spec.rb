@@ -204,18 +204,20 @@ RSpec.describe RedshiftSync do
       )
     end
 
-    it 'includes ALTER DEFAULT PRIVILEGES for DBT schemas when user exists' do
+    it 'uses ALTER DEFAULT PRIVILEGES instead of ALL TABLES for DBT schemas when user exists' do
       allow(sync).to receive(:user_exists?).with('marts').and_return(true)
       sql = sync.send(:create_user_group_privileges, 'lg_users', 'marts', 'USAGE', 'SELECT', [])
 
       expect(sql).to include('ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts')
+      expect(sql).not_to include('ON ALL TABLES IN SCHEMA marts TO GROUP lg_users')
     end
 
-    it 'does not include ALTER DEFAULT PRIVILEGES for DBT schemas when user does not exist' do
+    it 'falls back to ALL TABLES for DBT schemas when the user does not exist yet' do
       allow(sync).to receive(:user_exists?).with('marts').and_return(false)
       sql = sync.send(:create_user_group_privileges, 'lg_users', 'marts', 'USAGE', 'SELECT', [])
 
       expect(sql).not_to include('ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts')
+      expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA marts TO GROUP lg_users')
     end
   end
 
@@ -237,6 +239,34 @@ RSpec.describe RedshiftSync do
 
       expect(sql).to include('GRANT SELECT ON pg_catalog.pg_user TO security_audit')
       expect(sql).not_to include('ALL TABLES')
+    end
+
+    it 'skips the ALL TABLES self-grant for a DBT user on its own schema' do
+      sql = sync.send(
+        :create_system_user_privileges, 'marts', 'marts', 'ALL PRIVILEGES',
+        'ALL PRIVILEGES', nil
+      )
+
+      expect(sql).to include('GRANT ALL PRIVILEGES ON SCHEMA marts TO marts')
+      expect(sql).not_to include('ON ALL TABLES IN SCHEMA marts TO marts')
+    end
+
+    it 'still grants ALL TABLES when a DBT user targets a non-owned schema' do
+      sql = sync.send(
+        :create_system_user_privileges, 'marts', 'idp', 'USAGE',
+        'SELECT', nil
+      )
+
+      expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA idp TO marts')
+    end
+
+    it 'still grants ALL TABLES for non-DBT system users on their schema' do
+      sql = sync.send(
+        :create_system_user_privileges, 'quicksight_connector', 'marts', 'USAGE',
+        'SELECT', nil
+      )
+
+      expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA marts TO quicksight_connector')
     end
   end
 
