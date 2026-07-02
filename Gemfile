@@ -2,13 +2,13 @@ source 'https://rubygems.org'
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
 ruby "~> #{File.read(File.join(__dir__, '.ruby-version')).strip}"
-gem 'activerecord-redshift-adapter'
+gem 'activerecord-redshift-adapter', '>= 8.1.0'
 gem 'aws-sdk-quicksight'
 gem 'rails', '~> 8.1.3'
-gem 'bootsnap', '~> 1.0', require: false
+gem 'bootsnap', '~> 1.18', '>= 1.18.5', require: false
 gem 'csv'
 gem 'faker'
-gem 'good_job', '~> 4.0'
+gem 'good_job', '~> 4.10', '>= 4.10.0'
 gem 'identity-hostdata', github: '18F/identity-hostdata', tag: 'v4.4.2'
 gem 'identity-logging', github: '18F/identity-logging', tag: 'v0.1.1'
 gem 'identity_validations', github: '18F/identity-validations', tag: 'v0.7.2'
@@ -43,7 +43,7 @@ group :development, :test do
   gem 'rexml', '>= 3.4.2'
   gem 'rspec', '~> 3.13.0'
   gem 'rspec-support', '~> 3.13.1'
-  gem 'rspec-rails', '~> 7.0'
+  gem 'rspec-rails', '~> 8.0', '>= 8.0.0'
   gem 'rubocop', '~> 1.70.0', require: false
   gem 'rubocop-performance', '~> 1.23.0', require: false
   gem 'rubocop-rails', '>= 2.27.2', require: false
@@ -55,7 +55,7 @@ group :test do
   gem 'simplecov', '~> 0.22.0', require: false
   gem 'simplecov-cobertura'
   gem 'simplecov_json_formatter'
-  gem 'factory_bot_rails', '>= 6.2.0'
+  gem 'factory_bot_rails', '>= 6.5.0'
   gem 'rack-test', '>= 1.1.0'
   gem 'rspec-retry'
   gem 'rspec_junit_formatter'
