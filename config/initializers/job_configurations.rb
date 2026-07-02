@@ -117,6 +117,11 @@ else
         class: 'RedshiftSyncJob',
         cron: cron_15m,
       },
+      # Sync QuickSight users - runs every 15 minutes
+      quicksight_sync_job: {
+        class: 'QuicksightSyncJob',
+        cron: cron_15m,
+      },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
   end

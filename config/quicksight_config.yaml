@@ -1,0 +1,29 @@
+---
+# DW role -> QuickSight role
+quicksight_aws_role:
+  DWAdmin: ADMIN
+  DWPowerUser: AUTHOR
+  DWUser: AUTHOR
+  default: READER
+
+# DW role -> QuickSight group
+quicksight_group:
+  DWAdmin: QSAdmin
+  DWPowerUser: QSPowerUser
+  DWUser: QSUser
+  default: QSUser
+
+# Accounts never deleted by drop_users (matched against the QS user's Email).
+# FullAdministrator/* matched by prefix in code, not listed here.
+protected_accounts:
+  - identity-devops@login.gov
+
+# Accounts in users.yaml that are not human users and are skipped entirely.
+non_human_accounts:
+  - root
+  - project_21_bot
+
+# Default email domain: used both to build a default email for users with no
+# explicit email in users.yaml ("<user>@gsa.gov") and to strip from the email
+# when building the QS username.
+default_email_domain: gsa.gov

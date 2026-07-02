@@ -56,6 +56,8 @@ class IdentityConfig
     config.add(:good_job_max_threads, type: :integer)
     config.add(:good_job_queue_select_limit, type: :integer)
     config.add(:good_job_queues, type: :string)
+    config.add(:quicksight_multi_account_allowlist, type: :json)
+    config.add(:quicksight_sync_enabled, type: :boolean)
     config.add(:rack_mini_profiler, type: :boolean)
     config.add(:redis_pool_size, type: :integer)
     config.add(:redis_url, type: :string)

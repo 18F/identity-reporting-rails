@@ -1,4 +1,17 @@
 ---
+aws_role_map:
+  dwadmin: DWAdmin
+  dwadminnonprod: DWAdmin
+  dwpoweruser: DWPowerUser
+  dwpowerusernonprod: DWPowerUser
+  dwuser: DWUser
+  dwusernonprod: DWUser
+
+role_priority:
+  DWAdmin: 3
+  DWPowerUser: 2
+  DWUser: 1
+
 enabled_aws_groups:
   prod:
     - dwuser
