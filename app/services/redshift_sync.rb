@@ -352,7 +352,7 @@ class RedshiftSync
       schema_privileges
     ) ? "CREATE SCHEMA IF NOT EXISTS #{schema_name};\n" : ''
 
-    sql = +<<~SQL
+    sql = <<~SQL
       #{schema_creation}GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO #{user_name};
     SQL
 
@@ -434,7 +434,7 @@ class RedshiftSync
 
   def create_user_group_privileges(group_name, schema_name, schema_privileges, table_privileges,
                                    restricted_tables = [])
-    sql = +<<~SQL
+    sql = <<~SQL
       GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{group_name};
     SQL
 
