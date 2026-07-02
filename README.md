@@ -37,7 +37,7 @@ Refer to the [_Local Development_ documentation](./docs/local-development.md) to
 
 ## Documentation
 
-- [Back-end Architecture](docs/backend.md)
+- [Jobs](docs/jobs.md)
 - [Local Development](docs/local-development.md)
 - [Security](docs/SECURITY.md)
 - [Troubleshooting Local Development](docs/troubleshooting.md)

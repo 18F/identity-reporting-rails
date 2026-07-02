@@ -175,6 +175,6 @@ Pass that path with `-R`:
 ## Further Documentation
 
 - `docs/local-development.md` — Local setup and running.
-- `docs/backend.md` — Back-end architecture.
+- `docs/jobs.md` — Jobs.
 - `docs/SECURITY.md` — Security guidance.
 - `docs/troubleshooting.md` — Troubleshooting local development.
