@@ -3,6 +3,8 @@
 class QuicksightSyncJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
+  ALLOWED_ENVIRONMENTS = %w[prod agnes].freeze
+
   queue_as :admin
 
   good_job_control_concurrency_with(
@@ -15,6 +17,16 @@ class QuicksightSyncJob < ApplicationJob
         {
           name: 'QuicksightSyncJob',
           skipped: 'quicksight_sync_enabled is false',
+        }.to_json,
+      )
+      return
+    end
+
+    unless ALLOWED_ENVIRONMENTS.include?(Identity::Hostdata.env)
+      logger.info(
+        {
+          name: 'QuicksightSyncJob',
+          skipped: "environment #{Identity::Hostdata.env} is not allowed",
         }.to_json,
       )
       return

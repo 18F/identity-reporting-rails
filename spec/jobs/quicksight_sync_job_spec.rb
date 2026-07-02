@@ -11,6 +11,7 @@ RSpec.describe QuicksightSyncJob, type: :job do
     allow(QuicksightSync).to receive(:new).and_return(quicksight_sync)
     allow(IdentityJobLogSubscriber).to receive(:new).and_return(job_log_subscriber)
     allow(IdentityConfig.store).to receive(:quicksight_sync_enabled).and_return(true)
+    allow(Identity::Hostdata).to receive(:env).and_return('prod')
   end
 
   describe '#perform' do
@@ -31,6 +32,29 @@ RSpec.describe QuicksightSyncJob, type: :job do
           {
             name: 'QuicksightSyncJob',
             skipped: 'quicksight_sync_enabled is false',
+          }.to_json,
+        )
+        subject.perform
+      end
+    end
+
+    context 'when the environment is not allowed' do
+      before do
+        allow(Identity::Hostdata).to receive(:env).and_return('int')
+        allow(logger).to receive(:info)
+      end
+
+      it 'does not invoke QuicksightSync' do
+        allow(quicksight_sync).to receive(:sync)
+        subject.perform
+        expect(quicksight_sync).not_to have_received(:sync)
+      end
+
+      it 'logs that it was skipped' do
+        expect(logger).to receive(:info).with(
+          {
+            name: 'QuicksightSyncJob',
+            skipped: 'environment int is not allowed',
           }.to_json,
         )
         subject.perform
