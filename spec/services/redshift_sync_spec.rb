@@ -240,6 +240,64 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe '#create_system_user' do
+    let(:schemas) do
+      [{ 'schema_name' => 'system_tables',
+         'schema_privileges' => 'USAGE',
+         'table_privileges' => 'SELECT' }]
+    end
+    let(:secret_id) { 'redshift/testenv-analytics-pii-reader' }
+
+    context 'when the system user already exists' do
+      before do
+        allow(mock_connection).to receive(:execute).and_return(double(any?: false))
+        allow(mock_connection).to receive(:execute).
+          with(/SELECT usename FROM pg_user WHERE usename = 'pii_reader'/).
+          and_return(double(any?: true))
+      end
+
+      it 'does not fetch the secret from Secrets Manager' do
+        expect(secrets_manager_client).not_to receive(:get_secret_value)
+
+        sync.send(:create_system_user, 'pii_reader', schemas, secret_id, false)
+      end
+
+      it 'does not issue a CREATE USER statement' do
+        expect(mock_connection).not_to receive(:execute).
+          with(a_string_matching(/CREATE USER pii_reader/))
+
+        sync.send(:create_system_user, 'pii_reader', schemas, secret_id, false)
+      end
+    end
+
+    context 'when the system user does not exist' do
+      before do
+        allow(mock_connection).to receive(:execute).and_return(double(any?: false))
+        allow(secrets_manager_client).to receive(:get_secret_value).
+          with(secret_id: secret_id).
+          and_return(double(:[] => '{"password":"s3cret"}'))
+      end
+
+      it 'fetches the secret and includes the hashed password in CREATE USER' do
+        expect(secrets_manager_client).to receive(:get_secret_value).
+          with(secret_id: secret_id).
+          and_return(double(:[] => '{"password":"s3cret"}'))
+        expect(mock_connection).to receive(:execute).
+          with(a_string_matching(/CREATE USER pii_reader WITH PASSWORD 'md5[0-9a-f]{32}'/))
+
+        sync.send(:create_system_user, 'pii_reader', schemas, secret_id, false)
+      end
+
+      it 'uses PASSWORD DISABLE and does not fetch a secret when secret_id is nil' do
+        expect(secrets_manager_client).not_to receive(:get_secret_value)
+        expect(mock_connection).to receive(:execute).
+          with(a_string_matching(/CREATE USER pii_reader WITH PASSWORD DISABLE/))
+
+        sync.send(:create_system_user, 'pii_reader', schemas, nil, false)
+      end
+    end
+  end
+
   describe '#sync execution order' do
     it 'executes all steps in correct sequence' do
       call_order = []
