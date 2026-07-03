@@ -274,6 +274,18 @@ RSpec.describe QuicksightSync do
         )
         sync.sync
       end
+
+      it 'logs unexpected users detected before deletion' do
+        allow(quicksight_client).to receive(:delete_user)
+        sync.sync
+
+        expect(Rails.logger).to have_received(:info).with(
+          {
+            name: 'QuicksightSyncJob',
+            unexpected_users_detected: 'DWUser/old.user',
+          }.to_json,
+        )
+      end
     end
 
     context 'when QuickSight users span multiple pages' do
@@ -325,6 +337,11 @@ RSpec.describe QuicksightSync do
 
       it 'does not delete protected or FullAdministrator accounts' do
         expect(quicksight_client).not_to receive(:delete_user)
+        sync.sync
+      end
+
+      it 'does not log unexpected users detected' do
+        expect(Rails.logger).not_to receive(:info).with(/unexpected_users_detected/)
         sync.sync
       end
     end
