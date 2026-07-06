@@ -314,16 +314,16 @@ class RedshiftSync
       )
     end
 
-    password_option = secret_id.nil? ? 'DISABLE' : redshift_secret(user_name, secret_id)
     syslog_access_option = syslog_access ? 'SYSLOG ACCESS UNRESTRICTED' : 'SYSLOG ACCESS RESTRICTED'
 
-    create_user_sql = "CREATE USER #{user_name} WITH PASSWORD #{password_option} " \
-                      "#{syslog_access_option} SESSION TIMEOUT 900;"
+    create_user_sql =
+      unless user_exists
+        password_option = secret_id.nil? ? 'DISABLE' : redshift_secret(user_name, secret_id)
+        "CREATE USER #{user_name} WITH PASSWORD #{password_option} " \
+          "#{syslog_access_option} SESSION TIMEOUT 900;"
+      end
 
-    sql = [
-      *(create_user_sql unless user_exists),
-      schema_privileges,
-    ]
+    sql = [*create_user_sql, schema_privileges]
 
     execute_query(sql.flatten.join("\n"))
   end
