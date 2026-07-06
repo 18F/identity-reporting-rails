@@ -279,7 +279,7 @@ RSpec.describe QuicksightSync do
         allow(quicksight_client).to receive(:delete_user)
         sync.sync
 
-        expect(Rails.logger).to have_received(:warn).with(
+        expect(Rails.logger).to have_received(:info).with(
           {
             name: 'QuicksightSyncJob',
             unexpected_users_detected: 'DWUser/old.user',
@@ -341,7 +341,7 @@ RSpec.describe QuicksightSync do
       end
 
       it 'does not log unexpected users detected' do
-        expect(Rails.logger).not_to receive(:warn).with(/unexpected_users_detected/)
+        expect(Rails.logger).not_to receive(:info).with(/unexpected_users_detected/)
         sync.sync
       end
     end
