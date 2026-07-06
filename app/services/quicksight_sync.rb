@@ -313,7 +313,7 @@ class QuicksightSync
 
     users_to_drop = (existing - expected).to_a
     if users_to_drop.any?
-      IdentityJobLogSubscriber.new.logger.info(
+      Rails.logger.warn(
         {
           name: 'QuicksightSyncJob',
           unexpected_users_detected: users_to_drop.sort.join(', '),
