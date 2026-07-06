@@ -347,21 +347,28 @@ class RedshiftSync
 
   def create_system_user_privileges(user_name, schema_name, schema_privileges, table_privileges,
                                     tables)
-    table_list = if tables.nil? || tables.empty?
-                   "ALL TABLES IN SCHEMA #{schema_name}"
-                 else
-                   tables.map { |table| "#{schema_name}.#{table}" }.join(', ')
-                 end
-
     schema_creation = should_create_schema?(
       user_name, schema_name,
       schema_privileges
     ) ? "CREATE SCHEMA IF NOT EXISTS #{schema_name};\n" : ''
 
-    <<~SQL
+    sql = <<~SQL
       #{schema_creation}GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO #{user_name};
+    SQL
+
+    return sql if tables.blank? && dbt_user?(user_name) && user_name == schema_name
+
+    table_list = if tables.blank?
+                   "ALL TABLES IN SCHEMA #{schema_name}"
+                 else
+                   tables.map { |table| "#{schema_name}.#{table}" }.join(', ')
+                 end
+
+    sql += <<~SQL
       GRANT #{table_privileges} ON #{table_list} TO #{user_name};
     SQL
+
+    sql
   end
 
   def create_user_group(user_group)
@@ -429,17 +436,22 @@ class RedshiftSync
                                    restricted_tables = [])
     sql = <<~SQL
       GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{group_name};
-      GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP #{group_name};
     SQL
 
     if dbt_user_schema?(schema_name) && user_exists?(schema_name)
       sql += <<~SQL
         ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} GRANT #{table_privileges} ON TABLES TO GROUP #{group_name};
       SQL
+    else
+      sql += <<~SQL
+        GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP #{group_name};
+      SQL
     end
 
     restricted_tables.each do |table|
-      sql += "REVOKE ALL PRIVILEGES ON TABLE #{schema_name}.#{table} FROM GROUP #{group_name};\n"
+      sql += <<~SQL
+        REVOKE ALL PRIVILEGES ON TABLE #{schema_name}.#{table} FROM GROUP #{group_name};
+      SQL
     end
 
     sql
