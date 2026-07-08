@@ -352,3 +352,7 @@ user_roles:
       - "IAMR:%{env_name}_db_consumption"
       - "IAMR:%{env_name}_log_consumption"
       - "IAMR:%{env_name}_stale_data_check"
+
+  - role_name: quicksight_access
+    users:
+      - quicksight_connector
