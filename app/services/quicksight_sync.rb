@@ -311,7 +311,17 @@ class QuicksightSync
         user.user_name.start_with?(FULL_ADMIN_ROLE_PREFIX)
     end.map(&:user_name).to_set
 
-    (existing - expected).map do |qs_username|
+    users_to_drop = (existing - expected).to_a
+    if users_to_drop.any?
+      Rails.logger.warn(
+        {
+          name: 'QuicksightSyncJob',
+          unexpected_users_detected: users_to_drop.sort.join(', '),
+        }.to_json,
+      )
+    end
+
+    users_to_drop.map do |qs_username|
       with_error_capture(qs_username, 'delete') do
         delete_quicksight_user(qs_username)
       end
