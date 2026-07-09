@@ -1,62 +1,15 @@
 {
+  // Repo-specific opencode settings only. Shared/global settings live in the Team Data sbx mixin kit:
+  // https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/blob/main/sbx-kits/team-data/files/home/team-config/opencode.jsonc
   "$schema": "https://opencode.ai/config.json",
 
   "permission": {
-    "edit": "allow",
-    "bash": {
-      "date *": "allow",
-      "echo *": "allow",
-      "fd *": "allow",
-      "find *": "allow",
-      "git branch *": "allow",
-      "git check-attr *": "allow",
-      "git ls-files *": "allow",
-      "git remote *": "allow",
-      "glab *": "ask",
-      "glab auth status *": "allow",
-      "glab issue close *": "deny",
-      "glab issue delete *": "deny",
-      "glab issue list *": "allow",
-      "glab issue view *": "allow",
-      "glab mr close *": "deny",
-      "glab mr delete *": "deny",
-      "glab mr diff *": "allow",
-      "glab mr list *": "allow",
-      "glab mr merge *": "deny",
-      "glab mr view *": "allow",
-      "glab release *": "deny",
-      "head *": "allow",
-      "mkdir *": "allow",
-      "printf *": "allow",
-      "read *": "allow",
-      "rg *": "allow",
-      "sort *": "allow",
-      "tail *": "allow",
-      "terraform fmt *": "allow",
-      "tr *": "allow",
-      "uniq *": "allow",
-      "wc *": "allow"
-    },
     "read": {
       "**/credentials.yml.enc": "deny",
       "**/config/application.yml": "deny",
       "**/.databag_secret": "deny",
       "**/databag_secrets.json": "deny",
       ".envrc": "deny"
-    },
-    "webfetch": "allow",
-    "websearch": "allow"
-  },
-
-  "plugin": [
-    "superpowers@git+https://github.com/obra/superpowers.git"
-  ],
-
-  "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp",
-      "enabled": true
     }
   }
 }
