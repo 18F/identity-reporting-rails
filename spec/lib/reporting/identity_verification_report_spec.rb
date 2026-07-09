@@ -40,7 +40,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
     # Divergence from old spec: the old CloudWatch spec pre-condensed each user's
     # events into one row per (user, event) via Ruby. Since
     # the reporting-rails version has SQL doing the dedupe/aggregation
-    # on the raw events, the spec needs all the raw events to test the SQL logic
+    # on the raw events, the spec needs all the raw events to test the SQL logic (additional events)
 
     # user1: online verification, failed each vendor once then succeeded -> Verified
     create_event(user_id: 'user1', name: 'IdV: doc auth welcome visited')
@@ -49,7 +49,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
       user_id: 'user1',
       name: 'IdV: doc auth image upload vendor submitted',
       success: false,
-      event_properties: { doc_auth_result: 'Passed' }, # non-fraud failure -> doc auth reject
+      event_properties: { doc_auth_result: 'Passed' },
     )
     create_event(
       user_id: 'user1', name: 'IdV: doc auth image upload vendor submitted', success: true,
@@ -86,7 +86,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
     )
     create_event(user_id: 'user3', name: 'Fraud: Profile review passed', success: true)
 
-    # user4: GPO submission (old event name) then passed fraud review
+    # user4: GPO submission then passed fraud review
     create_event(user_id: 'user4', name: 'IdV: GPO verification submitted', success: true)
     create_event(user_id: 'user4', name: 'Fraud: Profile review passed', success: true)
 
@@ -230,10 +230,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
     end
   end
 
-  # New tests (for robustness): the set subtraction in #idv_doc_auth_rejected is cross-row
-  # (a user rejected on one row may be verified on another). Isolate it so this
-  # fails if the "minus verified/in-person" logic regresses, rather than only
-  # relying on the 11-user net.
+  # New tests (for robustness): more thoroughly test #idv_doc_auth_rejected (which is cross-row)
   describe '#idv_doc_auth_rejected set subtraction (isolated)' do
     before { Event.delete_all }
 
@@ -279,13 +276,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
   end
 
   describe 'source-level filters (applied in SQL)' do
-    # NEW FOR ROBUSTNESS: these were previously non-discriminating (they only
-    # re-asserted the baseline net of 5). Rewritten to use isolated fixtures so
-    # each fails if its specific exclusion rule regresses.
-
-    # This is the exact rule that regressed once: the GPO/USPS arms of
-    # successfully_verified_users must respect keep_for_event_bucket, so a
-    # fraud-pending GPO submission does NOT count as verified.
+    # new tests (for robustness): individually test the exclusion rules
     context 'GPO submission with fraud review pending' do
       before { Event.delete_all }
 
@@ -352,11 +343,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
     end
   end
 
-  # NEW OUT OF NECESSITY (behavior change): the old CloudWatch report parsed
-  # messages in Ruby and tolerated malformed/partial data. The SQL version reads
-  # the SUPER `message` blob directly, so we pin down the current contract for a
-  # row whose message lacks the expected event_properties (should not raise, and
-  # the user is still counted for the event itself).
+  # New test - couldwatch version handled malformed data whereas we read SQL JSON super blob
   describe 'malformed / partial message handling' do
     before { Event.delete_all }
 
@@ -401,9 +388,6 @@ RSpec.describe Reporting::IdentityVerificationReport do
       end
     end
 
-    # DIFFERENT FROM OLD SPEC: the old report accepted an injected `data:` hash to
-    # simulate emptiness; the SQL version has no such seam, so we simulate "no data"
-    # with a time range that matches no events. safely_divide should return 0.0.
     context 'when there is no data in the time range' do
       subject(:report) do
         described_class.new(time_range: Date.new(1999, 1, 1).in_time_zone('UTC').all_day)
@@ -422,9 +406,6 @@ RSpec.describe Reporting::IdentityVerificationReport do
   end
 
   describe '#verified_user_count' do
-    # DIFFERENT FROM OLD SPEC: old spec created a real Profile record; this metric
-    # now runs a raw Redshift query against idp.profiles, so we stub the connection
-    # and assert the query shape instead.
     let(:connection) do
       instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
     end
@@ -452,9 +433,6 @@ RSpec.describe Reporting::IdentityVerificationReport do
     end
   end
 
-  # DIFFERENT FROM OLD SPEC: old spec asserted CloudWatch Logs Insights syntax
-  # (`| filter ...`, `isblank`, etc.). This is a shallow smoke test of the SQL
-  # string; behavioral coverage lives in the fixture-driven count tests above.
   describe '#metrics_query' do
     it 'filters by the configured event names' do
       query = report.send(:metrics_query)
