@@ -152,7 +152,8 @@ module Reporting
       safely_divide(idv_final_resolution, idv_started)
     end
 
-    # USED (condensed_idv_table); own small query
+    # USED (condensed_idv_table)
+    # A prod table direct query, not derived from logs
     def verified_user_count
       @verified_user_count ||= connection.select_value(verified_user_count_query).to_i
     end

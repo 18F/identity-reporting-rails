@@ -4,8 +4,14 @@ require 'rails_helper'
 require 'reporting/identity_verification_report'
 require 'reporting/json_path_helper'
 
+# Note - this spec logic is largely copied from
+# identity-idp/spec/lib/reporting/identity_verification_report_spec.rb
+# but has been changed to reflect the SQL processing approach (instead of Ruby
+# processing in the IdP repo). The reporting-rails report also has less
+# functionality (i.e. no issuer filtering, no #merge, no CloudWatch client).
+
 RSpec.describe Reporting::IdentityVerificationReport do
-  let(:time_range) { Date.new(2022, 1, 1).in_time_zone('UTC').all_day }
+  let(:time_range) { Date.new(2026, 7, 1).in_time_zone('UTC').all_day }
 
   subject(:report) { described_class.new(time_range: time_range) }
 
@@ -31,7 +37,12 @@ RSpec.describe Reporting::IdentityVerificationReport do
   end
 
   before do
-    # --- user1: online verification, failed each vendor once then succeeded -> Verified ---
+    # Divergence from old spec: the old CloudWatch spec pre-condensed each user's
+    # events into one row per (user, event) via Ruby. Since
+    # the reporting-rails version has SQL doing the dedupe/aggregation
+    # on the raw events, the spec needs all the raw events to test the SQL logic
+
+    # user1: online verification, failed each vendor once then succeeded -> Verified
     create_event(user_id: 'user1', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user1', name: 'IdV: doc auth welcome submitted')
     create_event(
@@ -49,7 +60,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
     create_event(user_id: 'user1', name: 'IdV: phone confirmation vendor', success: true)
     create_event(user_id: 'user1', name: 'IdV: final resolution', success: true) # Verified
 
-    # --- user2: GPO (mailed code) pending, incomplete ---
+    # user2: GPO (mailed code) pending, incomplete
     create_event(user_id: 'user2', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user2', name: 'IdV: doc auth welcome submitted')
     create_event(user_id: 'user2', name: 'idv_socure_verification_data_requested', success: true)
@@ -60,7 +71,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
       event_properties: { gpo_verification_pending: true },
     )
 
-    # --- user3: fraud review pending at final resolution, then passed ---
+    # user3: fraud review pending at final resolution, then passed
     create_event(user_id: 'user3', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user3', name: 'IdV: doc auth welcome submitted')
     create_event(
@@ -75,11 +86,11 @@ RSpec.describe Reporting::IdentityVerificationReport do
     )
     create_event(user_id: 'user3', name: 'Fraud: Profile review passed', success: true)
 
-    # --- user4: GPO submission (old event name) then passed fraud review ---
+    # user4: GPO submission (old event name) then passed fraud review
     create_event(user_id: 'user4', name: 'IdV: GPO verification submitted', success: true)
     create_event(user_id: 'user4', name: 'Fraud: Profile review passed', success: true)
 
-    # --- user5: in-person pending, doc auth failed (non-fraud), USPS passed ---
+    # user5: in-person pending, doc auth failed (non-fraud), USPS passed
     create_event(user_id: 'user5', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user5', name: 'IdV: doc auth welcome submitted')
     create_event(
@@ -100,7 +111,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
       event_properties: { passed: true },
     )
 
-    # --- user6: incomplete (welcome + failed doc auth, never resolved) ---
+    # user6: incomplete (welcome + failed doc auth, never resolved)
     create_event(user_id: 'user6', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user6', name: 'IdV: doc auth welcome submitted')
     create_event(
@@ -110,7 +121,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
       event_properties: { doc_auth_result: 'Passed' },
     )
 
-    # --- user7: fraud review pending at final resolution, then rejected ---
+    # user7: fraud review pending at final resolution, then rejected
     create_event(user_id: 'user7', name: 'IdV: doc auth welcome visited')
     create_event(user_id: 'user7', name: 'IdV: doc auth welcome submitted')
     create_event(
@@ -125,10 +136,10 @@ RSpec.describe Reporting::IdentityVerificationReport do
     )
     create_event(user_id: 'user7', name: 'Fraud: Profile review rejected', success: true)
 
-    # --- user8: fraud rejection only ---
+    # user8: fraud rejection only
     create_event(user_id: 'user8', name: 'Fraud: Profile review rejected', success: true)
 
-    # --- user9: GPO submission with fraud review pending, then rejected ---
+    # user9: GPO submission with fraud review pending, then rejected
     create_event(
       user_id: 'user9',
       name: 'IdV: GPO verification submitted',
@@ -137,7 +148,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
     )
     create_event(user_id: 'user9', name: 'Fraud: Profile review rejected', success: true)
 
-    # --- user10: USPS update while in fraud review, then passed ---
+    # user10: USPS update while in fraud review, then passed
     create_event(
       user_id: 'user10',
       name: 'GetUspsProofingResultsJob: Enrollment status updated',
@@ -145,7 +156,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
     )
     create_event(user_id: 'user10', name: 'Fraud: Profile review passed', success: true)
 
-    # --- user11: bounced on welcome screen ---
+    # user11: bounced on welcome screen
     create_event(user_id: 'user11', name: 'IdV: doc auth welcome visited')
   end
 
@@ -219,32 +230,109 @@ RSpec.describe Reporting::IdentityVerificationReport do
     end
   end
 
-  describe 'source-level filters (applied in SQL)' do
-    it 'ignores GPO/USPS events for a user whose final resolution is fraud-review pending' do
-      # user9's GPO submission carries fraud_review_pending, so it is not counted toward
-      # successfully_verified_users; user4's clean GPO submission is.
-      expect(report.successfully_verified_users).to eq(5)
-    end
+  # New tests (for robustness): the set subtraction in #idv_doc_auth_rejected is cross-row
+  # (a user rejected on one row may be verified on another). Isolate it so this
+  # fails if the "minus verified/in-person" logic regresses, rather than only
+  # relying on the 11-user net.
+  describe '#idv_doc_auth_rejected set subtraction (isolated)' do
+    before { Event.delete_all }
 
-    it 'skips USPS enrollment updates that did not pass' do
+    it 'excludes a user who was rejected but later verified' do
       create_event(
-        user_id: 'user12',
-        name: 'GetUspsProofingResultsJob: Enrollment status updated',
-        event_properties: { passed: false },
-      )
-
-      # user12 should NOT be added to successfully verified
-      expect(report.successfully_verified_users).to eq(5)
-    end
-
-    it 'skips fraud review passed events that were not successful' do
-      create_event(
-        user_id: 'user13',
-        name: 'Fraud: Profile review passed',
+        user_id: 'retry',
+        name: 'IdV: doc auth image upload vendor submitted',
         success: false,
+        event_properties: { doc_auth_result: 'Passed' },
+      )
+      create_event(user_id: 'retry', name: 'IdV: final resolution', success: true) # Verified
+
+      expect(report.idv_doc_auth_rejected).to eq(0)
+    end
+
+    it 'counts a user who was rejected and never verified' do
+      create_event(
+        user_id: 'stuck',
+        name: 'IdV: doc auth image upload vendor submitted',
+        success: false,
+        event_properties: { doc_auth_result: 'Passed' },
       )
 
-      expect(report.successfully_verified_users).to eq(5)
+      expect(report.idv_doc_auth_rejected).to eq(1)
+    end
+
+    it 'excludes a user who was rejected but is in-person pending' do
+      create_event(
+        user_id: 'ipp',
+        name: 'IdV: doc auth image upload vendor submitted',
+        success: false,
+        event_properties: { doc_auth_result: 'Passed' },
+      )
+      create_event(
+        user_id: 'ipp',
+        name: 'IdV: final resolution',
+        success: true,
+        event_properties: { in_person_verification_pending: true },
+      )
+
+      expect(report.idv_doc_auth_rejected).to eq(0)
+    end
+  end
+
+  describe 'source-level filters (applied in SQL)' do
+    # NEW FOR ROBUSTNESS: these were previously non-discriminating (they only
+    # re-asserted the baseline net of 5). Rewritten to use isolated fixtures so
+    # each fails if its specific exclusion rule regresses.
+
+    # This is the exact rule that regressed once: the GPO/USPS arms of
+    # successfully_verified_users must respect keep_for_event_bucket, so a
+    # fraud-pending GPO submission does NOT count as verified.
+    context 'GPO submission with fraud review pending' do
+      before { Event.delete_all }
+
+      it 'does not count a fraud-pending GPO submission as successfully verified' do
+        create_event(
+          user_id: 'clean_gpo',
+          name: 'IdV: GPO verification submitted',
+          success: true,
+        )
+        create_event(
+          user_id: 'fraud_gpo',
+          name: 'IdV: GPO verification submitted',
+          success: true,
+          event_properties: { fraud_review_pending: true },
+        )
+
+        # only the clean GPO submission counts
+        expect(report.successfully_verified_users).to eq(1)
+      end
+    end
+
+    context 'USPS enrollment update that did not pass' do
+      before { Event.delete_all }
+
+      it 'excludes the user from successfully verified' do
+        create_event(
+          user_id: 'usps_failed',
+          name: 'GetUspsProofingResultsJob: Enrollment status updated',
+          event_properties: { passed: false },
+        )
+
+        expect(report.successfully_verified_users).to eq(0)
+      end
+    end
+
+    context 'fraud review passed event that was not successful' do
+      before { Event.delete_all }
+
+      it 'excludes the user from successfully verified' do
+        create_event(
+          user_id: 'fraud_not_success',
+          name: 'Fraud: Profile review passed',
+          success: false,
+        )
+
+        expect(report.successfully_verified_users).to eq(0)
+      end
     end
 
     it 'skips rows with a blank user_id' do
@@ -261,6 +349,22 @@ RSpec.describe Reporting::IdentityVerificationReport do
       )
 
       expect(report.idv_started).to eq(7)
+    end
+  end
+
+  # NEW OUT OF NECESSITY (behavior change): the old CloudWatch report parsed
+  # messages in Ruby and tolerated malformed/partial data. The SQL version reads
+  # the SUPER `message` blob directly, so we pin down the current contract for a
+  # row whose message lacks the expected event_properties (should not raise, and
+  # the user is still counted for the event itself).
+  describe 'malformed / partial message handling' do
+    before { Event.delete_all }
+
+    it 'does not raise and still counts the event when event_properties is empty' do
+      create_event(user_id: 'sparse', name: 'IdV: doc auth welcome visited', event_properties: {})
+
+      expect { report.idv_started }.not_to raise_error
+      expect(report.idv_started).to eq(1)
     end
   end
 
@@ -297,10 +401,14 @@ RSpec.describe Reporting::IdentityVerificationReport do
       end
     end
 
+    # DIFFERENT FROM OLD SPEC: the old report accepted an injected `data:` hash to
+    # simulate emptiness; the SQL version has no such seam, so we simulate "no data"
+    # with a time range that matches no events. safely_divide should return 0.0.
     context 'when there is no data in the time range' do
       subject(:report) do
         described_class.new(time_range: Date.new(1999, 1, 1).in_time_zone('UTC').all_day)
       end
+
       it 'safely returns 0.0 for all rates instead of raising' do
         aggregate_failures do
           expect(report.blanket_proofing_rate).to eq(0.0)
@@ -314,6 +422,9 @@ RSpec.describe Reporting::IdentityVerificationReport do
   end
 
   describe '#verified_user_count' do
+    # DIFFERENT FROM OLD SPEC: old spec created a real Profile record; this metric
+    # now runs a raw Redshift query against idp.profiles, so we stub the connection
+    # and assert the query shape instead.
     let(:connection) do
       instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
     end
@@ -341,6 +452,9 @@ RSpec.describe Reporting::IdentityVerificationReport do
     end
   end
 
+  # DIFFERENT FROM OLD SPEC: old spec asserted CloudWatch Logs Insights syntax
+  # (`| filter ...`, `isblank`, etc.). This is a shallow smoke test of the SQL
+  # string; behavioral coverage lives in the fixture-driven count tests above.
   describe '#metrics_query' do
     it 'filters by the configured event names' do
       query = report.send(:metrics_query)
@@ -364,7 +478,6 @@ RSpec.describe Reporting::IdentityVerificationReport do
   end
 
   describe 'final-resolution categorization matrix' do
-    # Isolate these so they don't perturb the main fixture counts.
     before { Event.delete_all }
 
     def final_resolution(user_id:, **event_properties)
