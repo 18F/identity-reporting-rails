@@ -394,6 +394,8 @@ RSpec.describe Reporting::IdentityVerificationReport do
       end
 
       it 'safely returns 0.0 for all rates instead of raising' do
+        # This happens differently in DW vs Cloudwatch out of necessity,
+        # but outcome is the same - return 0 and don't raise if no data
         aggregate_failures do
           expect(report.blanket_proofing_rate).to eq(0.0)
           expect(report.intent_proofing_rate).to eq(0.0)
@@ -456,6 +458,7 @@ RSpec.describe Reporting::IdentityVerificationReport do
   end
 
   describe 'final-resolution categorization matrix' do
+    # More explicitly test for the 8 possible buckets (3 binary flags)
     before { Event.delete_all }
 
     def final_resolution(user_id:, **event_properties)
