@@ -447,6 +447,56 @@ RSpec.describe RedshiftSync do
       end
     end
 
+    describe 'per-role feature flag gating in #sync' do
+      # Two roles: dw_ingestion has no feature_flag (always on), quicksight_access is
+      # gated behind redshift_quicksight_connector_enabled (disabled in terraform_config).
+      let(:gated_roles) do
+        [
+          {
+            'role_name' => 'dw_ingestion',
+            'users' => ['rails_worker'],
+          },
+          {
+            'role_name' => 'quicksight_access',
+            'users' => ['quicksight_connector'],
+            'feature_flag' => 'redshift_quicksight_connector_enabled',
+          },
+        ]
+      end
+
+      let(:created_roles) { [] }
+
+      before do
+        allow(sync).to receive(:redshift_config).
+          and_return(test_redshift_config.merge('user_roles' => gated_roles))
+        allow(sync).to receive(:create_lambda_user)
+        allow(sync).to receive(:create_system_user)
+        allow(sync).to receive(:create_user_group)
+        allow(sync).to receive(:drop_users)
+        allow(sync).to receive(:create_users).and_return([])
+        allow(sync).to receive(:sync_user_group)
+        allow(sync).to receive(:create_user_role) do |role|
+          created_roles << role['role_name']
+        end
+      end
+
+      it 'skips the gated role without affecting the ungated role' do
+        sync.sync
+
+        expect(created_roles).to include('dw_ingestion')
+        expect(created_roles).not_to include('quicksight_access')
+      end
+
+      it 'processes the gated role once its feature flag is enabled' do
+        allow(sync).to receive(:config_file).
+          and_return("redshift_quicksight_connector_enabled = true\n")
+
+        sync.sync
+
+        expect(created_roles).to include('dw_ingestion', 'quicksight_access')
+      end
+    end
+
     describe '#create_user_role' do
       let(:user_role) do
         {
