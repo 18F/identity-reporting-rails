@@ -44,6 +44,12 @@
     listen_addresses = "127.0.0.1";
   };
 
+  services.redis = {
+    enable = true;
+    bind = "127.0.0.1";
+    port = 6379;
+  };
+
   git-hooks.hooks = {
     detect-secrets = {
       enable = true;
