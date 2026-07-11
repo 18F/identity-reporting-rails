@@ -25,16 +25,32 @@ The canonical development environment is managed by
   environment automatically (`direnv allow` on first use). Without direnv, run
   `devenv shell` manually.
 - `devenv.nix` provisions Ruby (from `.ruby-version`), Bundler, PostgreSQL 16,
-  and CLI tools (`glab`, `gnumake`, `detect-secrets`). A `bundle install` task
-  runs on shell entry.
+  Redis, and CLI tools (`glab`, `gnumake`, `detect-secrets`). A `bundle install`
+  task runs on shell entry.
 - A **`detect-secrets` pre-commit git hook** is configured in `devenv.nix`. It
   blocks commits containing high-entropy strings (likely secrets), checked
-  against `.secrets.baseline`. Commits made by agents will run this hook.
-- PostgreSQL is provided by devenv, not a system install, when using this path.
+  against `.secrets.baseline`. Commits made by agents will run this hook. The
+  hook's `detect-secrets-hook` executable is only on `PATH` inside the devenv
+  shell, so run `git commit` from within `devenv shell` (or the hook fails with
+  "Executable `detect-secrets-hook` not found").
+- PostgreSQL and Redis are provided by devenv as services, not system installs,
+  when using this path. Start them with `devenv up` (see Running services).
 
 A manual Homebrew + rbenv path is also documented in
 `docs/local-development.md` (uses the `Brewfile` and `make setup`). Prefer the
 devenv path unless you have a reason not to.
+
+### Running services (PostgreSQL + Redis)
+
+The Postgres and Redis services declared in `devenv.nix` do **not** start on
+shell entry — start them with `devenv up`. Both are required before running the
+test suite or `bin/setup`.
+
+- The default `devenv up` uses a full-screen TUI that needs a real terminal; in
+  a headless/sandbox environment it fails with `open /dev/tty: no such device`.
+  Use `devenv up -d` (detached) there, then `devenv processes stop` to stop.
+- Data lives under `.devenv/state/` (e.g. `.devenv/state/postgres`); it does not
+  exist until the service has been started at least once.
 
 ## Setup & Common Commands
 
@@ -69,6 +85,16 @@ Run `make help` to list all available targets.
   - `bundle exec rspec spec/jobs/data_freshness_job_spec.rb`
   - `bundle exec rspec spec/path/to/spec.rb:LINE`
 - Always run the relevant specs after making code changes.
+- A **running Redis is required for the whole suite**: `spec/rails_helper.rb`
+  flushes Redis in a `before(:each)` hook, so without it every spec fails with
+  `Redis::CannotConnectError`. Start it via `devenv up` (see Running services).
+- Before the first run, create `config/application.yml` (copy from
+  `config/application.yml.default`) and prepare the DBs
+  (`RAILS_ENV=test bin/rails db:prepare`); `bin/setup` / `make setup` do this.
+- `RedshiftUnexpectedUserDetectionJob` specs assume the local Postgres/Redshift
+  user is `postgres`. If devenv creates the DB owned by a differently named OS
+  user (e.g. `agent`), those specs fail because the extra user is reported as
+  unexpected — an environment artifact, not a code bug.
 
 ## Linting & Conventions
 
