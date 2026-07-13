@@ -44,6 +44,14 @@
     # RedshiftUnexpectedUserDetectionJob specs green, since they assume the
     # local Redshift/Postgres user is `postgres`.
     export POSTGRES_USER="''${POSTGRES_USER:-postgres}"
+
+    # libpq client tools (psql, pg_isready) default the connecting role to the
+    # OS username when PGUSER is unset. Since the cluster only has a `postgres`
+    # role, that produces recurring `FATAL: role "<os-user>" does not exist`
+    # noise in the postgres log (most visibly from the process-compose
+    # readiness probe, which runs `psql ... template1` every 10s). Default
+    # PGUSER to `postgres` so those clients connect as an existing role.
+    export PGUSER="''${PGUSER:-postgres}"
   '';
 
   services.postgres = {
