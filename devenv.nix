@@ -29,6 +29,14 @@
     # Conflicts with bundler
     export RUBYLIB=
 
+    # The app refuses to boot (including under RSpec / rails tasks) without
+    # config/application.yml. It is gitignored and seeded from the checked-in
+    # default, so create it on first shell entry if it is missing. This mirrors
+    # what `bin/setup` does and lets `make test` work without a manual copy.
+    if [ ! -f config/application.yml ]; then
+      cp config/application.yml.default config/application.yml
+    fi
+
     # The Postgres cluster is bootstrapped with a `postgres` superuser (see
     # services.postgres.initdbArgs) rather than one named after the OS user.
     # The test database config (config/database.yml) reads POSTGRES_USER, so

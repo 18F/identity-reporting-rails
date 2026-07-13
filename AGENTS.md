@@ -46,11 +46,37 @@ The Postgres and Redis services declared in `devenv.nix` do **not** start on
 shell entry — start them with `devenv up`. Both are required before running the
 test suite or `bin/setup`.
 
+- `devenv` / `direnv` live on `PATH` only via the Nix profile. If commands like
+  `devenv` are "command not found" (e.g. a non-interactive/sandbox shell that
+  didn't source direnv), prepend it:
+  `export PATH="$HOME/.nix-profile/bin:$PATH"`. Then run everything through
+  `devenv shell -- <cmd>` (or enter `devenv shell`) so Ruby/Bundler resolve.
 - The default `devenv up` uses a full-screen TUI that needs a real terminal; in
   a headless/sandbox environment it fails with `open /dev/tty: no such device`.
   Use `devenv up -d` (detached) there, then `devenv processes stop` to stop.
+- If Postgres was killed uncleanly it leaves a stale
+  `.devenv/state/postgres/postmaster.pid` and refuses to restart (`lock file
+  "postmaster.pid" already exists` / connection refused). Fix: stop everything
+  (`devenv processes stop`, `pkill -f "postgres -D"`), remove the stale pid
+  (`rm -f .devenv/state/postgres/postmaster.pid`), then `devenv up -d` again.
+- Transient `FATAL: role "agent" does not exist` lines in the postgres log while
+  the service comes up are harmless startup probes — the cluster is
+  `postgres`-owned by design (see `services.postgres`).
 - Data lives under `.devenv/state/` (e.g. `.devenv/state/postgres`); it does not
   exist until the service has been started at least once.
+
+### Running the test suite from a clean checkout
+
+`devenv.nix`'s `enterShell` auto-creates `config/application.yml` from the
+default and defaults `POSTGRES_USER=postgres`, so the remaining steps are:
+
+```sh
+export PATH="$HOME/.nix-profile/bin:$PATH"   # only if devenv isn't on PATH
+devenv up -d                                  # start Postgres + Redis (detached)
+devenv shell -- bash -c 'RAILS_ENV=test bin/rails db:prepare'
+devenv shell -- bash -c 'make test'
+devenv processes stop                         # when finished
+```
 
 ## Setup & Common Commands
 
@@ -88,9 +114,11 @@ Run `make help` to list all available targets.
 - A **running Redis is required for the whole suite**: `spec/rails_helper.rb`
   flushes Redis in a `before(:each)` hook, so without it every spec fails with
   `Redis::CannotConnectError`. Start it via `devenv up` (see Running services).
-- Before the first run, create `config/application.yml` (copy from
-  `config/application.yml.default`) and prepare the DBs
+- Before the first run the DBs must be prepared
   (`RAILS_ENV=test bin/rails db:prepare`); `bin/setup` / `make setup` do this.
+  `config/application.yml` is created automatically on `devenv shell` entry
+  (see `enterShell` in `devenv.nix`), so no manual copy is needed on the devenv
+  path.
 - `RedshiftUnexpectedUserDetectionJob` specs assume the local Postgres/Redshift
   user is `postgres`. `devenv.nix` bootstraps the cluster with a `postgres`
   superuser (`services.postgres.initdbArgs = [ "--username=postgres" ]` plus an
