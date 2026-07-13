@@ -153,8 +153,9 @@ requirement, and the `postgres` user assumption), see
 - `app/services/` — Service objects (e.g. `redshift_sync.rb`, masking).
 - `lib/reporting/` — Report generation classes.
 - `lib/tasks/` — Custom Rake tasks (e.g. migration checks, schema updates).
-- `config/` — Rails config. Key files: `identity_config.rb` (via `lib/`),
-  `redshift_config.yaml`, `pii_retention.yml`, `redshift_system_tables.yml`.
+- `config/` — Rails config. Key files: `lib/identity_config.rb`,
+  `config/redshift_config.yaml`, `config/pii_retention.yml`,
+  `config/redshift_system_tables.yml`.
 
 ## Databases
 
