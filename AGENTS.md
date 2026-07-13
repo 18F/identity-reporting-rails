@@ -92,9 +92,13 @@ Run `make help` to list all available targets.
   `config/application.yml.default`) and prepare the DBs
   (`RAILS_ENV=test bin/rails db:prepare`); `bin/setup` / `make setup` do this.
 - `RedshiftUnexpectedUserDetectionJob` specs assume the local Postgres/Redshift
-  user is `postgres`. If devenv creates the DB owned by a differently named OS
-  user (e.g. `agent`), those specs fail because the extra user is reported as
-  unexpected — an environment artifact, not a code bug.
+  user is `postgres`. `devenv.nix` bootstraps the cluster with a `postgres`
+  superuser (`services.postgres.initdbArgs = [ "--username=postgres" ]` plus an
+  explicit `postgres`-owned `initialDatabases` entry) so this holds regardless
+  of the OS user name (e.g. `agent`). The test config
+  (`config/database.yml`) reads `POSTGRES_USER`, which `enterShell` defaults to
+  `postgres`. If you have an existing `.devenv/state/postgres` created before
+  this change, delete it so the cluster is re-initialized with the right user.
 
 ## Linting & Conventions
 

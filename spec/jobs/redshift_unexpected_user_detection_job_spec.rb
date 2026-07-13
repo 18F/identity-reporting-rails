@@ -51,13 +51,15 @@ RSpec.describe RedshiftUnexpectedUserDetectionJob, type: :job do
 
     context 'when lambda and known admin usernames exist' do
       before do
+        # `postgres` is intentionally omitted here: it is the bootstrap
+        # superuser that owns the local/test cluster, so it already exists.
+        # It is still covered by STATIC_EXCLUDED_USERS in the job.
         query = <<~SQL
           CREATE USER "IAMR:testenv_db_consumption";
           CREATE USER "IAMR:testenv_stale_data_check";
           CREATE USER "superuser";
           CREATE USER "rdsadmin";
           CREATE USER "rdsdb";
-          CREATE USER "postgres";
           CREATE USER "security_audit";
         SQL
         DataWarehouseApplicationRecord.connection.execute(query)
