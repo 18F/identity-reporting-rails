@@ -68,15 +68,30 @@ test suite or `bin/setup`.
 ### Running the test suite from a clean checkout
 
 `devenv.nix`'s `enterShell` auto-creates `config/application.yml` from the
-default and defaults `POSTGRES_USER=postgres`, so the remaining steps are:
+default and defaults `POSTGRES_USER=postgres` (which `config/database.yml` reads
+in test), so no manual config copy is needed. The remaining steps are:
 
 ```sh
 export PATH="$HOME/.nix-profile/bin:$PATH"   # only if devenv isn't on PATH
 devenv up -d                                  # start Postgres + Redis (detached)
-devenv shell -- bash -c 'RAILS_ENV=test bin/rails db:prepare'
+devenv shell -- bash -c 'RAILS_ENV=test bin/rails db:prepare'  # first run only
 devenv shell -- bash -c 'make test'
-devenv processes stop                         # when finished
 ```
+
+A running Redis is required for the **whole** suite: `spec/rails_helper.rb`
+flushes Redis in a `before(:each)` hook, so without it every spec fails with
+`Redis::CannotConnectError`.
+
+Leave the devenv services (Postgres + Redis) **running** after a test run —
+do not stop them and do not ask whether to stop them. Only run
+`devenv processes stop` if the user explicitly asks.
+
+`RedshiftUnexpectedUserDetectionJob` specs assume the local Postgres/Redshift
+user is `postgres`; `devenv.nix` bootstraps the cluster with a `postgres`
+superuser (see [Running services](#running-services-postgresql--redis)) so this
+holds regardless of the OS user name (e.g. `agent`). If you have an existing
+`.devenv/state/postgres` created before that change, delete it so the cluster is
+re-initialized with the right user.
 
 ## Setup & Common Commands
 
@@ -111,22 +126,10 @@ Run `make help` to list all available targets.
   - `bundle exec rspec spec/jobs/data_freshness_job_spec.rb`
   - `bundle exec rspec spec/path/to/spec.rb:LINE`
 - Always run the relevant specs after making code changes.
-- A **running Redis is required for the whole suite**: `spec/rails_helper.rb`
-  flushes Redis in a `before(:each)` hook, so without it every spec fails with
-  `Redis::CannotConnectError`. Start it via `devenv up` (see Running services).
-- Before the first run the DBs must be prepared
-  (`RAILS_ENV=test bin/rails db:prepare`); `bin/setup` / `make setup` do this.
-  `config/application.yml` is created automatically on `devenv shell` entry
-  (see `enterShell` in `devenv.nix`), so no manual copy is needed on the devenv
-  path.
-- `RedshiftUnexpectedUserDetectionJob` specs assume the local Postgres/Redshift
-  user is `postgres`. `devenv.nix` bootstraps the cluster with a `postgres`
-  superuser (`services.postgres.initdbArgs = [ "--username=postgres" ]` plus an
-  explicit `postgres`-owned `initialDatabases` entry) so this holds regardless
-  of the OS user name (e.g. `agent`). The test config
-  (`config/database.yml`) reads `POSTGRES_USER`, which `enterShell` defaults to
-  `postgres`. If you have an existing `.devenv/state/postgres` created before
-  this change, delete it so the cluster is re-initialized with the right user.
+
+For environment setup (starting services, preparing databases, the Redis
+requirement, and the `postgres` user assumption), see
+[Running the test suite from a clean checkout](#running-the-test-suite-from-a-clean-checkout).
 
 ## Linting & Conventions
 
