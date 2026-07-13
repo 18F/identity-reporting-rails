@@ -66,12 +66,11 @@
       "--encoding=UTF8"
       "--username=postgres"
     ];
-    # Explicitly create the bootstrap database owned by `postgres`. Without
-    # this, devenv's default `createDatabase` runs `CREATE DATABASE "$USER"`
-    # while connecting as `$USER`, which fails because initdb only created the
-    # `postgres` role.
+    # Suppress devenv's default `createDatabase`, which runs
+    # `CREATE DATABASE "$USER"` while connecting as `$USER` and fails because
+    # initdb only created the `postgres` role. initdb already creates the
+    # `postgres` role and database, so no `initialDatabases` entry is needed.
     createDatabase = false;
-    initialDatabases = [ { name = "postgres"; user = "postgres"; } ];
   };
 
   services.redis = {
