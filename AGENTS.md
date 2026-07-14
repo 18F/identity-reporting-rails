@@ -157,6 +157,19 @@ For environment setup, see
   only explicitly enabled cops run).
 - Target Ruby 3.4, Target Rails 8.1.
 - Run `make lint` before finishing a change; use `make lintfix` to auto-correct.
+- In the sandbox, `make lint` may die at the RuboCop step with
+  `Parallel::DeadWorker` (exit 2). That is RuboCop's parallel mode crashing a
+  forked worker — a sandbox/resource artifact, **not** a lint offense. Rerun
+  RuboCop serially to get the real result: `bundle exec rubocop --no-parallel`.
+  Because `make lint` bails at RuboCop, run the remaining sub-checks
+  individually: `make brakeman`, `make lint_lockfiles`, `make lint_readme`,
+  `make lint_migrations`.
+- `make lint_lockfiles` can also fail spuriously in the sandbox with "There are
+  uncommitted changes after running 'bundle install'". This is the same
+  bind-mount phantom-change artifact as the symlink issue: `git diff-index`
+  reports `Gemfile.lock` as modified while `git diff Gemfile.lock` shows no
+  content change. Confirm with `git diff Gemfile.lock` (empty = clean); it
+  passes on the host.
 - Prefer self-documenting code over excessive comments.
 - The `README.md` is **auto-generated** from `docs/`. Do not edit it directly —
   run `make README.md` to regenerate. CI fails if it is out of sync.
