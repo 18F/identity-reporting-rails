@@ -25,8 +25,8 @@ The canonical development environment is managed by
   environment automatically (`direnv allow` on first use). Without direnv, run
   `devenv shell` manually.
 - `devenv.nix` provisions Ruby (from `.ruby-version`), Bundler, PostgreSQL 16,
-  Redis, and CLI tools (`glab`, `gnumake`, `detect-secrets`). A `bundle install`
-  task runs on shell entry.
+  Redis, and CLI tools (`glab`, `gnumake`, `detect-secrets`, `foreman`). A
+  `bundle install` task runs on shell entry.
 - A **`detect-secrets` pre-commit git hook** is configured in `devenv.nix`. It
   blocks commits containing high-entropy strings (likely secrets), checked
   against `.secrets.baseline`. Commits made by agents will run this hook. Run

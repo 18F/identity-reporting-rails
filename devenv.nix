@@ -14,6 +14,7 @@
 
   packages = with pkgs; [
     detect-secrets
+    foreman
     git
     glab
     gnumake
