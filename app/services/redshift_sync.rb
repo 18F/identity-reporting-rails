@@ -43,7 +43,7 @@ class RedshiftSync
     apply_masking_for_new_users(new_users) if new_users.any?
 
     user_roles.each do |user_role|
-      create_user_role(user_role)
+      create_user_role(user_role) if feature_enabled?(user_role['feature_flag'])
     end
 
     Rails.logger.info('Redshift user sync completed successfully')
