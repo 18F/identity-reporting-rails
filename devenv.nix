@@ -6,6 +6,9 @@
       enable = true;
       bundler.enable = true;
       versionFile = ./.ruby-version;
+      # The default-enabled solargraph LSP fails to build (nokogiri native
+      # extension), breaking `devenv shell` entirely. Gems come from bundler.
+      lsp.enable = false;
     };
   };
 
