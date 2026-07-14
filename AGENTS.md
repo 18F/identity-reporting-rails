@@ -107,11 +107,20 @@ devenv shell -- bash -c 'bin/rails db:prepare && make run'
   output, or `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/`
   (expect `200`). The one-off `HTTP parse error ... non-SSL Puma?` line is a
   benign health-probe artifact, not a boot failure.
+- `make run` invokes `foreman start -p 3000`, which runs the `Procfile`'s `web`
+  entry (`bundle exec rackup config.ru`) — so the running web process is
+  `rackup`/`puma`, not a literal `make`/`rails server`.
 - Headless/non-interactive runs: `make run` streams foreman output and does not
   return, so launch it in the background (redirect to a log file) rather than
   blocking the shell. To stop it, terminate the `foreman`/`puma`/`good_job`
   process tree (SIGTERM). Leave the devenv Postgres/Redis services running (see
   the note above) unless explicitly asked to stop them.
+- To confirm the server actually stopped, check for a listener rather than
+  `curl`: `ps -eo pid,comm | grep -E 'foreman|puma|good_job'` (expect none) or
+  `ss -ltnp | grep :3000` (expect nothing on 3000). `curl` can be misleading
+  here — after shutdown it may return `500` (a cached/proxy response) instead of
+  a connection-refused error, so a non-`000` status does **not** mean the server
+  is still up.
 
 ## Setup & Common Commands
 
