@@ -18,6 +18,9 @@
     glab
     gnumake
     libyaml
+    # prek (the git-hooks runner) needs uv for python hooks; without one on
+    # PATH it downloads a binary that cannot execute in Nix-only environments.
+    uv
   ];
 
   tasks = {
