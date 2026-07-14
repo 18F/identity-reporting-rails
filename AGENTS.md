@@ -85,6 +85,34 @@ ask whether to) unless the user explicitly requests it. The services bind fixed
 local ports, so only one checkout/worktree can run them at a time — a second
 checkout's tests would silently use the first one's services and databases.
 
+### Running the dev server
+
+`make run` runs the `Procfile` via `foreman` (`web` = Puma on port 3000,
+`worker` = GoodJob). As with the test suite, start Postgres + Redis first and
+run it inside the devenv shell:
+
+```sh
+export PATH="$HOME/.nix-profile/bin:$PATH"   # only if devenv isn't on PATH
+devenv up -d                                  # start Postgres + Redis (detached)
+devenv shell -- bash -c 'bin/rails db:prepare && make run'
+```
+
+- `foreman` is provisioned by `devenv.nix` (intentionally not in the Gemfile),
+  so `make run` only works inside the devenv shell.
+- The web process needs `tmp/pids/` to exist; it is kept in the repo via
+  `tmp/pids/.keep`, and `bin/setup` clears/recreates tmp. If Puma dies at boot
+  with `No such file or directory @ rb_sysopen - tmp/pids/server.pid`, run
+  `mkdir -p tmp/pids`.
+- Verify it booted by looking for `Listening on http://127.0.0.1:3000` in the
+  output, or `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/`
+  (expect `200`). The one-off `HTTP parse error ... non-SSL Puma?` line is a
+  benign health-probe artifact, not a boot failure.
+- Headless/non-interactive runs: `make run` streams foreman output and does not
+  return, so launch it in the background (redirect to a log file) rather than
+  blocking the shell. To stop it, terminate the `foreman`/`puma`/`good_job`
+  process tree (SIGTERM). Leave the devenv Postgres/Redis services running (see
+  the note above) unless explicitly asked to stop them.
+
 ## Setup & Common Commands
 
 All common tasks are exposed through the `Makefile`. Prefer these over raw
