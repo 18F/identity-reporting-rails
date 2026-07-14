@@ -29,12 +29,11 @@ The canonical development environment is managed by
   task runs on shell entry.
 - A **`detect-secrets` pre-commit git hook** is configured in `devenv.nix`. It
   blocks commits containing high-entropy strings (likely secrets), checked
-  against `.secrets.baseline`. Commits made by agents will run this hook. The
-  hook's `detect-secrets-hook` executable is only on `PATH` inside the devenv
-  shell, so run `git commit` from within `devenv shell` (or the hook fails with
-  "Executable `detect-secrets-hook` not found").
-- PostgreSQL and Redis are provided by devenv as services, not system installs,
-  when using this path. Start them with `devenv up` (see Running services).
+  against `.secrets.baseline`. Commits made by agents will run this hook. Run
+  `git commit` from within `devenv shell` — outside it the hook fails with
+  "Executable `detect-secrets-hook` not found".
+- PostgreSQL and Redis are provided by devenv as services, not system installs.
+  Start them with `devenv up` (see Running services).
 
 A manual Homebrew + rbenv path is also documented in
 `docs/local-development.md` (uses the `Brewfile` and `make setup`). Prefer the
@@ -46,30 +45,25 @@ The Postgres and Redis services declared in `devenv.nix` do **not** start on
 shell entry — start them with `devenv up`. Both are required before running the
 test suite or `bin/setup`.
 
-- `devenv` / `direnv` live on `PATH` only via the Nix profile. If commands like
-  `devenv` are "command not found" (e.g. a non-interactive/sandbox shell that
-  didn't source direnv), prepend it:
-  `export PATH="$HOME/.nix-profile/bin:$PATH"`. Then run everything through
-  `devenv shell -- <cmd>` (or enter `devenv shell`) so Ruby/Bundler resolve.
-- The default `devenv up` uses a full-screen TUI that needs a real terminal; in
-  a headless/sandbox environment it fails with `open /dev/tty: no such device`.
-  Use `devenv up -d` (detached) there, then `devenv processes stop` to stop.
-- If Postgres was killed uncleanly it leaves a stale
-  `.devenv/state/postgres/postmaster.pid` and refuses to restart (`lock file
-  "postmaster.pid" already exists` / connection refused). Fix: stop everything
-  (`devenv processes stop`, `pkill -f "postgres -D"`), remove the stale pid
-  (`rm -f .devenv/state/postgres/postmaster.pid`), then `devenv up -d` again.
-- Transient `FATAL: role "agent" does not exist` lines in the postgres log while
-  the service comes up are harmless startup probes — the cluster is
-  `postgres`-owned by design (see `services.postgres`).
-- Data lives under `.devenv/state/` (e.g. `.devenv/state/postgres`); it does not
-  exist until the service has been started at least once.
+- If `devenv` is "command not found" (e.g. a non-interactive/sandbox shell that
+  didn't source direnv), run `export PATH="$HOME/.nix-profile/bin:$PATH"`, then
+  run everything through `devenv shell -- <cmd>` so Ruby/Bundler resolve.
+- `devenv up` uses a TUI that needs a real terminal; when headless it fails
+  with `open /dev/tty: no such device` — use `devenv up -d` (detached) instead.
+  `devenv processes stop` stops the services.
+- An uncleanly killed Postgres leaves a stale
+  `.devenv/state/postgres/postmaster.pid` and refuses to restart. Fix:
+  `devenv processes stop`, `pkill -f "postgres -D"`, remove the pid file, then
+  `devenv up -d` again.
+- Transient `FATAL: role "<os-user>" does not exist` lines in the postgres log
+  during startup are harmless readiness probes — the cluster is
+  `postgres`-owned by design.
+- Service data lives under `.devenv/state/`, created on first start.
 
 ### Running the test suite from a clean checkout
 
-`devenv.nix`'s `enterShell` auto-creates `config/application.yml` from the
-default and defaults `POSTGRES_USER=postgres` (which `config/database.yml` reads
-in test), so no manual config copy is needed. The remaining steps are:
+`devenv.nix`'s `enterShell` auto-creates `config/application.yml` and defaults
+`POSTGRES_USER=postgres`, so no manual config is needed. The remaining steps:
 
 ```sh
 export PATH="$HOME/.nix-profile/bin:$PATH"   # only if devenv isn't on PATH
@@ -78,20 +72,17 @@ devenv shell -- bash -c 'RAILS_ENV=test bin/rails db:prepare'  # first run only
 devenv shell -- bash -c 'make test'
 ```
 
-A running Redis is required for the **whole** suite: `spec/rails_helper.rb`
-flushes Redis in a `before(:each)` hook, so without it every spec fails with
+Redis is required for the **whole** suite: `spec/rails_helper.rb` flushes it
+in a `before(:each)` hook, so without it every spec fails with
 `Redis::CannotConnectError`.
 
-Leave the devenv services (Postgres + Redis) **running** after a test run —
-do not stop them and do not ask whether to stop them. Only run
-`devenv processes stop` if the user explicitly asks.
+Leave the devenv services **running** after a test run — do not stop them (or
+ask whether to) unless the user explicitly requests it.
 
-`RedshiftUnexpectedUserDetectionJob` specs assume the local Postgres/Redshift
-user is `postgres`; `devenv.nix` bootstraps the cluster with a `postgres`
-superuser (see [Running services](#running-services-postgresql--redis)) so this
-holds regardless of the OS user name (e.g. `agent`). If you have an existing
-`.devenv/state/postgres` created before that change, delete it so the cluster is
-re-initialized with the right user.
+`RedshiftUnexpectedUserDetectionJob` specs assume the local Postgres user is
+`postgres`; `devenv.nix` bootstraps the cluster that way regardless of the OS
+user name. If your `.devenv/state/postgres` predates that change, delete it so
+the cluster is re-initialized.
 
 ## Setup & Common Commands
 
@@ -127,8 +118,7 @@ Run `make help` to list all available targets.
   - `bundle exec rspec spec/path/to/spec.rb:LINE`
 - Always run the relevant specs after making code changes.
 
-For environment setup (starting services, preparing databases, the Redis
-requirement, and the `postgres` user assumption), see
+For environment setup, see
 [Running the test suite from a clean checkout](#running-the-test-suite-from-a-clean-checkout).
 
 ## Linting & Conventions
