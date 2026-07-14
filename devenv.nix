@@ -14,7 +14,6 @@
 
   packages = with pkgs; [
     detect-secrets
-    foreman
     git
     glab
     gnumake
@@ -26,6 +25,18 @@
       exec = "bundle install";
       status = "bundle check";
       before = [ "devenv:enterShell" ];
+    };
+
+    # foreman (used by `make run`) is intentionally NOT in the Gemfile — per
+    # foreman's own guidance it should live outside the app's bundle. Installing
+    # it via the nix `foreman` package pulls in a mismatched Ruby, which breaks
+    # the `bundle exec` child processes it spawns (rackup/good_job). Instead,
+    # install it into the app's Ruby so parent and children share one runtime.
+    "ruby:install_foreman" = {
+      exec = "gem install foreman --conservative";
+      status = "gem list -i foreman";
+      before = [ "devenv:enterShell" ];
+      after = [ "ruby:install_gems" ];
     };
   };
 
