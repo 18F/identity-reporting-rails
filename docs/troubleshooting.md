@@ -1,5 +1,27 @@
 # Troubleshooting Local Development
 
+## Devenv: services will not start, or specs cannot connect
+
+On the devenv path (`devenv.nix`), PostgreSQL and Redis run as devenv services.
+They do **not** start on shell entry — start them with `devenv up`, or
+`devenv up -d` in a terminal without a TTY (plain `devenv up` fails there with
+`open /dev/tty: no such device`). Stop them with `devenv processes stop`.
+
+- **`Redis::CannotConnectError` on every spec**: the Redis service is not
+  running — `devenv up -d`.
+- **Postgres refuses to start after a crash** (`lock file "postmaster.pid"
+  already exists`): run `devenv processes stop`, then
+  `kill "$(head -1 .devenv/state/postgres/postmaster.pid)"` if that process is
+  still alive, remove `.devenv/state/postgres/postmaster.pid`, and run
+  `devenv up -d` again.
+- **Do not run a system-installed Postgres or Redis alongside the devenv
+  services**: both use the default local ports (5432, 6379), and the test
+  suite connects to — and flushes Redis on — whatever answers there.
+- **`LoadError: ... linked to incompatible ... libruby ...` after pulling a
+  `devenv.lock` update**: cached native gems were built against the previous
+  Nix Ruby. Delete `.devenv/state/.bundle` and re-enter the shell (gems
+  reinstall automatically).
+
 ## I am receiving errors when running `$ make setup`
 
 If this command returns errors, you may need to install the dependencies first, outside of the Makefile:

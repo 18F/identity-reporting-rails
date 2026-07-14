@@ -42,8 +42,11 @@ devenv path unless you have a reason not to.
 ### Running services (PostgreSQL + Redis)
 
 The Postgres and Redis services declared in `devenv.nix` do **not** start on
-shell entry — start them with `devenv up`. Both are required before running the
-test suite or `bin/setup`.
+shell entry — start them with `devenv up`. Both are required for the test
+suite; `bin/setup` needs only Postgres. Both listen on their default local
+ports (5432, 6379), so a system-installed Postgres or Redis must not be
+running at the same time — the test suite connects to (and flushes Redis on)
+whatever answers on those ports.
 
 - If `devenv` is "command not found" (e.g. a non-interactive/sandbox shell that
   didn't source direnv), run `export PATH="$HOME/.nix-profile/bin:$PATH"`, then
@@ -51,10 +54,9 @@ test suite or `bin/setup`.
 - `devenv up` uses a TUI that needs a real terminal; when headless it fails
   with `open /dev/tty: no such device` — use `devenv up -d` (detached) instead.
   `devenv processes stop` stops the services.
-- An uncleanly killed Postgres leaves a stale
-  `.devenv/state/postgres/postmaster.pid` and refuses to restart. Fix:
-  `devenv processes stop`, `pkill -f "postgres -D"`, remove the pid file, then
-  `devenv up -d` again.
+- Service recovery (stale `postmaster.pid` after a crash,
+  `Redis::CannotConnectError`, stale native gems after a `devenv.lock` update):
+  see the Devenv section of `docs/troubleshooting.md`.
 - Service data lives under `.devenv/state/`, created on first start.
 
 ### Running the test suite from a clean checkout
@@ -65,16 +67,23 @@ config is needed. The remaining steps:
 ```sh
 export PATH="$HOME/.nix-profile/bin:$PATH"   # only if devenv isn't on PATH
 devenv up -d                                  # start Postgres + Redis (detached)
-devenv shell -- bash -c 'RAILS_ENV=test bin/rails db:prepare'  # first run only
-devenv shell -- bash -c 'make test'
+devenv shell -- bash -c 'RAILS_ENV=test bin/rails db:prepare && make test'
 ```
+
+`devenv up -d` returns before the services are ready; if `db:prepare` gets
+"connection refused" right after a first-ever start, wait a few seconds and
+retry (it is idempotent). Each one-shot `devenv shell -- <cmd>` pays ~20–30s of
+environment evaluation — for repeated commands, chain them or use one
+persistent `devenv shell` session.
 
 Redis is required for the **whole** suite: `spec/rails_helper.rb` flushes it
 in a `before(:each)` hook, so without it every spec fails with
 `Redis::CannotConnectError`.
 
 Leave the devenv services **running** after a test run — do not stop them (or
-ask whether to) unless the user explicitly requests it.
+ask whether to) unless the user explicitly requests it. The services bind fixed
+local ports, so only one checkout/worktree can run them at a time — a second
+checkout's tests would silently use the first one's services and databases.
 
 ## Setup & Common Commands
 

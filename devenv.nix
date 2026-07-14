@@ -32,8 +32,11 @@
     # Conflicts with bundler
     export RUBYLIB=
 
-    # The app won't boot without the gitignored config/application.yml; seed it
-    # from the default (as bin/setup does) so tests run without manual setup.
+    # Seed the gitignored config/application.yml so test config (redis_url
+    # etc.) exists and Makefile's $(CONFIG) prerequisite is satisfied — without
+    # it, `make test` first triggers a full `bin/setup` run. The app itself
+    # boots fine without the file (identity-hostdata falls back to
+    # application.yml.default).
     if [ ! -f config/application.yml ]; then
       cp config/application.yml.default config/application.yml
     fi
@@ -45,11 +48,7 @@
     listen_addresses = "127.0.0.1";
   };
 
-  services.redis = {
-    enable = true;
-    bind = "127.0.0.1";
-    port = 6379;
-  };
+  services.redis.enable = true;
 
   git-hooks.hooks = {
     detect-secrets = {
