@@ -55,15 +55,12 @@ test suite or `bin/setup`.
   `.devenv/state/postgres/postmaster.pid` and refuses to restart. Fix:
   `devenv processes stop`, `pkill -f "postgres -D"`, remove the pid file, then
   `devenv up -d` again.
-- Transient `FATAL: role "<os-user>" does not exist` lines in the postgres log
-  during startup are harmless readiness probes — the cluster is
-  `postgres`-owned by design.
 - Service data lives under `.devenv/state/`, created on first start.
 
 ### Running the test suite from a clean checkout
 
-`devenv.nix`'s `enterShell` auto-creates `config/application.yml` and defaults
-`POSTGRES_USER=postgres`, so no manual config is needed. The remaining steps:
+`devenv.nix`'s `enterShell` auto-creates `config/application.yml`, so no manual
+config is needed. The remaining steps:
 
 ```sh
 export PATH="$HOME/.nix-profile/bin:$PATH"   # only if devenv isn't on PATH
@@ -78,11 +75,6 @@ in a `before(:each)` hook, so without it every spec fails with
 
 Leave the devenv services **running** after a test run — do not stop them (or
 ask whether to) unless the user explicitly requests it.
-
-`RedshiftUnexpectedUserDetectionJob` specs assume the local Postgres user is
-`postgres`; `devenv.nix` bootstraps the cluster that way regardless of the OS
-user name. If your `.devenv/state/postgres` predates that change, delete it so
-the cluster is re-initialized.
 
 ## Setup & Common Commands
 
