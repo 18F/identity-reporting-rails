@@ -3,6 +3,8 @@
   // https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/blob/main/sbx-kits/team-data/files/home/team-config/opencode.jsonc
   "$schema": "https://opencode.ai/config.json",
 
+  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git"],
+
   "permission": {
     "read": {
       "**/credentials.yml.enc": "deny",
