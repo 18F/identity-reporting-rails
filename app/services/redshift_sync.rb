@@ -136,6 +136,20 @@ class RedshiftSync
 
   def execute_query(sql)
     connection.execute(sql)
+  rescue ActiveRecord::StatementInvalid => e
+    Rails.logger.error(
+      {
+        name: 'RedshiftSync',
+        error: 'SQL execution failed',
+        message: e.message,
+        failed_sql: redact_secrets(sql),
+      }.to_json,
+    )
+    raise
+  end
+
+  def redact_secrets(sql)
+    sql.gsub(/(PASSWORD\s+)'[^']*'/i, "\\1'[REDACTED]'")
   end
 
   def quote(val)
@@ -357,6 +371,13 @@ class RedshiftSync
     SQL
 
     return sql if tables.blank? && dbt_user?(user_name) && user_name == schema_name
+
+    if tables.blank? && dbt_user_schema?(schema_name) && user_exists?(schema_name)
+      sql += <<~SQL
+        ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} GRANT #{table_privileges} ON TABLES TO #{user_name};
+      SQL
+      return sql
+    end
 
     table_list = if tables.blank?
                    "ALL TABLES IN SCHEMA #{schema_name}"
