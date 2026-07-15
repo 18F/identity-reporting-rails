@@ -45,6 +45,9 @@ Vagrantfile
 /spec/tmp
 /test
 /tmp/*
+!/tmp/pids
+/tmp/pids/*
+!/tmp/pids/.keep
 /.tmp/
 /.vscode/
 /vendor/bundle

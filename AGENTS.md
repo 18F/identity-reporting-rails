@@ -15,6 +15,9 @@ warehouse. Its primary responsibilities are:
 Ruby on Rails 8.1 app. Ruby version is pinned in `.ruby-version` (currently
 3.4.5). Background jobs use ActiveJob + GoodJob.
 
+See also: `docs/jobs.md` (job/sync architecture),
+`docs/local-development.md` (local setup).
+
 ## Dev Environment (devenv / Nix)
 
 The canonical development environment is managed by
@@ -25,50 +28,132 @@ The canonical development environment is managed by
   environment automatically (`direnv allow` on first use). Without direnv, run
   `devenv shell` manually.
 - `devenv.nix` provisions Ruby (from `.ruby-version`), Bundler, PostgreSQL 16,
-  and CLI tools (`glab`, `gnumake`, `detect-secrets`). A `bundle install` task
-  runs on shell entry.
+  Redis, and CLI tools (`glab`, `gnumake`, `detect-secrets`, `foreman`). A
+  `bundle install` task runs on shell entry.
 - A **`detect-secrets` pre-commit git hook** is configured in `devenv.nix`. It
   blocks commits containing high-entropy strings (likely secrets), checked
-  against `.secrets.baseline`. Commits made by agents will run this hook.
-- PostgreSQL is provided by devenv, not a system install, when using this path.
+  against `.secrets.baseline`. Commits made by agents will run this hook. Run
+  `git commit` from within `devenv shell` — outside it the hook fails with
+  "Executable `detect-secrets-hook` not found".
+- PostgreSQL and Redis are provided by devenv as services, not system installs.
+  Start them with `devenv up` (see Running services).
 
 A manual Homebrew + rbenv path is also documented in
 `docs/local-development.md` (uses the `Brewfile` and `make setup`). Prefer the
 devenv path unless you have a reason not to.
 
+### Running services (PostgreSQL + Redis)
+
+The Postgres and Redis services declared in `devenv.nix` do **not** start on
+shell entry — start them with `devenv up`. Both are required for the test
+suite; `bin/setup` needs only Postgres. Both listen on their default local
+ports (5432, 6379), so a system-installed Postgres or Redis must not be
+running at the same time — the test suite connects to (and flushes Redis on)
+whatever answers on those ports.
+
+- If `devenv` is "command not found" (e.g. a non-interactive/sandbox shell that
+  didn't source direnv), run `export PATH="$HOME/.nix-profile/bin:$PATH"`, then
+  run everything through `devenv shell -- <cmd>` so Ruby/Bundler resolve.
+- `devenv up` uses a TUI that needs a real terminal; when headless it fails
+  with `open /dev/tty: no such device` — use `devenv up -d` (detached) instead.
+  `devenv processes stop` stops the services.
+- Service recovery (stale `postmaster.pid` after a crash,
+  `Redis::CannotConnectError`, stale native gems after a `devenv.lock` update):
+  see the Devenv section of `docs/troubleshooting.md`.
+- Service data lives under `.devenv/state/`, created on first start.
+
+### Running the test suite from a clean checkout
+
+`devenv.nix`'s `enterShell` auto-creates `config/application.yml`, so no manual
+config is needed. The remaining steps:
+
+```sh
+export PATH="$HOME/.nix-profile/bin:$PATH"   # only if devenv isn't on PATH
+devenv up -d                                  # start Postgres + Redis (detached)
+devenv shell -- bash -c 'RAILS_ENV=test bin/rails db:prepare && make test'
+```
+
+`devenv up -d` returns before the services are ready; if `db:prepare` gets
+"connection refused" right after a first-ever start, wait a few seconds and
+retry (it is idempotent). Each one-shot `devenv shell -- <cmd>` pays ~20–30s of
+environment evaluation — for repeated commands, chain them or use one
+persistent `devenv shell` session.
+
+Redis is required for the **whole** suite: `spec/rails_helper.rb` flushes it
+in a `before(:each)` hook, so without it every spec fails with
+`Redis::CannotConnectError`.
+
+Leave the devenv services **running** after a test run — do not stop them (or
+ask whether to) unless the user explicitly requests it. The services bind fixed
+local ports, so only one checkout/worktree can run them at a time — a second
+checkout's tests would silently use the first one's services and databases.
+
+### Running the dev server
+
+`make run` runs the `Procfile` via `foreman` (`web` = Puma on port 3000,
+`worker` = GoodJob). As with the test suite, start Postgres + Redis first and
+run it inside the devenv shell:
+
+```sh
+export PATH="$HOME/.nix-profile/bin:$PATH"   # only if devenv isn't on PATH
+devenv up -d                                  # start Postgres + Redis (detached)
+devenv shell -- bash -c 'bin/rails db:prepare && make run'
+```
+
+- `foreman` is provisioned by `devenv.nix` (intentionally not in the Gemfile),
+  so `make run` only works inside the devenv shell.
+- The web process needs `tmp/pids/` to exist; it is kept in the repo via
+  `tmp/pids/.keep`, and `bin/setup` clears/recreates tmp. If Puma dies at boot
+  with `No such file or directory @ rb_sysopen - tmp/pids/server.pid`, run
+  `mkdir -p tmp/pids`.
+- Verify it booted by looking for `Listening on http://127.0.0.1:3000` in the
+  output, or `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/`
+  (expect `200`). The one-off `HTTP parse error ... non-SSL Puma?` line is a
+  benign health-probe artifact, not a boot failure.
+- `make run` invokes `foreman start -p 3000`, which runs the `Procfile`'s `web`
+  entry (`bundle exec rackup config.ru`) — so the running web process is
+  `rackup`/`puma`, not a literal `make`/`rails server`.
+- Headless/non-interactive runs: `make run` streams foreman output and does not
+  return, so launch it in the background (redirect to a log file) rather than
+  blocking the shell. To stop it, terminate the `foreman`/`puma`/`good_job`
+  process tree (SIGTERM). Leave the devenv Postgres/Redis services running (see
+  the note above) unless explicitly asked to stop them.
+- To confirm the server actually stopped, check for a listener rather than
+  `curl`: `ps -eo pid,comm | grep -E 'foreman|puma|good_job'` (expect none) or
+  `ss -ltnp | grep :3000` (expect nothing on 3000). `curl` can be misleading
+  here — after shutdown it may return `500` (a cached/proxy response) instead of
+  a connection-refused error, so a non-`000` status does **not** mean the server
+  is still up.
+
 ## Setup & Common Commands
 
-All common tasks are exposed through the `Makefile`. Prefer these over raw
-commands.
+Prefer `Makefile` targets over raw commands. `make help` lists all targets;
+the everyday drivers:
 
-- `make setup` — Run setup scripts (`bin/setup`): packages, dependencies, databases, config files.
-- `make fast_setup` — Abbreviated setup that skips linking some files.
-- `make run` — Start the development server (runs the `Procfile`: `web` =
-  `rackup config.ru`, `worker` = `good_job start`).
-- `make test` — Run the full local RSpec suite (`RAILS_ENV=test`, `bundle exec rspec`).
-- `make test_serial` — Run RSpec serially (non-parallel).
-- `make fast_test` — RSpec without accessibility specs.
-- `make lint` — Run all linters (rubocop, brakeman, lockfile/readme/migration checks).
-- `make lintfix` — Auto-fix rubocop + normalize YAML.
-- `make brakeman` — Security scan.
-- `make audit` — `bundler-audit` dependency vulnerability check.
-- `make check` — Runs `lint` then `test`.
-- `make update` — `bundle install` + `rails db:migrate` (after a git pull).
+- `make setup` — `bin/setup`: packages, dependencies, databases, config files.
+- `make run` — Start the dev server (`Procfile`: `web` = `rackup config.ru`,
+  `worker` = `good_job start`).
+- `make test` — Full RSpec suite (`RAILS_ENV=test`, `bundle exec rspec`).
+- `make fast_test` — RSpec without the accessibility specs.
+- `make lint` / `make lintfix` — Run linters / auto-fix rubocop + normalize YAML.
+- **Run `make check` (lint then test) before pushing** — the pre-push gate.
 
-Run `make help` to list all available targets.
+Scheduled jobs are **GoodJob cron**, defined in
+`config/initializers/job_configurations.rb` (not OS cron). Scheduling is skipped
+when running in a Rails console.
 
 ## Testing
 
-- Framework: **RSpec** (`rspec-rails`), with FactoryBot, Shoulda Matchers,
-  WebMock, and SimpleCov.
-- Specs live in `spec/`. Factories live in `spec/factories/`.
-- Local `make test` runs `bundle exec rspec`. CI parallelizes specs with
-  Knapsack across GitLab nodes.
-- Prefer running a single spec file or example during development rather than
-  the full suite:
-  - `bundle exec rspec spec/jobs/data_freshness_job_spec.rb`
-  - `bundle exec rspec spec/path/to/spec.rb:LINE`
-- Always run the relevant specs after making code changes.
+RSpec (with FactoryBot, Shoulda Matchers, WebMock). Specs in `spec/`, factories
+in `spec/factories/`.
+
+- `make test` runs specs **serially**; parallelism (Knapsack) exists only
+  across CI nodes.
+- Prefer a single spec over the full suite while developing:
+  `bundle exec rspec spec/path/to/spec.rb:LINE`. Always run the relevant specs
+  after changes.
+- Environment setup: see
+  [Running the test suite from a clean checkout](#running-the-test-suite-from-a-clean-checkout).
 
 ## Linting & Conventions
 
@@ -77,23 +162,24 @@ Run `make help` to list all available targets.
   only explicitly enabled cops run).
 - Target Ruby 3.4, Target Rails 8.1.
 - Run `make lint` before finishing a change; use `make lintfix` to auto-correct.
-- Prefer self-documenting code over excessive comments.
+- **In the sandbox, do NOT run `make lint` — it dies at the RuboCop step with
+  `Parallel::DeadWorker` (exit 2).** That is RuboCop's parallel mode crashing a
+  forked worker — a sandbox/resource artifact, **not** a lint offense. Don't
+  bother trying the parallel path first; go straight to the serial run.
+  Instead, run the sub-checks directly, using serial RuboCop:
+  - `bundle exec rubocop --no-parallel` (the real RuboCop result)
+  - `make brakeman`
+  - `make lint_lockfiles`
+  - `make lint_readme`
+  - `make lint_migrations`
+- `make lint_lockfiles` can also fail spuriously in the sandbox with "There are
+  uncommitted changes after running 'bundle install'". This is the same
+  bind-mount phantom-change artifact as the symlink issue: `git diff-index`
+  reports `Gemfile.lock` as modified while `git diff Gemfile.lock` shows no
+  content change. Confirm with `git diff Gemfile.lock` (empty = clean); it
+  passes on the host.
 - The `README.md` is **auto-generated** from `docs/`. Do not edit it directly —
   run `make README.md` to regenerate. CI fails if it is out of sync.
-
-## Project Structure
-
-- `app/jobs/` — Background jobs (Redshift sync, PII checks, reports, etc.).
-  This is the heart of the app; most work happens here.
-- `app/models/` — ActiveRecord models. Note the multiple database base classes:
-  - `ApplicationRecord` (primary)
-  - `DataWarehouseApplicationRecord` (Redshift / data warehouse)
-  - `WorkerJobApplicationRecord` (GoodJob)
-- `app/services/` — Service objects (e.g. `redshift_sync.rb`, masking).
-- `lib/reporting/` — Report generation classes.
-- `lib/tasks/` — Custom Rake tasks (e.g. migration checks, schema updates).
-- `config/` — Rails config. Key files: `identity_config.rb` (via `lib/`),
-  `redshift_config.yaml`, `pii_retention.yml`, `redshift_system_tables.yml`.
 
 ## Databases
 
@@ -105,15 +191,33 @@ This app connects to **multiple databases** (see `config/database.yml`):
   Uses `activerecord-redshift-adapter`. `pg` is pinned to 1.5.9 for Redshift
   compatibility (< pgsql 10).
 
+Each database has its own `ActiveRecord` base class — inherit from the right one
+or a model writes to the wrong database:
+
+- `ApplicationRecord` — primary
+- `DataWarehouseApplicationRecord` — Redshift / data warehouse
+- `WorkerJobApplicationRecord` — GoodJob (`worker_jobs`)
+
 Migrations are separated by database:
 
-- `db/primary_migrate/` (configured in `config/database.yml`; the primary DB
-  has no migrations yet — `db/schema.rb` is currently empty/version 0).
+- `db/primary_migrate/` — configured as the primary DB's `migrations_paths` in
+  `config/database.yml`, but the directory does not exist yet (no primary
+  migrations; `db/schema.rb` is version 0). Create it when adding the first one.
 - `db/worker_jobs_migrate/`
 - `db/data_warehouse_migrate/` (+ `db/data_warehouse_test_migrate/` for tests)
 
 When adding a migration, place it in the correct directory and confirm the
 target database. Migration linting runs via `scripts/migration_check`.
+
+Gotchas:
+
+- **The Rails console connects as the read-only DB user by default** — writes
+  fail. Set `ALLOW_CONSOLE_DB_WRITE_ACCESS=true` in the environment to use the
+  writable connection (`config/application.rb`).
+- **Report queries run under a SQL `statement_timeout`** — long-running report
+  queries abort rather than hang. Reports use
+  `Reports::BaseReport.transaction_with_timeout` (timeout =
+  `IdentityConfig.store.report_timeout`).
 
 ## Security & Sensitive Data
 
@@ -130,6 +234,8 @@ surface with care; you do not need to treat every file in the repo as sensitive.
   masking jobs, decryption UDFs), do not log or expose decrypted PII.
 - `make brakeman` and `bundle exec bundler-audit` run as part of CI; keep them
   passing.
+
+See `docs/SECURITY.md` for full guidance.
 
 ## Git, GitLab & Pull Requests
 
@@ -171,10 +277,3 @@ Pass that path with `-R`:
 
 - `glab issue list -R lg-teams/Team-Data/data-warehouse-ag`
 - `glab issue view <id> -R lg-teams/Team-Data/data-warehouse-ag --comments`
-
-## Further Documentation
-
-- `docs/local-development.md` — Local setup and running.
-- `docs/jobs.md` — Jobs.
-- `docs/SECURITY.md` — Security guidance.
-- `docs/troubleshooting.md` — Troubleshooting local development.

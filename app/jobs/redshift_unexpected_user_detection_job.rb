@@ -63,9 +63,11 @@ class RedshiftUnexpectedUserDetectionJob < ApplicationJob
     result = DataWarehouseApplicationRecord.connection.execute(local_users_query)
     users = result.map(&:values).flatten
     unless using_redshift_adapter?
-      # Delete local postgres user for tests
-      users.delete(ENV['USER'])
-      users.delete('postgres_user')
+      # Exclude the local cluster's connection user (varies by environment:
+      # devenv, CI, Homebrew); it is never a real Redshift user.
+      users.delete(
+        DataWarehouseApplicationRecord.connection.select_value('SELECT current_user'),
+      )
     end
     lambda_users.each { |lambda_user_name| users.delete(lambda_user_name) }
     users
