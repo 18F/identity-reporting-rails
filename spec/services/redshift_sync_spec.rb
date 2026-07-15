@@ -260,13 +260,51 @@ RSpec.describe RedshiftSync do
       expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA idp TO marts')
     end
 
-    it 'still grants ALL TABLES for non-DBT system users on their schema' do
+    it 'uses ALTER DEFAULT PRIVILEGES for a non-DBT user reading a DBT schema when owner exists' do
+      allow(sync).to receive(:user_exists?).with('marts').and_return(true)
+      sql = sync.send(
+        :create_system_user_privileges, 'rails_worker', 'marts', 'USAGE',
+        'SELECT', nil
+      )
+
+      expect(sql).to include('GRANT USAGE ON SCHEMA marts TO rails_worker')
+      expect(sql).to include(
+        'ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts ' \
+        'GRANT SELECT ON TABLES TO rails_worker',
+      )
+      expect(sql).not_to include('ON ALL TABLES IN SCHEMA marts TO rails_worker')
+    end
+
+    it 'falls back to ALL TABLES for a DBT schema when the owner user does not exist yet' do
+      allow(sync).to receive(:user_exists?).with('marts').and_return(false)
       sql = sync.send(
         :create_system_user_privileges, 'quicksight_connector', 'marts', 'USAGE',
         'SELECT', nil
       )
 
       expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA marts TO quicksight_connector')
+      expect(sql).not_to include('ALTER DEFAULT PRIVILEGES')
+    end
+
+    it 'still grants explicit tables for a DBT schema when a table list is provided' do
+      allow(sync).to receive(:user_exists?).with('marts').and_return(true)
+      sql = sync.send(
+        :create_system_user_privileges, 'rails_worker', 'marts', 'USAGE',
+        'SELECT', ['some_table']
+      )
+
+      expect(sql).to include('GRANT SELECT ON marts.some_table TO rails_worker')
+      expect(sql).not_to include('ALTER DEFAULT PRIVILEGES')
+    end
+
+    it 'still grants ALL TABLES for non-DBT schemas' do
+      sql = sync.send(
+        :create_system_user_privileges, 'quicksight_connector', 'idp', 'USAGE',
+        'SELECT', nil
+      )
+
+      expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA idp TO quicksight_connector')
+      expect(sql).not_to include('ALTER DEFAULT PRIVILEGES')
     end
   end
 
@@ -325,6 +363,67 @@ RSpec.describe RedshiftSync do
 
         sync.send(:create_system_user, 'pii_reader', schemas, nil, false)
       end
+    end
+  end
+
+  describe '#execute_query' do
+    let(:failing_sql) { 'GRANT SELECT ON ALL TABLES IN SCHEMA marts TO rails_worker;' }
+
+    it 'logs the failing SQL and re-raises on a StatementInvalid error' do
+      allow(mock_connection).to receive(:execute).
+        and_raise(ActiveRecord::StatementInvalid.new('PG::InternalError: could not open relation'))
+
+      expect(Rails.logger).to receive(:error) do |payload|
+        parsed = JSON.parse(payload)
+        expect(parsed['name']).to eq('RedshiftSync')
+        expect(parsed['failed_sql']).to eq(failing_sql)
+        expect(parsed['message']).to include('could not open relation')
+      end
+
+      expect { sync.send(:execute_query, failing_sql) }.to raise_error(
+        ActiveRecord::StatementInvalid,
+      )
+    end
+
+    it 'returns the connection result and does not log on success' do
+      result = double('result')
+      allow(mock_connection).to receive(:execute).with(failing_sql).and_return(result)
+
+      expect(Rails.logger).not_to receive(:error)
+      expect(sync.send(:execute_query, failing_sql)).to eq(result)
+    end
+
+    it 'redacts the md5 password verifier before logging a failed CREATE USER' do
+      secret = "'md50123456789abcdef0123456789abcdef'"
+      create_user = "CREATE USER pii_reader WITH PASSWORD #{secret} " \
+                    "SYSLOG ACCESS RESTRICTED SESSION TIMEOUT 900;"
+      allow(mock_connection).to receive(:execute).
+        and_raise(ActiveRecord::StatementInvalid.new('boom'))
+
+      expect(Rails.logger).to receive(:error) do |payload|
+        logged = JSON.parse(payload)['failed_sql']
+        expect(logged).to include("WITH PASSWORD '[REDACTED]'")
+        expect(logged).not_to include('md50123456789abcdef')
+        expect(logged).to include('CREATE USER pii_reader')
+      end
+
+      expect { sync.send(:execute_query, create_user) }.to raise_error(
+        ActiveRecord::StatementInvalid,
+      )
+    end
+
+    it 'leaves the non-secret PASSWORD DISABLE form intact' do
+      create_user = 'CREATE USER "IAM:john.doe" WITH PASSWORD DISABLE SESSION TIMEOUT 900;'
+      allow(mock_connection).to receive(:execute).
+        and_raise(ActiveRecord::StatementInvalid.new('boom'))
+
+      expect(Rails.logger).to receive(:error) do |payload|
+        expect(JSON.parse(payload)['failed_sql']).to include('WITH PASSWORD DISABLE')
+      end
+
+      expect { sync.send(:execute_query, create_user) }.to raise_error(
+        ActiveRecord::StatementInvalid,
+      )
     end
   end
 
