@@ -313,36 +313,9 @@ system_users:
     secret_id: "redshift/%{env_name}-analytics-pii-reader"
     feature_flag: dw_fraudops_email_enabled
     schemas:
-      - schema_name: idp
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: system_tables
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: logs
-        schema_privileges: USAGE
-        table_privileges: SELECT
       - schema_name: fraudops
         schema_privileges: USAGE
         table_privileges: SELECT
-      - schema_name: marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: qa_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: fraudops_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-        feature_flag:
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
-      - schema_name: fraudops_qa_marts
-        schema_privileges: USAGE
-        table_privileges: SELECT
-        feature_flag:
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
 
 user_roles:
   - role_name: dw_ingestion
