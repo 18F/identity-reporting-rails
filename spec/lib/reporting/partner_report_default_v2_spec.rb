@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 require 'rails_helper'
-require 'reporting/partner_report_default'
+require 'reporting/partner_report_default_v2'
 
-RSpec.describe Reporting::PartnerReportDefault do
+RSpec.describe Reporting::PartnerReportDefaultV2 do
   let(:report_date) { '2026-03-15' }
   let(:period_date) { '2026-03-01' }
   let(:report_cadence) { 'monthly' }
@@ -11,7 +11,7 @@ RSpec.describe Reporting::PartnerReportDefault do
   let(:issuer2) { 'urn:gov:gsa:openidconnect.profiles:sp:test:agency2' }
   let(:issuer3) { 'urn:gov:gsa:openidconnect.profiles:sp:test:agency3' }
 
-  # Sample complete row data with new column names
+  # Sample complete row data using V2 column names (new mapped fields)
   let(:complete_row_data) do
     {
       'issuer' => issuer1,
@@ -19,49 +19,31 @@ RSpec.describe Reporting::PartnerReportDefault do
       'agency_name' => 'Test Agency 1',
       'service_provider_id' => 123,
       'period_date_id' => 20260301,
-      'period_date_actual' => period_date,
-      # Usage metrics
+      'period_date' => period_date,
       'count_active_users' => 1000,
+      'count_blocked_attempted_fraud' => 10,
       'count_newly_created_accounts' => 50,
       'count_existing_accounts' => 950,
+      'count_identity_verified_users' => 60,
       'count_newly_proofed_users' => 30,
       'count_preverified_users' => 20,
-      'count_authentications' => 50,
-      # Identity verification outcomes
-      'count_pass_sum' => 4800,
-      'count_newly_verified_sum' => 1000,
-      'count_deadend_sum' => 50,
-      'count_friction_sum' => 1000,
-      'count_abandon_sum' => 50,
-      'count_fraud_sum' => 5000,
-      'count_inauthentic_doc' => 30,
-      'count_facial_mismatch' => 5000,
-      'count_invalid_attributes_dl_dos' => 50,
-      'count_ssn_dob_deceased' => 5000,
-      'count_address_other_not_found' => 50,
-      'count_pending_lg99_likely_fraud' => 1000,
-      'count_stayed_blocked' => 50,
-      'count_fraud_alert' => 30,
-      'count_suspicious_phone' => 5000,
-      'count_lack_phone_ownership' => 30,
-      'count_wrong_phone_type' => 50,
-      'count_blocked_by_ipp_fraud' => 30,
-      'count_pass_via_lg99' => 30,
-      'count_pass_online_finalization' => 1000,
-      'count_pass_ipp_online_portion' => 50,
-      'count_pass_via_letter' => 1000,
-      'count_doc_auth_ux' => 30,
-      'count_selfie_ux' => 30,
-      'count_dob_incorrect' => 50,
-      'count_ssn_incorrect' => 30,
-      'count_identity_not_found' => 30,
-      'count_friction_during_otp' => 5000,
-      'count_doc_auth_technical_issue' => 50,
-      'count_resolution_technical_issues' => 30,
-      'count_doc_auth_processing_issue' => 30,
-      # Authentication metrics
+      'count_authentications' => 500,
+      'count_registered_blocked_fraud' => 2,
+      'count_blocked_authentic_drivers_license' => 5,
+      'count_facial_mismatch' => 8,
+      'count_invalid_attributes_dl_dos' => 7,
+      'count_blocked_identity_not_found' => 4,
+      'count_fraud_alert' => 3,
+      'count_suspicious_phone' => 9,
+      'count_lack_phone_ownership' => 6,
+      'count_wrong_phone_type' => 2,
+      'count_blocked_by_ipp_fraud' => 1,
+      'count_device_behavior_fraud_signals' => 11,
+      'count_pass_via_lg99' => 12,
+      'count_creation_successful' => 45,
+      'count_total_creations' => 50,
       'count_auth_successful' => 50,
-      'count_auth_failure' => 50,
+      'count_total_auths' => 55,
       'count_desktop_successful' => 1000,
       'count_mobile_successful' => 25,
       'count_webauthn_platform_successful' => 100,
@@ -72,10 +54,19 @@ RSpec.describe Reporting::PartnerReportDefault do
       'count_backup_code_successful' => 15,
       'count_webauthn_successful' => 75,
       'count_personal_key_successful' => 10,
-      # Account creation metrics
-      'count_creation_successful' => 45,
-      'count_creation_failed' => 5,
-      'count_registered_blocked_fraud' => 2,
+      'count_pass_sum' => 4800,
+      'count_sum_outcomes' => 5000,
+      'count_deadend_sum' => 50,
+      'count_stage_onboarding' => 40,
+      'count_skip_preverified_finalization' => 20,
+      'count_pass_online_finalization' => 1000,
+      'count_pass_ipp' => 30,
+      'count_pass_via_letter' => 1000,
+      'count_blocked_document_upload_ux' => 15,
+      'count_selfie_ux' => 30,
+      'count_identity_resolution_attribute_mismatch' => 22,
+      'count_phone_number_record_check_failure' => 18,
+      'count_temporary_technical_issues' => 14,
     }
   end
 
@@ -86,7 +77,7 @@ RSpec.describe Reporting::PartnerReportDefault do
       'service_provider_name' => nil, # Missing required field
       'agency_name' => 'Test Agency 2',
       'service_provider_id' => 456,
-      'period_date_actual' => period_date,
+      'period_date' => period_date,
       'period_date_id' => 20260301,
       'count_active_users' => 500,
     }
@@ -102,6 +93,7 @@ RSpec.describe Reporting::PartnerReportDefault do
       'count_auth_successful' => '   ',
     )
   end
+
   let(:issuer_mapping_data) do
     [
       { 'issuer' => issuer1, 'id' => 123 },
@@ -301,7 +293,7 @@ RSpec.describe Reporting::PartnerReportDefault do
         expect(result[issuer1][:issuer]).to eq(issuer1)
       end
 
-      it 'formats data correctly with new column names' do
+      it 'formats data correctly with V2 column names' do
         result = report.generate_reports
         data = result[issuer1]
 
@@ -312,7 +304,7 @@ RSpec.describe Reporting::PartnerReportDefault do
         expect(data[:report_information][:period_calendar_id]).to eq(20260301)
         expect(data[:report_information][:report_cadence]).to eq('monthly')
 
-        # Verify new column names in data section
+        # Verify V2 column names in data section
         expect(data[:data][:count_active_users]).to eq(1000)
         expect(data[:data][:count_newly_created_accounts]).to eq(50)
         expect(data[:data][:count_auth_successful]).to eq(50)
@@ -510,33 +502,30 @@ RSpec.describe Reporting::PartnerReportDefault do
 
   describe 'SQL query methods' do
     describe '#bulk_query' do
-      it 'includes correct table references for monthly cadence' do
+      it 'includes correct table reference and subquery for monthly cadence' do
         query = report.send(:bulk_query)
-        expect(query).to include('marts.sp_usage_metrics_monthly')
-        expect(query).to include('marts.sp_idv_outcomes_monthly')
-        expect(query).to include('marts.sp_auth_metrics_monthly')
-        expect(query).to include('marts.sp_account_creation_metrics_monthly')
+        expect(query).to include('FROM marts.sp_partner_report_metrics_monthly')
+        expect(query).to include('WHERE period_date =')
+        expect(query).to include('AND issuer IN (')
+        expect(query).to include('SELECT issuer')
+        expect(query).to include('FROM marts.service_providers')
+        expect(query).to include("iaa_end_date > '#{report_date}'::date")
+        expect(query).to include("'#{report_date}'::date >= launch_date")
       end
 
       context 'with weekly cadence' do
         let(:report_cadence) { 'weekly' }
-
-        it 'uses weekly tables' do
+        it 'uses weekly table' do
           query = report.send(:bulk_query)
-          expect(query).to include('marts.sp_usage_metrics_weekly')
-          expect(query).to include('week_start_calendar_id')
-          expect(query).to include('week_start_date_actual')
+          expect(query).to include('FROM marts.sp_partner_report_metrics_weekly')
         end
       end
 
       context 'with daily cadence' do
         let(:report_cadence) { 'daily' }
-
-        it 'uses daily tables' do
+        it 'uses daily table' do
           query = report.send(:bulk_query)
-          expect(query).to include('marts.sp_usage_metrics_daily')
-          expect(query).to include('calendar_id')
-          expect(query).to include('date_actual')
+          expect(query).to include('FROM marts.sp_partner_report_metrics_daily')
         end
       end
     end
@@ -629,8 +618,8 @@ RSpec.describe Reporting::PartnerReportDefault do
         it 'generates valid SQL query' do
           query = report.send(:bulk_query)
           expect(query).to be_a(String)
-          expect(query).to include("'#{cadence}' AS cadence")
-          expect(query).to include("marts.sp_usage_metrics_#{cadence}")
+          expect(query).to include("FROM marts.sp_partner_report_metrics_#{cadence}")
+          expect(query).to include('AND issuer IN (')
         end
 
         it 'handles data correctly' do
@@ -684,10 +673,10 @@ RSpec.describe Reporting::PartnerReportDefault do
       expect(data[:count_creation_successful]).to eq(45)
 
       # Verify all expected fields are present
-      expect(data.keys.size).to eq(Reporting::PartnerReportDefault::INTEGER_DATA_FIELDS.size)
+      expect(data.keys.size).to eq(Reporting::PartnerReportDefaultV2::INTEGER_DATA_FIELDS.size)
 
       # Verify all fields from constant are present
-      Reporting::PartnerReportDefault::INTEGER_DATA_FIELDS.each do |field|
+      Reporting::PartnerReportDefaultV2::INTEGER_DATA_FIELDS.each do |field|
         expect(data).to have_key(field.to_sym)
       end
     end

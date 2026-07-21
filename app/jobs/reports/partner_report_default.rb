@@ -1,10 +1,20 @@
 # frozen_string_literal: true
 
 require 'reporting/partner_report_default'
+require 'reporting/partner_report_default_v2'
 
 module Reports
   class PartnerReportDefault < BaseReport
     REPORT_CADENCE = 'monthly' # Eventually this will be a parameter, hardcoding monthly for now
+    DEFAULT_VERSION = 'v2'
+
+    # A single job that wraps two versions of partner report (will eventually delete v1)
+    # Runs v2 by default
+
+    # Usage:
+    #  reporter = Reports::PartnerReportDefault.new(report_date: Date.parse('2026-03-15'),
+    #  included_issuers: ['issuer1', 'issuer2'], report_version: 'v1') # run legacy report
+    #  reporter.perform()
 
     # Default report date is 4 days ago
     # This is because event data is ingested into the warehouse 1x/day and transforms
@@ -14,10 +24,12 @@ module Reports
 
     attr_reader :report_date, :included_issuers, :excluded_issuers
 
-    def initialize(report_date = nil, *args, included_issuers: nil, excluded_issuers: nil, **rest)
+    def initialize(report_date = nil, *args, included_issuers: nil, excluded_issuers: nil,
+                   report_version: DEFAULT_VERSION, **rest)
       @report_date = report_date
       @included_issuers = normalize_issuer_list(included_issuers)
       @excluded_issuers = normalize_issuer_list(excluded_issuers)
+      @report_version = report_version
 
       # Validate that both aren't provided
       if @included_issuers&.any? && @excluded_issuers&.any?
@@ -27,7 +39,13 @@ module Reports
       super(report_date, *args, **rest)
     end
 
-    def perform(report_date = nil)
+    def perform(report_date = nil, report_version = nil)
+      @report_version = report_version || @report_version || DEFAULT_VERSION
+
+      unless ['v1', 'v2'].include?(@report_version)
+        raise ArgumentError, "Invalid report_version: #{@report_version}. Must be one of: v1, v2"
+      end
+
       unless IdentityConfig.store.redshift_sia_v3_enabled
         Rails.logger.warn 'Redshift SIA V3 is disabled'
         return false
@@ -42,6 +60,12 @@ module Reports
 
       Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports for report date: "\
                       "#{@report_date} (#{REPORT_CADENCE} report period starting on #{period_date})"
+
+      # Wait 10 seconds to allow user to cancel job if they realize they ran it with the wrong date
+      # This hopefully prevents accidental population of reports manually for wrong dates
+      Rails.logger.info 'Waiting 10 seconds before generating reports... (cancel if date is wrong)'
+      sleep 10
+
       if @included_issuers&.any?
         Rails.logger.info "Filtering to include only issuers: #{@included_issuers.join(', ')}"
       elsif @excluded_issuers&.any?
@@ -60,7 +84,16 @@ module Reports
     private
 
     def generate_and_upload_reports(report_date)
-      reporter = Reporting::PartnerReportDefault.new(
+      reporter_class = case @report_version
+                       when 'v1'
+                         Reporting::PartnerReportDefault
+                       when 'v2'
+                         Reporting::PartnerReportDefaultV2
+                       else
+                         raise ArgumentError, "Unsupported report_version: #{@report_version}"
+                       end
+
+      reporter = reporter_class.new(
         report_date: report_date,
         report_cadence: REPORT_CADENCE,
         included_issuers: @included_issuers,
@@ -110,9 +143,10 @@ module Reports
     end
 
     def upload_to_s3(json_data, service_provider_id:, period_date:)
-      # S3 path structure: service_provider_id/REPORT_CADENCE/2025-01-01.json
+      # S3 path structure: env/report_version/service_provider_id/REPORT_CADENCE/2025-01-01.json
       base_path = generate_base_s3_path(directory: 'portal')
-      path = "#{base_path}#{service_provider_id}/#{REPORT_CADENCE}/#{period_date}.json"
+      path = "#{base_path}#{@report_version}/#{service_provider_id}"\
+             "/#{REPORT_CADENCE}/#{period_date}.json"
 
       if bucket_name.present?
         upload_file_to_s3_bucket(
@@ -173,7 +207,7 @@ module Reports
 
     def period_date
       raise ArgumentError, 'report_date must be set before calling period_date' if @report_date.nil?
-      @period_date ||= Reporting::PartnerReportDefault.get_period_date_from_report_date(
+      @period_date ||= Reporting::PartnerReportDefaultV2.get_period_date_from_report_date(
         report_date: @report_date,
         cadence: REPORT_CADENCE,
       )

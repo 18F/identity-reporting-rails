@@ -4,7 +4,7 @@ module Reporting
   # Generates partner reports for all relevant/active service providers for single reporting period
   # Uses marts.calendar table to determine reporting period start date given report_date and cadence
   # Usage:
-  #   reporter = PartnerReportDefaultMonthly.new(
+  #   reporter = PartnerReportDefault.new(
   #     report_date: '2026-03-15',
   #     report_cadence: 'monthly'
   #   )
@@ -14,9 +14,25 @@ module Reporting
   class PartnerReportDefault
     # Marts table mappings for different report cadences
     CADENCE_TABLES = {
-      'monthly' => 'marts.sp_partner_report_metrics_monthly',
-      'weekly' => 'marts.sp_partner_report_metrics_weekly',
-      'daily' => 'marts.sp_partner_report_metrics_daily',
+
+      'monthly' => {
+        usage: 'marts.sp_usage_metrics_monthly',
+        idv: 'marts.sp_idv_outcomes_monthly',
+        auth: 'marts.sp_auth_metrics_monthly',
+        account: 'marts.sp_account_creation_metrics_monthly',
+      },
+      'weekly' => {
+        usage: 'marts.sp_usage_metrics_weekly',
+        idv: 'marts.sp_idv_outcomes_weekly',
+        auth: 'marts.sp_auth_metrics_weekly',
+        account: 'marts.sp_account_creation_metrics_weekly',
+      },
+      'daily' => {
+        usage: 'marts.sp_usage_metrics_daily',
+        idv: 'marts.sp_idv_outcomes_daily',
+        auth: 'marts.sp_auth_metrics_daily',
+        account: 'marts.sp_account_creation_metrics_daily',
+      },
     }.freeze
 
     attr_reader :report_date, :report_cadence, :included_issuers, :excluded_issuers
@@ -172,7 +188,7 @@ module Reporting
     end
 
     def format_row_as_json(row)
-      required_fields = %w[issuer service_provider_name period_date]
+      required_fields = %w[issuer service_provider_name period_date_actual]
       missing_fields = required_fields.select { |field| row[field].nil? }
 
       if missing_fields.any?
@@ -187,7 +203,7 @@ module Reporting
           service_provider_id: row['service_provider_id'],
         },
         report_information: {
-          period_start_date: row['period_date'],
+          period_start_date: row['period_date_actual'],
           period_calendar_id: row['period_date_id'],
           report_cadence: report_cadence,
           report_generated_at: Time.zone.now,
@@ -209,82 +225,31 @@ module Reporting
       count_friction_sum
       count_abandon_sum
       count_fraud_sum
-      count_stage_onboarding
-      count_skip_preverified_onboarding
-      count_skip_crossed_onboarding
-      count_pass_onboarding
-      count_abandon_welcome
-      count_abandon_consent
-      count_lack_evidence_onboarding
-      count_stage_document_authentication
-      count_skip_preverified_document_auth
-      count_skip_crossed_document_auth
-      count_pass_online_document_auth
-      count_pass_ipp_online_portion
       count_inauthentic_doc
       count_facial_mismatch
-      count_expired_doc_likely_fraud
-      count_doc_auth_wrong_type
-      count_lack_evidence_document_auth
-      count_expired_doc
-      count_doc_auth_ux
-      count_false_rejection_inauthentic_doc
-      count_selfie_ux
-      count_doc_auth_technical_issue
-      count_doc_auth_processing_issue
-      count_abandon_document_auth
-      count_stage_identity_resolution
-      count_skip_preverified_identity
-      count_skip_crossed_identity
-      count_pass_online_identity
       count_invalid_attributes_dl_dos
       count_ssn_dob_deceased
-      count_fraud_alert
-      count_invalid_ssn_fraud
-      count_invalid_dob_fraud
-      count_invalid_address_fraud
-      count_dl_dos_incorrect
-      count_abandon_dl_dos_validation
-      count_identity_not_found
-      count_false_rejection_ssn_incorrect
-      count_false_rejection_dob_incorrect
-      count_false_rejection_invalid_attributes_dl_dos
-      count_false_rejection_address_other_not_found
       count_address_other_not_found
-      count_ssn_incorrect
-      count_dob_incorrect
-      count_resolution_technical_issues
-      count_abandon_ssn_page
-      count_abandon_review_page
-      count_false_rejection_ssn_dob_deceased
-      count_stage_address_verification
-      count_skip_preverified_address
-      count_skip_crossed_address
-      count_pass_online_address
-      count_pass_via_letter
+      count_pending_lg99_likely_fraud
+      count_stayed_blocked
+      count_fraud_alert
       count_suspicious_phone
       count_lack_phone_ownership
       count_wrong_phone_type
-      count_false_rejection_phone_ownership
-      count_false_rejection_wrong_phone_type
-      count_friction_during_otp
-      count_letter_pending
-      count_abandon_no_attempt
-      count_abandon_no_otp
-      count_stage_finalization
-      count_skip_preverified_finalization
-      count_skip_crossed_finalization
-      count_pass_online_finalization
-      count_pass_ipp
-      count_pass_via_lg99
-      count_stayed_blocked
       count_blocked_by_ipp_fraud
-      count_pending_lg99_likely_fraud
-      count_pending_ipp
-      count_pending_lg99
-      count_abandon_handoff
-      count_abandon_personal
-      count_abandon_reenter
+      count_pass_via_lg99
+      count_pass_online_finalization
+      count_pass_ipp_online_portion
+      count_pass_via_letter
+      count_doc_auth_ux
+      count_selfie_ux
+      count_dob_incorrect
+      count_ssn_incorrect
+      count_identity_not_found
+      count_friction_during_otp
+      count_doc_auth_technical_issue
+      count_resolution_technical_issues
+      count_doc_auth_processing_issue
       count_auth_successful
       count_auth_failure
       count_desktop_successful
@@ -331,43 +296,208 @@ module Reporting
     end
 
     def bulk_query
-      table = CADENCE_TABLES[report_cadence]
+      tables = CADENCE_TABLES[report_cadence]
+
+      # Map cadence to report period columns in marts.calendar table
+      period_calendar_id_col = case report_cadence
+                      when 'monthly' then 'month_start_calendar_id'
+                      when 'weekly' then 'week_start_calendar_id'
+                      when 'daily' then 'calendar_id'
+                      end
+
+      period_calendar_date_col = case report_cadence
+                          when 'monthly' then 'month_start_date_actual'
+                          when 'weekly' then 'week_start_date_actual'
+                          when 'daily' then 'date_actual'
+                          end
       <<~SQL
-        SELECT #{column_list}
-        FROM #{table}
-        WHERE period_date = '#{period_date}'
-          AND issuer IN (
-            SELECT issuer
-            FROM marts.service_providers
-            WHERE iaa_end_date > '#{@report_date}'::date
-              AND '#{@report_date}'::date >= launch_date
-          )
-          #{issuer_filter_clause}
-        ORDER BY issuer;
+        WITH date_param AS (
+            SELECT
+                 '#{report_date}'::date as report_date
+        ),
+        date_period_id AS (
+            SELECT 
+                p.report_date,
+                cal.calendar_id AS report_date_id, 
+                cal.date_actual AS report_date_actual,
+                '#{report_cadence}' AS cadence,
+                cal.#{period_calendar_id_col} AS period_date_id, -- Int ID for start of report window
+                cal.#{period_calendar_date_col} AS period_date_actual -- Date for start of report window        
+            FROM marts.calendar cal
+            JOIN date_param p 
+            ON cal.calendar_id = TO_CHAR(p.report_date, 'YYYYMMDD')::int
+        ),
+        -- Get all active service providers with IAA / launch date within report date
+        active_service_providers AS (
+            SELECT sp.service_provider_id,
+                   sp.service_provider_name,
+                   sp.issuer,
+                   sp.is_active, 
+                   sp.agency_name,
+                   sp.agency_abbreviation,
+                   sp.launch_date,
+                   sp.launch_date_calendar_id,
+                   sp.iaa_end_date,
+                   date_p.report_date_id,
+                   date_p.report_date,
+                   date_p.period_date_id,
+                   date_p.period_date_actual
+            FROM marts.service_providers sp
+            CROSS JOIN date_period_id date_p
+            WHERE sp.iaa_end_date > date_p.report_date  
+              AND date_p.report_date >= sp.launch_date   
+              #{issuer_filter_clause}
+        )
+        
+        
+            SELECT 
+            -- Service Provider Information
+            sp.issuer,
+            sp.service_provider_name,
+            sp.agency_name,
+            sp.service_provider_id,
+            
+            -- Report Period  
+            sp.report_date,   -- Date passed in as a parameter / report date
+            sp.period_date_id, -- start of the month for monthly, start of week for weekly, equal to report_date for daily
+            sp.period_date_actual, -- same as period_date_id but in timestamp format
+            
+            -- ==============================================
+            -- USAGE METRICS
+            -- ==============================================
+        
+            -- Users That Accessed Services Via Login.gov
+            usage_data.count_active_users,
+        
+            -- Active Users Breakdown
+            usage_data.count_newly_created_accounts,
+            usage_data.count_existing_accounts,
+        
+            -- Identity Verified Users
+            usage_data.count_newly_proofed_users,
+            usage_data.count_preverified_users,
+        
+            -- Authentications
+            usage_data.count_authentications,
+        
+            -- ==============================================
+            -- IDENTITY VERIFICATION OUTCOMES
+            -- ==============================================
+        
+            -- Total Sum Counts
+            idv_data.count_pass_sum,
+            idv_data.count_newly_verified_sum,
+            idv_data.count_deadend_sum,
+            idv_data.count_friction_sum,
+            idv_data.count_abandon_sum,
+            idv_data.count_fraud_sum,
+        
+            -- Fraud Prevention: Document Fraud
+            idv_data.count_inauthentic_doc,
+            idv_data.count_facial_mismatch,
+            idv_data.count_invalid_attributes_dl_dos,
+        
+            -- Fraud Prevention: Identity Fraud
+            idv_data.count_ssn_dob_deceased,
+            idv_data.count_address_other_not_found,
+            idv_data.count_pending_lg99_likely_fraud,
+            idv_data.count_stayed_blocked,
+            idv_data.count_fraud_alert,
+        
+            -- Fraud Prevention: Phone Fraud
+            idv_data.count_suspicious_phone,
+            idv_data.count_lack_phone_ownership,
+            idv_data.count_wrong_phone_type,
+        
+            -- Fraud Prevention: IPP Fraud
+            idv_data.count_blocked_by_ipp_fraud,
+        
+            -- Fraud Prevention: Redress
+            idv_data.count_pass_via_lg99,
+        
+            -- Identity Verification: Channels
+            idv_data.count_pass_online_finalization,
+            idv_data.count_pass_ipp_online_portion,
+            idv_data.count_pass_via_letter,
+        
+            -- Identity Verification: UX Friction
+            idv_data.count_doc_auth_ux,
+            idv_data.count_selfie_ux,
+        
+            -- Identity Verification: Data Mismatch Friction
+            idv_data.count_dob_incorrect,
+            idv_data.count_ssn_incorrect,
+            idv_data.count_identity_not_found,
+        
+            -- Identity Verification: Phone Friction
+            idv_data.count_friction_during_otp,
+        
+            -- Identity Verification: Technical Issues
+            idv_data.count_doc_auth_technical_issue,
+            idv_data.count_resolution_technical_issues,
+            idv_data.count_doc_auth_processing_issue,
+        
+            -- ==============================================
+            -- AUTHENTICATION METRICS
+            -- ==============================================
+        
+            -- Authentication Success Counts
+            auth_data.count_auth_successful,
+            auth_data.count_auth_failure,
+        
+            -- Device Type Counts
+            auth_data.count_desktop_successful,
+            auth_data.count_mobile_successful,
+        
+            -- MFA Type Counts
+            auth_data.count_webauthn_platform_successful,  -- Face / Touch
+            auth_data.count_totp_successful,               -- Authenticator App
+            auth_data.count_piv_cac_successful,            -- PIV / CAC
+            auth_data.count_sms_successful,                -- SMS
+            auth_data.count_voice_successful,              -- Voice
+            auth_data.count_backup_code_successful,        -- Backup Code
+            auth_data.count_webauthn_successful,           -- Security Key
+            auth_data.count_personal_key_successful,        -- Personal Key
+        
+            -- ==============================================
+            -- ACCOUNT CREATION METRICS
+            -- ==============================================
+        
+            -- Account Creation Success Rate Components
+            acct_data.count_creation_successful,
+            acct_data.count_creation_failed,
+        
+            -- Account Creation Fraud Prevention
+            acct_data.count_registered_blocked_fraud
+        
+            -- ==============================================
+            -- MARTS TABLE JOINS
+            -- ==============================================
+            FROM active_service_providers sp
+            LEFT JOIN #{tables[:usage]} usage_data
+                ON usage_data.service_provider_id = sp.service_provider_id
+                AND usage_data.period_date_id = sp.period_date_id
+            -- NOTE: inconsistency in column names for idv table: start_service_provider_id 
+            LEFT JOIN #{tables[:idv]} idv_data
+                ON idv_data.start_service_provider_id = sp.service_provider_id
+                AND idv_data.period_date_id = sp.period_date_id
+            LEFT JOIN #{tables[:auth]} auth_data
+                ON auth_data.service_provider_id = sp.service_provider_id
+                AND auth_data.period_date_id = sp.period_date_id
+            LEFT JOIN #{tables[:account]} acct_data
+                ON acct_data.service_provider_id = sp.service_provider_id
+                AND acct_data.period_date_id = sp.period_date_id
+            ORDER BY sp.issuer;
       SQL
-    end
-
-    def column_list
-      base_columns = %w[
-        issuer
-        service_provider_name
-        agency_name
-        service_provider_id
-        period_date
-        period_date_id
-      ]
-
-      all_columns = base_columns + INTEGER_DATA_FIELDS
-      all_columns.join(', ')
     end
 
     def issuer_filter_clause
       if @included_issuers&.any?
         sanitized = @included_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
-        "AND issuer IN (#{sanitized.join(', ')})"
+        "AND sp.issuer IN (#{sanitized.join(', ')})"
       elsif @excluded_issuers&.any?
         sanitized = @excluded_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
-        "AND issuer NOT IN (#{sanitized.join(', ')})"
+        "AND sp.issuer NOT IN (#{sanitized.join(', ')})"
       else
         ''
       end

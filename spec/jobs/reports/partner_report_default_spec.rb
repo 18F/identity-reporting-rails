@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 require 'rails_helper'
-require 'reporting/partner_report_default'
+require 'reporting/partner_report_default_v2'
 
 RSpec.describe Reports::PartnerReportDefault do
-  # Testing focused primarily on monthly report cadence for now
+  # v1 is being deprecated; these tests focus on the v2 default.
   subject(:job) { described_class.new }
 
   let(:report_date) { Time.zone.parse('2026-04-15').end_of_day }
@@ -61,7 +61,7 @@ RSpec.describe Reports::PartnerReportDefault do
     }
   end
 
-  let(:mock_partner_report) { instance_double(Reporting::PartnerReportDefault) }
+  let(:mock_partner_report) { instance_double(Reporting::PartnerReportDefaultV2) }
   let(:sample_issuer_mapping) do
     {
       issuer1 => { id: 123 },
@@ -70,26 +70,21 @@ RSpec.describe Reports::PartnerReportDefault do
     }
   end
 
-  let(:incomplete_issuer_mapping) do
-    {
-      issuer1 => { id: 123 },
-      # Missing issuer2 and issuer3
-    }
-  end
   before do
     allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(true)
     allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
     allow_any_instance_of(described_class).to receive(:bucket_name).and_return(bucket_name)
     allow_any_instance_of(described_class).to receive(:upload_file_to_s3_bucket)
     allow(job).to receive(:generate_base_s3_path).with(directory: 'portal').and_return('')
-    allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+    allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
       with(report_date: anything, cadence: 'monthly').
       and_return(period_date)
-    allow(Reporting::PartnerReportDefault).to receive(:new).and_return(mock_partner_report)
+    allow(Reporting::PartnerReportDefaultV2).to receive(:new).and_return(mock_partner_report)
     allow(mock_partner_report).to receive(:generate_reports).and_return(sample_report_data)
     allow(mock_partner_report).to receive(
       :generate_issuer_mapping,
     ).and_return(sample_issuer_mapping)
+    allow_any_instance_of(described_class).to receive(:sleep)
   end
 
   describe '#initialize' do
@@ -100,6 +95,20 @@ RSpec.describe Reports::PartnerReportDefault do
 
     it 'allows report_date to be nil' do
       expect(job.report_date).to be_nil
+    end
+
+    context 'with report_version' do
+      it 'defaults to v2' do
+        expect(described_class::DEFAULT_VERSION).to eq('v2')
+      end
+
+      it 'accepts v1' do
+        expect { described_class.new(nil, report_version: 'v1') }.not_to raise_error
+      end
+
+      it 'accepts v2' do
+        expect { described_class.new(nil, report_version: 'v2') }.not_to raise_error
+      end
     end
 
     context 'with issuer filtering' do
@@ -175,9 +184,24 @@ RSpec.describe Reports::PartnerReportDefault do
       end
     end
 
+    context 'with an invalid report_version' do
+      subject(:job) { described_class.new(nil, report_version: 'v3') }
+
+      it 'logs error and returns false' do
+        expect(Rails.logger).to receive(:error).with(
+          'Failed to generate partner reports: Invalid report_version: v3. '\
+          'Must be one of: v1, v2',
+        )
+        expect(Rails.logger).to receive(:error).with(
+          a_string_starting_with('Backtrace:'),
+        )
+        expect(job.perform(report_date)).to eq(false)
+      end
+    end
+
     context 'when period_date cannot be retrieved' do
       before do
-        allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+        allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
           with(report_date: report_date, cadence: 'monthly').
           and_raise(StandardError, 'No calendar entry found')
       end
@@ -215,14 +239,15 @@ RSpec.describe Reports::PartnerReportDefault do
           expect(job.report_date).to be_within(1.second).of(expected_default.end_of_day)
         end
       end
+
       it 'uses constructor date when no parameter provided' do
         job_with_constructor_date = described_class.new(report_date)
         allow(job_with_constructor_date).to receive(:period_date).and_return(period_date)
         job_with_constructor_date.perform # No parameter
         expect(job_with_constructor_date.report_date).to eq(report_date)
       end
-      it 'creates PartnerReportDefault with correct parameters' do
-        expect(Reporting::PartnerReportDefault).to receive(:new).with(
+      it 'creates PartnerReportDefaultV2 with correct parameters' do
+        expect(Reporting::PartnerReportDefaultV2).to receive(:new).with(
           report_date: report_date,
           report_cadence: 'monthly',
           included_issuers: nil,
@@ -291,6 +316,32 @@ RSpec.describe Reports::PartnerReportDefault do
       end
     end
 
+    context 'with report_version v1' do
+      subject(:job) { described_class.new(nil, report_version: 'v1') }
+
+      let(:mock_v1_report) { instance_double(Reporting::PartnerReportDefault) }
+
+      before do
+        allow(job).to receive(:period_date).and_return(period_date)
+        allow(job).to receive(:upload_file_to_s3_bucket).and_return(true)
+        allow(Reporting::PartnerReportDefault).to receive(:new).and_return(mock_v1_report)
+        allow(mock_v1_report).to receive(:generate_reports).and_return(sample_report_data)
+        allow(mock_v1_report).to receive(:generate_issuer_mapping).
+          and_return(sample_issuer_mapping)
+      end
+
+      it 'creates PartnerReportDefault (v1) with correct parameters' do
+        expect(Reporting::PartnerReportDefault).to receive(:new).with(
+          report_date: report_date,
+          report_cadence: 'monthly',
+          included_issuers: nil,
+          excluded_issuers: nil,
+        ).and_return(mock_v1_report)
+
+        job.perform(report_date)
+      end
+    end
+
     context 'when report generation fails' do
       let(:error_message) { 'Database connection failed' }
 
@@ -300,7 +351,7 @@ RSpec.describe Reports::PartnerReportDefault do
         )
       end
 
-      it 'logs error and returns false' do # Changed from "re-raises exception"
+      it 'logs error and returns false' do
         expect(Rails.logger).to receive(:error).with(
           "Failed to generate partner reports: #{error_message}",
         )
@@ -328,7 +379,7 @@ RSpec.describe Reports::PartnerReportDefault do
           a_string_starting_with('Backtrace:'),
         )
         expect(mock_partner_report).not_to receive(:generate_reports)
-        expect(job.perform(report_date)).to eq(false) # Now returns false, not raise
+        expect(job.perform(report_date)).to eq(false)
       end
     end
 
@@ -399,8 +450,8 @@ RSpec.describe Reports::PartnerReportDefault do
         allow(job_with_excluded).to receive(:upload_file_to_s3_bucket).and_return(true)
       end
 
-      it 'passes included_issuers to PartnerReportDefault' do
-        expect(Reporting::PartnerReportDefault).to receive(:new).with(
+      it 'passes included_issuers to PartnerReportDefaultV2' do
+        expect(Reporting::PartnerReportDefaultV2).to receive(:new).with(
           report_date: report_date,
           report_cadence: 'monthly',
           included_issuers: [issuer1, issuer2],
@@ -410,8 +461,8 @@ RSpec.describe Reports::PartnerReportDefault do
         job_with_included.perform(report_date)
       end
 
-      it 'passes excluded_issuers to PartnerReportDefault' do
-        expect(Reporting::PartnerReportDefault).to receive(:new).with(
+      it 'passes excluded_issuers to PartnerReportDefaultV2' do
+        expect(Reporting::PartnerReportDefaultV2).to receive(:new).with(
           report_date: report_date,
           report_cadence: 'monthly',
           included_issuers: nil,
@@ -455,7 +506,6 @@ RSpec.describe Reports::PartnerReportDefault do
 
     context 'when period_date can be retrieved' do
       before do
-        # Need to set @report_date for these tests
         job.instance_variable_set(:@report_date, report_date)
       end
 
@@ -464,7 +514,7 @@ RSpec.describe Reports::PartnerReportDefault do
       end
 
       it 'memoizes the result' do
-        expect(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+        expect(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
           with(hash_including(report_date: report_date, cadence: 'monthly')).
           once.
           and_return(period_date)
@@ -476,7 +526,7 @@ RSpec.describe Reports::PartnerReportDefault do
     context 'when period_date cannot be retrieved' do
       before do
         job.instance_variable_set(:@report_date, report_date)
-        allow(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).
+        allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
           with(report_date: report_date, cadence: 'monthly').
           and_raise(StandardError, 'No calendar entry found')
       end
@@ -499,8 +549,8 @@ RSpec.describe Reports::PartnerReportDefault do
       }
     end
 
-    it 'uploads to correct S3 path structure' do
-      expected_path = '123/monthly/2026-04-01.json'
+    it 'uploads to correct S3 path structure including report version' do
+      expected_path = 'v2/123/monthly/2026-04-01.json'
       expect(job).to receive(:upload_file_to_s3_bucket).with(
         path: expected_path,
         body: JSON.pretty_generate(sample_json_data),
@@ -512,7 +562,7 @@ RSpec.describe Reports::PartnerReportDefault do
 
     it 'logs successful upload' do
       expect(Rails.logger).to receive(:info).with(
-        'Uploaded partner report to S3: 123/monthly/2026-04-01.json',
+        'Uploaded partner report to S3: v2/123/monthly/2026-04-01.json',
       )
       job.send(:upload_to_s3, sample_json_data, service_provider_id: 123, period_date: period_date)
     end
@@ -607,7 +657,6 @@ RSpec.describe Reports::PartnerReportDefault do
       end
 
       it 'skips entries with missing service_provider_id' do
-        # Same comment as previous test -this is logged elsewhere
         expect(Rails.logger).not_to receive(:warn)
         job.send(:validate_service_provider_ids, report_data_missing_id, complete_mapping)
       end
@@ -651,9 +700,9 @@ RSpec.describe Reports::PartnerReportDefault do
       end
     end
   end
-  describe 'integration with PartnerReportDefault' do
+  describe 'integration with PartnerReportDefaultV2' do
     it 'passes correct parameters to report generator' do
-      expect(Reporting::PartnerReportDefault).to receive(:new).with(
+      expect(Reporting::PartnerReportDefaultV2).to receive(:new).with(
         report_date: report_date,
         report_cadence: 'monthly',
         included_issuers: nil,
@@ -666,7 +715,7 @@ RSpec.describe Reports::PartnerReportDefault do
     it 'calls get_period_date_from_report_date with correct parameters' do
       job.instance_variable_set(:@report_date, report_date)
 
-      expect(Reporting::PartnerReportDefault).to receive(:get_period_date_from_report_date).with(
+      expect(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).with(
         report_date: report_date,
         cadence: 'monthly',
       )
