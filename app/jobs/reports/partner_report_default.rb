@@ -110,45 +110,70 @@ module Reports
 
       # Upload individual reports
       uploaded_count = 0
-      skipped_count = 0
+      skipped_uploads = []
 
       issuer_reports.each do |issuer, json_data|
         if json_data.nil?
-          Rails.logger.warn "Skipping upload for #{issuer}:"\
-                            " report generation failed and returned nil"
-          skipped_count += 1
+          skipped_uploads << "#{issuer}: report generation failed and returned nil"
+          next
+        end
+
+        service_provider_id = json_data.dig(:provider_information, :service_provider_id)
+
+        if service_provider_id.nil?
+          skipped_uploads << "#{issuer}: missing service_provider_id"
           next
         end
 
         begin
-          service_provider_id = json_data[:provider_information][:service_provider_id]
-          if service_provider_id.nil?
-            Rails.logger.error "Missing service_provider_id for #{issuer}, skipping upload"
-            skipped_count += 1
-            next
-          end
-
           upload_to_s3(
-            json_data, service_provider_id: service_provider_id,
-                       period_date: period_date
+            json_data,
+            service_provider_id: service_provider_id,
+            period_date: period_date,
           )
           uploaded_count += 1
-        rescue => e
-          Rails.logger.error "Failed to upload report for #{issuer}: #{e.message}"
-          skipped_count += 1
+        rescue StandardError => e
+          skipped_uploads << "#{issuer} / #{service_provider_id}: upload failed - #{e.message}"
         end
       end
 
-      Rails.logger.info "Upload summary: #{uploaded_count} successful, #{skipped_count} skipped"
+      Rails.logger.info(
+        "Upload summary: #{uploaded_count} successful, #{skipped_uploads.count} skipped",
+      )
+
+      if skipped_uploads.any?
+        Rails.logger.warn "Skipped uploads:\n"\
+                          "#{skipped_uploads.map { |skip| "- #{skip}" }.join("\n")}"
+      end
     end
 
+    # S3 path structure:
+    # v1: env/service_provider_id/REPORT_CADENCE/2025-01-01.json for legacy consumers
+    # v1: env/v1/service_provider_id/REPORT_CADENCE/2025-01-01.json for versioned consumers
+    # v2: env/v2/service_provider_id/REPORT_CADENCE/2025-01-01.json
     def upload_to_s3(json_data, service_provider_id:, period_date:)
-      # S3 path structure: env/report_version/service_provider_id/REPORT_CADENCE/2025-01-01.json
       base_path = generate_base_s3_path(directory: 'portal')
-      path = "#{base_path}#{@report_version}/#{service_provider_id}"\
-             "/#{REPORT_CADENCE}/#{period_date}.json"
 
-      if bucket_name.present?
+      paths = case @report_version
+              when 'v1'
+                [
+                  # Legacy path for backwards compatibility
+                  "#{base_path}#{service_provider_id}/#{REPORT_CADENCE}/#{period_date}.json",
+
+                  # Versioned path for consistency with v2
+                  "#{base_path}v1/#{service_provider_id}/#{REPORT_CADENCE}/#{period_date}.json",
+                ]
+              when 'v2'
+                [
+                  "#{base_path}v2/#{service_provider_id}/#{REPORT_CADENCE}/#{period_date}.json",
+                ]
+              else
+                raise ArgumentError, "Unsupported report_version: #{@report_version}"
+              end
+
+      return unless bucket_name.present?
+
+      paths.each do |path|
         upload_file_to_s3_bucket(
           path: path,
           body: json_file(json_data),
