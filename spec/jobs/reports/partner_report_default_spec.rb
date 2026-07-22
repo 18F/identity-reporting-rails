@@ -392,14 +392,15 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'skips nil issuer reports and logs warnings' do
         allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:warn)
+
+        expect(Rails.logger).to receive(:info).with('Upload summary: 1 successful, 2 skipped')
 
         expect(Rails.logger).to receive(:warn).with(
-          "Skipping upload for #{issuer2}: report generation failed and returned nil",
+          "Skipped uploads:\n" \
+          "- #{issuer2}: report generation failed and returned nil\n" \
+          "- #{issuer3}: report generation failed and returned nil",
         )
-        expect(Rails.logger).to receive(:warn).with(
-          "Skipping upload for #{issuer3}: report generation failed and returned nil",
-        )
-        expect(Rails.logger).to receive(:info).with('Upload summary: 1 successful, 2 skipped')
 
         # Should only upload issuer1
         expect(job).to receive(:upload_to_s3).once
@@ -430,10 +431,11 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'skips upload and logs error when service_provider_id is missing' do
         allow(Rails.logger).to receive(:info)
-        expect(Rails.logger).to receive(:error).with(
-          "Missing service_provider_id for #{issuer1}, skipping upload",
-        )
         expect(Rails.logger).to receive(:info).with('Upload summary: 0 successful, 1 skipped')
+        expect(Rails.logger).to receive(:warn).with(
+          "Skipped uploads:\n" \
+          "- #{issuer1}: missing service_provider_id",
+        )
         expect(job).not_to receive(:upload_to_s3)
         job.perform(report_date)
       end
@@ -577,6 +579,59 @@ RSpec.describe Reports::PartnerReportDefault do
         job.send(
           :upload_to_s3, sample_json_data, service_provider_id: 123,
                                            period_date: period_date
+        )
+      end
+    end
+    context 'with report_version v1' do
+      let(:v1_job) { described_class.new(nil, report_version: 'v1') }
+
+      before do
+        allow(v1_job).to receive(:generate_base_s3_path).
+          with(directory: 'portal').
+          and_return('')
+      end
+
+      it 'uploads to both the legacy path and the versioned v1 path' do
+        body = JSON.pretty_generate(sample_json_data)
+
+        expect(v1_job).to receive(:upload_file_to_s3_bucket).with(
+          path: '123/monthly/2026-04-01.json',
+          body: body,
+          content_type: 'application/json',
+          bucket: bucket_name,
+        )
+
+        expect(v1_job).to receive(:upload_file_to_s3_bucket).with(
+          path: 'v1/123/monthly/2026-04-01.json',
+          body: body,
+          content_type: 'application/json',
+          bucket: bucket_name,
+        )
+
+        v1_job.send(
+          :upload_to_s3,
+          sample_json_data,
+          service_provider_id: 123,
+          period_date: period_date,
+        )
+      end
+
+      it 'logs both v1 upload paths' do
+        allow(v1_job).to receive(:upload_file_to_s3_bucket).and_return(true)
+
+        expect(Rails.logger).to receive(:info).with(
+          'Uploaded partner report to S3: 123/monthly/2026-04-01.json',
+        )
+
+        expect(Rails.logger).to receive(:info).with(
+          'Uploaded partner report to S3: v1/123/monthly/2026-04-01.json',
+        )
+
+        v1_job.send(
+          :upload_to_s3,
+          sample_json_data,
+          service_provider_id: 123,
+          period_date: period_date,
         )
       end
     end
