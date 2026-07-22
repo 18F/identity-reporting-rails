@@ -233,7 +233,7 @@ module Reports
 
     def period_date
       raise ArgumentError, 'report_date must be set before calling period_date' if @report_date.nil?
-      @period_date ||= Reporting::PartnerReportDefaultV2.get_period_date_from_report_date(
+      Reporting::PartnerReportDefaultV2.get_period_date_from_report_date(
         report_date: @report_date,
         cadence: REPORT_CADENCE,
       )
