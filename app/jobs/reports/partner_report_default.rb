@@ -22,7 +22,7 @@ module Reports
     # We assume this job runs on the 3rd of the month for Monthly reports
     REPORT_DELAY_DAYS = 4
 
-    attr_reader :report_date, :included_issuers, :excluded_issuers
+    attr_reader :report_date, :included_issuers, :excluded_issuers, :report_version
 
     def initialize(report_date = nil, *args, included_issuers: nil, excluded_issuers: nil,
                    report_version: DEFAULT_VERSION, **rest)
@@ -58,8 +58,9 @@ module Reports
       # Use provided report_date, or constructor date, or default
       @report_date = report_date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
 
-      Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports for report date: "\
-                      "#{@report_date} (#{REPORT_CADENCE} report period starting on #{period_date})"
+      Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports (#{@report_version}"\
+                      " version) for report date: #{@report_date} (#{REPORT_CADENCE} "\
+                      "report period starting on #{period_date})"
 
       # Wait 10 seconds to allow user to cancel job if they realize they ran it with the wrong date
       # This hopefully prevents accidental population of reports manually for wrong dates
