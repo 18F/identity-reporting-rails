@@ -260,7 +260,8 @@ RSpec.describe Reports::PartnerReportDefault do
       it 'logs start message with report_date, report_version, and period_date' do
         allow(Rails.logger).to receive(:info)
         expect(Rails.logger).to receive(:info).with(
-          "Generating partner default monthly reports (#{described_class::DEFAULT_VERSION} version) "\
+          "Generating partner default monthly reports "\
+          "(#{described_class::DEFAULT_VERSION} version) "\
           "for report date: #{report_date} (monthly report period starting on #{period_date})",
         )
 
