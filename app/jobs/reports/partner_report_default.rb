@@ -149,9 +149,9 @@ module Reports
     end
 
     # S3 path structure:
-    # v1: env/service_provider_id/REPORT_CADENCE/2025-01-01.json for legacy consumers
-    # v1: env/v1/service_provider_id/REPORT_CADENCE/2025-01-01.json for versioned consumers
-    # v2: env/v2/service_provider_id/REPORT_CADENCE/2025-01-01.json
+    # v1: env/service_provider_id/REPORT_CADENCE/2025-01-01.json for original implementation
+    # v1: env/v1/service_provider_id/REPORT_CADENCE/2025-01-01.json for original, organized
+    # v2: env/v2/service_provider_id/REPORT_CADENCE/2025-01-01.json for v2 implementation
     def upload_to_s3(json_data, service_provider_id:, period_date:)
       base_path = generate_base_s3_path(directory: 'portal')
 
