@@ -84,12 +84,6 @@ else
         cron: cron_1st_of_month_6am,
         args: -> { [Time.zone.now, 2, 'quarterly'] },
       },
-      # Hardcoded in job to perform monthly for now
-      partner_report_default: {
-        class: 'Reports::PartnerReportDefault',
-        cron: cron_3rd_of_month_6am,
-        args: -> { [4.days.ago] },
-      },
       # Partner report v2 (default going forward, new column names)
       partner_report_default_v2: {
         class: 'Reports::PartnerReportDefault',

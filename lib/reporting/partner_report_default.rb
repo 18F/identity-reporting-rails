@@ -416,9 +416,9 @@ module Reporting
             idv_data.count_pass_via_lg99,
         
             -- Identity Verification: Channels
-            idv_data.count_pass_online_finalization as count_pass_ipp_online_portion,
+            idv_data.count_pass_online_finalization,
             --idv_data.count_pass_ipp_online_portion: incorrectly was in v1 report, should have been count_pass_ipp
-            idv_data.count_pass_ipp AS count_pass_online_finalization,  -- renamed to count_pass_ipp in v2 report
+            idv_data.count_pass_ipp AS count_pass_ipp_online_portion,  -- renamed to count_pass_ipp in v2 report
             idv_data.count_pass_via_letter,
         
             -- Identity Verification: UX Friction
