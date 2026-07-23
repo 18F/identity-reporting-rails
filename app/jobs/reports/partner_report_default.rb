@@ -12,7 +12,7 @@ module Reports
     # Runs v2 by default
 
     # Usage:
-    #  reporter = Reports::PartnerReportDefault.new(report_date: Date.parse('2026-03-15'),
+    #  reporter = Reports::PartnerReportDefault.new(Date.parse('2026-03-15'),
     #  included_issuers: ['issuer1', 'issuer2'], report_version: 'v1') # run legacy report
     #  reporter.perform()
 
