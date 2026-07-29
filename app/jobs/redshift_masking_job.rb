@@ -10,6 +10,20 @@ class RedshiftMaskingJob < ApplicationJob
       return
     end
 
-    RedshiftMaskingSync.new.sync(user_filter: user_filter)
+    sync_services.each do |sync_service|
+      Rails.logger.info("RedshiftMasking syncing with #{sync_service.class.name}")
+      sync_service.sync(user_filter: user_filter)
+    end
+  end
+
+  private
+
+  # Masking policies are always synced against the data_warehouse database via
+  # RedshiftMaskingSync. When zero-ETL is enabled, they are additionally synced
+  # against the analytics_zetl database via RedshiftMaskingZetlSync.
+  def sync_services
+    services = [RedshiftMaskingSync.new]
+    services << RedshiftMaskingZetlSync.new if IdentityConfig.store.zero_etl_enabled
+    services
   end
 end

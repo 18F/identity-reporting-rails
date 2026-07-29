@@ -18,12 +18,13 @@ module RedshiftMasking
 
     UNATTACHABLE_USER_TYPES = %w[superuser].freeze
 
-    attr_reader :data_controls, :users_yaml, :env_name
+    attr_reader :data_controls, :users_yaml, :env_name, :database_name
 
-    def initialize(data_controls, users_yaml, env_name: nil)
+    def initialize(data_controls, users_yaml, env_name: nil, database_name: nil)
       @data_controls = data_controls
       @users_yaml = users_yaml
       @env_name = env_name
+      @database_name = database_name
     end
 
     def masking_config
@@ -34,8 +35,17 @@ module RedshiftMasking
       masking_config['user_types']
     end
 
+    # The +columns+ section of mask.yaml is grouped by database, e.g.
+    #   columns:
+    #     - db: analytics
+    #       tables: [ ... ]
+    #     - db: analytics_zetl
+    #       tables: [ ... ]
+    # Returns the +tables+ list for the configured +database_name+, or [] when
+    # that database has no entry.
     def columns_config
-      masking_config['columns']
+      entry = (masking_config['columns'] || []).find { |group| group['db'] == database_name }
+      entry ? (entry['tables'] || []) : []
     end
 
     def policy_config(permission_type)

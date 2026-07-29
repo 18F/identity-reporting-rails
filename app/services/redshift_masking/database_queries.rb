@@ -17,8 +17,9 @@ module RedshiftMasking
       /^(?:boolean|bool)/i => 'BOOLEAN',
     }.freeze
 
-    def initialize(logger)
+    def initialize(logger, connection_class: DataWarehouseApplicationRecord)
       @logger = logger
+      @connection_class = connection_class
     end
 
     def fetch_column_types(columns)
@@ -76,7 +77,7 @@ module RedshiftMasking
     private
 
     def connection
-      @connection ||= DataWarehouseApplicationRecord.connection
+      @connection ||= @connection_class.connection
     end
 
     # Normalize a Redshift data type to a standardized format

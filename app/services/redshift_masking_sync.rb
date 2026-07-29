@@ -10,7 +10,7 @@ class RedshiftMaskingSync
   )
 
   def sync(user_filter: nil)
-    Rails.logger.info('starting data controls sync')
+    Rails.logger.info("starting data controls sync from #{DATA_CONTROLS_PATH}")
 
     data_controls = YAML.safe_load(File.read(DATA_CONTROLS_PATH))
     users_yaml = YAML.safe_load(File.read(IdentityConfig.identity_devops_users_yaml_path))['users']
@@ -20,14 +20,29 @@ class RedshiftMaskingSync
 
   private
 
+  # The +db+ group in mask.yaml whose column policies this sync applies.
+  # Subclasses override this to target a different database section.
+  def database_name
+    'analytics'
+  end
+
+  # ActiveRecord connection class whose database masking policies are applied to.
+  # Subclasses override this to target a different database.
+  def connection_class
+    DataWarehouseApplicationRecord
+  end
+
   def sync_masking_policies(data_controls, users_yaml, user_filter: nil)
     env_name = Identity::Hostdata.env
 
     config = RedshiftMasking::Configuration.new(
       data_controls, users_yaml,
-      env_name: env_name
+      env_name: env_name, database_name: database_name
     )
-    db_queries = RedshiftMasking::DatabaseQueries.new(Rails.logger)
+    db_queries = RedshiftMasking::DatabaseQueries.new(
+      Rails.logger,
+      connection_class: connection_class,
+    )
 
     users = db_queries.fetch_users
     db_user_case_map = users.index_by { |u| u.upcase }
@@ -49,7 +64,7 @@ class RedshiftMaskingSync
     )
     policy_builder = RedshiftMasking::PolicyBuilder.new(config, user_resolver)
     drift_detector = RedshiftMasking::DriftDetector.new
-    sql_executor = RedshiftMasking::SqlExecutor.new(config)
+    sql_executor = RedshiftMasking::SqlExecutor.new(config, connection_class: connection_class)
 
     sql_executor.create_masking_policies(column_types)
 

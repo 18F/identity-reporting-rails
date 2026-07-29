@@ -16,8 +16,9 @@ module RedshiftMasking
 
     attr_reader :config
 
-    def initialize(config)
+    def initialize(config, connection_class: DataWarehouseApplicationRecord)
       @config = config
+      @connection_class = connection_class
     end
 
     def create_masking_policies(column_types)
@@ -55,7 +56,7 @@ module RedshiftMasking
     private
 
     def connection
-      @connection ||= DataWarehouseApplicationRecord.connection
+      @connection ||= @connection_class.connection
     end
 
     def build_policy_sql(permission_type, column_id, data_type)

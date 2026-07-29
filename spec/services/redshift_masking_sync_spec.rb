@@ -373,11 +373,16 @@ RSpec.describe RedshiftMasking do
           },
           'columns' => [
             {
-              'public.users.ssn' => {
-                'allowed' => ['dwadmin'],
-                'masked' => ['dwuser'],
-                'denied' => ['analyst'],
-              },
+              'db' => 'analytics',
+              'tables' => [
+                {
+                  'public.users.ssn' => {
+                    'allowed' => ['dwadmin'],
+                    'masked' => ['dwuser'],
+                    'denied' => ['analyst'],
+                  },
+                },
+              ],
             },
           ],
         },
@@ -385,7 +390,9 @@ RSpec.describe RedshiftMasking do
     end
 
     let(:users_yaml) { { 'alice' => { 'aws_groups' => ['engineers'] } } }
-    let(:config) { described_class.new(data_controls, users_yaml, env_name: 'test') }
+    let(:config) do
+      described_class.new(data_controls, users_yaml, env_name: 'test', database_name: 'analytics')
+    end
 
     describe '#user_types' do
       it 'returns user_types configuration' do
@@ -394,8 +401,17 @@ RSpec.describe RedshiftMasking do
     end
 
     describe '#columns_config' do
-      it 'returns columns configuration' do
-        expect(config.columns_config).to eq(data_controls['masking_policies']['columns'])
+      it 'returns the tables list for the configured database' do
+        expect(config.columns_config).to eq(
+          data_controls['masking_policies']['columns'].first['tables'],
+        )
+      end
+
+      it 'returns an empty list when the database has no columns entry' do
+        other = described_class.new(
+          data_controls, users_yaml, env_name: 'test', database_name: 'analytics_zetl'
+        )
+        expect(other.columns_config).to eq([])
       end
     end
 
