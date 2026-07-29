@@ -316,6 +316,12 @@ system_users:
       - schema_name: fraudops
         schema_privileges: USAGE
         table_privileges: SELECT
+      - schema_name: qa_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
+      - schema_name: fraudops_marts
+        schema_privileges: USAGE
+        table_privileges: SELECT
 
 user_roles:
   - role_name: dw_ingestion
