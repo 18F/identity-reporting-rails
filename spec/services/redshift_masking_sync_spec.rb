@@ -135,6 +135,56 @@ RSpec.describe RedshiftMasking do
     end
   end
 
+  describe RedshiftMasking::DatabaseQueries do
+    subject(:db_queries) { described_class.new(Rails.logger, connection_class: connection_class) }
+
+    let(:connection_class) { class_double(DataWarehouseApplicationRecord) }
+    let(:connection) { instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter) }
+
+    before do
+      allow(connection_class).to receive(:connection).and_return(connection)
+      allow(connection).to receive(:quote) { |v| "'#{v}'" }
+    end
+
+    describe '#fetch_column_types' do
+      it 'preserves varchar length from information_schema for policy compatibility' do
+        columns = [RedshiftMasking::Column.new(schema: 'idp', table: 'users', column: 'otp_fingerprint')]
+
+        allow(connection).to receive(:execute).and_return([
+                                                            {
+                                                              'table_schema' => 'idp',
+                                                              'table_name' => 'users',
+                                                              'column_name' => 'otp_fingerprint',
+                                                              'data_type' => 'character varying',
+                                                              'character_maximum_length' => 65_535,
+                                                            },
+                                                          ])
+
+        expect(db_queries.fetch_column_types(columns)).to eq(
+          'idp.users.otp_fingerprint' => 'VARCHAR(65535)',
+        )
+      end
+
+      it 'maps text columns to VARCHAR(MAX)' do
+        columns = [RedshiftMasking::Column.new(schema: 'idp', table: 'users', column: 'notes')]
+
+        allow(connection).to receive(:execute).and_return([
+                                                            {
+                                                              'table_schema' => 'idp',
+                                                              'table_name' => 'users',
+                                                              'column_name' => 'notes',
+                                                              'data_type' => 'text',
+                                                              'character_maximum_length' => nil,
+                                                            },
+                                                          ])
+
+        expect(db_queries.fetch_column_types(columns)).to eq(
+          'idp.users.notes' => 'VARCHAR(MAX)',
+        )
+      end
+    end
+  end
+
   describe RedshiftMasking::DriftDetector do
     let(:detector) { described_class.new }
 

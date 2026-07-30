@@ -8,7 +8,8 @@ module RedshiftMasking
     # Data type normalization mappings
     DATA_TYPE_MAPPINGS = {
       /^super$/i => 'SUPER',
-      /^(?:character varying|varchar|text)/i => 'VARCHAR(65528)',
+      /^(?:character varying|varchar)$/i => ->(_, len) { len ? "VARCHAR(#{len})" : 'VARCHAR(MAX)' },
+      /^text$/i => 'VARCHAR(MAX)',
       # Lambda to preserve original length
       /^(?:character|char)$/i => ->(_, len) { "CHAR(#{len || 1})" },
       /^(?:numeric|decimal|integer|int|smallint|bigint|real|double)/i => 'NUMERIC',
