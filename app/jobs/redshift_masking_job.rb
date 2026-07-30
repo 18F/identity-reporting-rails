@@ -18,9 +18,7 @@ class RedshiftMaskingJob < ApplicationJob
 
   private
 
-  # Masking policies are always synced against the data_warehouse database via
-  # RedshiftMaskingSync. When zero-ETL is enabled, they are additionally synced
-  # against the analytics_zetl database via RedshiftMaskingZetlSync.
+  # When zero-ETL is enabled, masking policies are additionally synced against the analytics_zetl
   def sync_services
     services = [RedshiftMaskingSync.new]
     services << RedshiftMaskingZetlSync.new if IdentityConfig.store.zero_etl_enabled

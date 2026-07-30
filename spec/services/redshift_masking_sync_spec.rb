@@ -148,17 +148,22 @@ RSpec.describe RedshiftMasking do
 
     describe '#fetch_column_types' do
       it 'preserves varchar length from information_schema for policy compatibility' do
-        columns = [RedshiftMasking::Column.new(schema: 'idp', table: 'users', column: 'otp_fingerprint')]
+        columns = [RedshiftMasking::Column.new(
+          schema: 'idp', table: 'users',
+          column: 'otp_fingerprint'
+        )]
 
-        allow(connection).to receive(:execute).and_return([
-                                                            {
-                                                              'table_schema' => 'idp',
-                                                              'table_name' => 'users',
-                                                              'column_name' => 'otp_fingerprint',
-                                                              'data_type' => 'character varying',
-                                                              'character_maximum_length' => 65_535,
-                                                            },
-                                                          ])
+        allow(connection).to receive(:execute).and_return(
+          [
+            {
+              'table_schema' => 'idp',
+              'table_name' => 'users',
+              'column_name' => 'otp_fingerprint',
+              'data_type' => 'character varying',
+              'character_maximum_length' => 65_535,
+            },
+          ],
+        )
 
         expect(db_queries.fetch_column_types(columns)).to eq(
           'idp.users.otp_fingerprint' => 'VARCHAR(65535)',
@@ -168,15 +173,17 @@ RSpec.describe RedshiftMasking do
       it 'maps text columns to VARCHAR(MAX)' do
         columns = [RedshiftMasking::Column.new(schema: 'idp', table: 'users', column: 'notes')]
 
-        allow(connection).to receive(:execute).and_return([
-                                                            {
-                                                              'table_schema' => 'idp',
-                                                              'table_name' => 'users',
-                                                              'column_name' => 'notes',
-                                                              'data_type' => 'text',
-                                                              'character_maximum_length' => nil,
-                                                            },
-                                                          ])
+        allow(connection).to receive(:execute).and_return(
+          [
+            {
+              'table_schema' => 'idp',
+              'table_name' => 'users',
+              'column_name' => 'notes',
+              'data_type' => 'text',
+              'character_maximum_length' => nil,
+            },
+          ],
+        )
 
         expect(db_queries.fetch_column_types(columns)).to eq(
           'idp.users.notes' => 'VARCHAR(MAX)',
@@ -579,17 +586,13 @@ RSpec.describe RedshiftMasking do
       executor.create_masking_policies('idp.users.ssn' => 'VARCHAR(65535)')
 
       expect(connection).to have_received(:execute).with(
-        a_string_matching(/CREATE MASKING POLICY allowed_idp_users_ssn/)
-          .and(a_string_matching(/CREATE MASKING POLICY denied_idp_users_ssn/))
-          .and(a_string_matching(/CREATE MASKING POLICY masked_idp_users_ssn/)),
+        a_string_matching(/CREATE MASKING POLICY allowed_idp_users_ssn/).
+          and(a_string_matching(/CREATE MASKING POLICY denied_idp_users_ssn/)).
+          and(a_string_matching(/CREATE MASKING POLICY masked_idp_users_ssn/)),
       )
     end
   end
 
-  # Drives the full RedshiftMaskingSync#sync pipeline against a stubbed database
-  # connection. Both the data_warehouse sync and the analytics_zetl sync share
-  # every collaborator, differing only in the target +db+ section of mask.yaml
-  # and the ActiveRecord connection class. These shared examples prove the
   # zetl sync processes masking identically to the base sync.
   shared_examples 'a redshift masking sync' do |connection_class:, db_section:|
     subject(:service) { described_class.new }
@@ -698,10 +701,14 @@ RSpec.describe RedshiftMasking do
       # PUBLIC is masked at priority 10, and the +allowed+ redshift_user
       # (pii_reader) is unmasked at priority 300.
       expect(attach_sql).to include(
-        a_string_matching(/ATTACH MASKING POLICY mask_idp_users_#{target_column}.*PUBLIC.*PRIORITY 10/m),
+        a_string_matching(
+          /ATTACH MASKING POLICY mask_idp_users_#{target_column}.*PUBLIC.*PRIORITY 10/m,
+        ),
       )
       expect(attach_sql).to include(
-        a_string_matching(/ATTACH MASKING POLICY unmask_idp_users_#{target_column}.*"pii_reader".*PRIORITY 300/m),
+        a_string_matching(
+          /ATTACH MASKING POLICY unmask_idp_users_#{target_column}.*"pii_reader".*PRIORITY 300/m,
+        ),
       )
     end
 

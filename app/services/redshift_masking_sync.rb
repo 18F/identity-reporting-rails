@@ -20,14 +20,11 @@ class RedshiftMaskingSync
 
   private
 
-  # The +db+ group in mask.yaml whose column policies this sync applies.
   # Subclasses override this to target a different database section.
   def database_name
     'analytics'
   end
 
-  # ActiveRecord connection class whose database masking policies are applied to.
-  # Subclasses override this to target a different database.
   def connection_class
     DataWarehouseApplicationRecord
   end

@@ -5,8 +5,10 @@ module RedshiftMasking
   class SqlExecutor
     # Use string keys to avoid Zeitwerk autoloading order issues
     POLICY_TEMPLATES = {
-      'allowed' => 'CREATE MASKING POLICY %<name>s IF NOT EXISTS WITH(value %<type>s) USING (value)',
-      'denied' => 'CREATE MASKING POLICY %<name>s IF NOT EXISTS WITH(value %<type>s) USING (NULL::%<type>s)',
+      'allowed' => 'CREATE MASKING POLICY %<name>s IF NOT EXISTS ' \
+                   'WITH(value %<type>s) USING (value)',
+      'denied' => 'CREATE MASKING POLICY %<name>s IF NOT EXISTS ' \
+                  'WITH(value %<type>s) USING (NULL::%<type>s)',
     }.freeze
 
     attr_reader :config

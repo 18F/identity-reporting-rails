@@ -35,14 +35,7 @@ module RedshiftMasking
       masking_config['user_types']
     end
 
-    # The +columns+ section of mask.yaml is grouped by database, e.g.
-    #   columns:
-    #     - db: analytics
-    #       tables: [ ... ]
-    #     - db: analytics_zetl
-    #       tables: [ ... ]
-    # Returns the +tables+ list for the configured +database_name+, or [] when
-    # that database has no entry.
+    # Returns the +tables+ list +database_name+,or [] when database has no entry.
     def columns_config
       entry = (masking_config['columns'] || []).find { |group| group['db'] == database_name }
       entry ? (entry['tables'] || []) : []
