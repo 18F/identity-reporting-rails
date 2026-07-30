@@ -115,12 +115,12 @@ else
       # Sync Redshift masking policies
       redshift_masking_job: {
         class: 'RedshiftMaskingJob',
-        cron: cron_5m,
+        cron: cron_1d_morning,
       },
       # Sync Redshift users - runs every 15 minutes
       redshift_sync_job: {
         class: 'RedshiftSyncJob',
-        cron: cron_15m,
+        cron: cron_1d_morning,
       },
       # Sync QuickSight users - runs every 15 minutes
       quicksight_sync_job: {
