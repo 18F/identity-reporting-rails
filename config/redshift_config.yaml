@@ -318,10 +318,10 @@ system_users:
       - schema_name: fraudops
         schema_privileges: USAGE
         table_privileges: SELECT
-      - schema_name: fraudops_qa_marts
+      - schema_name: fraudops_marts
         schema_privileges: USAGE
         table_privileges: SELECT
-      - schema_name: fraudops_marts
+      - schema_name: fraudops_qa_marts
         schema_privileges: USAGE
         table_privileges: SELECT
 
