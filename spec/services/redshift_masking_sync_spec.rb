@@ -493,4 +493,144 @@ RSpec.describe RedshiftMasking do
       end
     end
   end
+
+  # Drives the full RedshiftMaskingSync#sync pipeline against a stubbed database
+  # connection. Both the data_warehouse sync and the analytics_zetl sync share
+  # every collaborator, differing only in the target +db+ section of mask.yaml
+  # and the ActiveRecord connection class. These shared examples prove the
+  # zetl sync processes masking identically to the base sync.
+  shared_examples 'a redshift masking sync' do |connection_class:, db_section:|
+    subject(:service) { described_class.new }
+
+    let(:data_controls) do
+      {
+        'masking_policies' => {
+          'user_types' => {
+            'redshift_user' => ['pii_reader'],
+            'iam_role' => ['dwadmin'],
+            'superuser' => ['superuser'],
+          },
+          'columns' => [
+            {
+              'db' => 'analytics',
+              'tables' => [
+                {
+                  'idp.users.dw_secret' => {
+                    'allowed' => ['pii_reader'],
+                    'masked' => ['dwadmin'],
+                    'denied' => [],
+                  },
+                },
+              ],
+            },
+            {
+              'db' => 'analytics_zetl',
+              'tables' => [
+                {
+                  'idp.users.zetl_secret' => {
+                    'allowed' => ['pii_reader'],
+                    'masked' => ['dwadmin'],
+                    'denied' => [],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      }
+    end
+
+    let(:users_yaml) { { 'users' => { 'alice' => { 'aws_groups' => ['dwadmin'] } } } }
+
+    # The column configured for the section under test.
+    let(:target_column) { db_section == 'analytics_zetl' ? 'zetl_secret' : 'dw_secret' }
+
+    let(:connection) { instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter) }
+    let(:executed_sql) { [] }
+
+    before do
+      allow(Identity::Hostdata).to receive(:env).and_return('test')
+
+      allow(File).to receive(:read).with(RedshiftMaskingSync::DATA_CONTROLS_PATH).
+        and_return(data_controls.to_yaml)
+      allow(File).to receive(:read).with(IdentityConfig.identity_devops_users_yaml_path).
+        and_return(users_yaml.to_yaml)
+
+      allow(connection_class).to receive(:connection).and_return(connection)
+      allow(connection).to receive(:quote) { |v| "'#{v}'" }
+      allow(connection).to receive(:quote_column_name) { |v| "\"#{v}\"" }
+
+      allow(connection).to receive(:execute) do |sql|
+        executed_sql << sql
+        case sql
+        when /FROM pg_user/
+          [{ 'usename' => 'pii_reader' }, { 'usename' => 'dwadmin' }]
+        when /information_schema\.columns/
+          [{
+            'table_schema' => 'idp',
+            'table_name' => 'users',
+            'column_name' => target_column,
+            'data_type' => 'character varying',
+            'character_maximum_length' => 255,
+          }]
+        when /svv_attached_masking_policy/
+          []
+        else
+          []
+        end
+      end
+    end
+
+    it 'queries against the expected connection class' do
+      service.sync
+
+      expect(connection_class).to have_received(:connection).at_least(:once)
+    end
+
+    it 'creates masking policies only for the configured db section columns' do
+      service.sync
+
+      create_sql = executed_sql.find { |s| s.include?('CREATE MASKING POLICY') }
+      expect(create_sql).to include("mask_idp_users_#{target_column}")
+
+      other_column = db_section == 'analytics_zetl' ? 'dw_secret' : 'zetl_secret'
+      expect(create_sql).not_to include(other_column)
+    end
+
+    it 'attaches the expected policies to resolved users' do
+      service.sync
+
+      attach_sql = executed_sql.select { |s| s.include?('ATTACH MASKING POLICY') }
+
+      # No superuser in +allowed+, so this takes the public-baseline path:
+      # PUBLIC is masked at priority 10, and the +allowed+ redshift_user
+      # (pii_reader) is unmasked at priority 300.
+      expect(attach_sql).to include(
+        a_string_matching(/ATTACH MASKING POLICY mask_idp_users_#{target_column}.*PUBLIC.*PRIORITY 10/m),
+      )
+      expect(attach_sql).to include(
+        a_string_matching(/ATTACH MASKING POLICY unmask_idp_users_#{target_column}.*"pii_reader".*PRIORITY 300/m),
+      )
+    end
+
+    it 'logs sync completion' do
+      allow(Rails.logger).to receive(:info)
+
+      service.sync
+
+      expect(Rails.logger).to have_received(:info).with('sync completed')
+    end
+  end
+
+  describe RedshiftMaskingSync do
+    it_behaves_like 'a redshift masking sync',
+                    connection_class: DataWarehouseApplicationRecord,
+                    db_section: 'analytics'
+  end
+
+  describe RedshiftMaskingZetlSync do
+    it_behaves_like 'a redshift masking sync',
+                    connection_class: AnalyticsZetlApplicationRecord,
+                    db_section: 'analytics_zetl'
+  end
 end
