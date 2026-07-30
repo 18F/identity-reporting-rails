@@ -574,6 +574,16 @@ RSpec.describe RedshiftMasking do
         a_string_including('USING (0::NUMERIC)'),
       )
     end
+
+    it 'creates a policy for every permission type, including masked' do
+      executor.create_masking_policies('idp.users.ssn' => 'VARCHAR(65535)')
+
+      expect(connection).to have_received(:execute).with(
+        a_string_matching(/CREATE MASKING POLICY allowed_idp_users_ssn/)
+          .and(a_string_matching(/CREATE MASKING POLICY denied_idp_users_ssn/))
+          .and(a_string_matching(/CREATE MASKING POLICY masked_idp_users_ssn/)),
+      )
+    end
   end
 
   # Drives the full RedshiftMaskingSync#sync pipeline against a stubbed database
