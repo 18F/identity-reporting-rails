@@ -311,12 +311,14 @@ system_users:
   - user_name: pii_reader
     syslog_access: true
     secret_id: "redshift/%{env_name}-analytics-pii-reader"
-    feature_flag: dw_fraudops_email_enabled
+    feature_flag: 
+      - dw_fraudops_email_enabled
+      - fraud_ops_tracker_enabled
     schemas:
       - schema_name: fraudops
         schema_privileges: USAGE
         table_privileges: SELECT
-      - schema_name: qa_marts
+      - schema_name: fraudops_qa_marts
         schema_privileges: USAGE
         table_privileges: SELECT
       - schema_name: fraudops_marts
