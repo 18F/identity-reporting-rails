@@ -494,6 +494,38 @@ RSpec.describe RedshiftMasking do
     end
   end
 
+  describe RedshiftMasking::SqlExecutor do
+    subject(:executor) { described_class.new(config, connection_class: connection_class) }
+
+    let(:connection_class) { class_double(DataWarehouseApplicationRecord) }
+    let(:connection) { instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter) }
+    let(:config) { instance_double(RedshiftMasking::Configuration) }
+
+    before do
+      allow(connection_class).to receive(:connection).and_return(connection)
+      allow(connection).to receive(:execute)
+      allow(config).to receive(:policy_name) do |permission_type, column_id|
+        "#{permission_type}_#{column_id.tr('.', '_')}"
+      end
+    end
+
+    it 'uses a valid timestamp masked literal for TIMESTAMP columns' do
+      executor.create_masking_policies('idp.events.created_at' => 'TIMESTAMP')
+
+      expect(connection).to have_received(:execute).with(
+        a_string_including("'1970-01-01 00:00:00'::TIMESTAMP"),
+      )
+    end
+
+    it 'uses a numeric masked literal for NUMERIC columns' do
+      executor.create_masking_policies('idp.events.count' => 'NUMERIC')
+
+      expect(connection).to have_received(:execute).with(
+        a_string_including('USING (0::NUMERIC)'),
+      )
+    end
+  end
+
   # Drives the full RedshiftMaskingSync#sync pipeline against a stubbed database
   # connection. Both the data_warehouse sync and the analytics_zetl sync share
   # every collaborator, differing only in the target +db+ section of mask.yaml

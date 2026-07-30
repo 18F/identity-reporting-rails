@@ -4,15 +4,10 @@ module RedshiftMasking
   # Executes SQL commands for creating masking policies and applying policy attachment corrections
   class SqlExecutor
     # Use string keys to avoid Zeitwerk autoloading order issues
-    POLICY_USING_CLAUSES = {
-      'masked' => "('XXXX'::%<type>s)",
-      'allowed' => '(value)',
-      'denied' => '(NULL::%<type>s)',
+    POLICY_TEMPLATES = {
+      'allowed' => 'CREATE MASKING POLICY %<name>s IF NOT EXISTS WITH(value %<type>s) USING (value)',
+      'denied' => 'CREATE MASKING POLICY %<name>s IF NOT EXISTS WITH(value %<type>s) USING (NULL::%<type>s)',
     }.freeze
-
-    POLICY_TEMPLATES = POLICY_USING_CLAUSES.transform_values do |using_clause|
-      "CREATE MASKING POLICY %<name>s IF NOT EXISTS WITH(value %<type>s) USING #{using_clause}"
-    end.freeze
 
     attr_reader :config
 
@@ -60,11 +55,43 @@ module RedshiftMasking
     end
 
     def build_policy_sql(permission_type, column_id, data_type)
+      if permission_type == Configuration::PERMISSION_MASKED
+        return build_masked_policy_sql(column_id, data_type)
+      end
+
       format(
         POLICY_TEMPLATES[permission_type],
         name: config.policy_name(permission_type, column_id),
         type: data_type,
       )
+    end
+
+    def build_masked_policy_sql(column_id, data_type)
+      format(
+        'CREATE MASKING POLICY %<name>s IF NOT EXISTS WITH(value %<type>s) USING (%<masked>s)',
+        name: config.policy_name(Configuration::PERMISSION_MASKED, column_id),
+        type: data_type,
+        masked: masked_expression_for(data_type),
+      )
+    end
+
+    def masked_expression_for(data_type)
+      normalized_type = data_type.to_s.upcase
+
+      case normalized_type
+      when 'TIMESTAMP'
+        "'1970-01-01 00:00:00'::#{data_type}"
+      when 'DATE'
+        "'1970-01-01'::#{data_type}"
+      when 'NUMERIC'
+        "0::#{data_type}"
+      when 'BOOLEAN'
+        "FALSE::#{data_type}"
+      when 'SUPER'
+        "JSON_PARSE('\\\"XXXX\\\"')"
+      else
+        "'XXXX'::#{data_type}"
+      end
     end
 
     def execute_correction(sql, description)
