@@ -49,25 +49,25 @@
     {
       "warning_type": "SQL Injection",
       "warning_code": 0,
-      "fingerprint": "f484d00b78f7bf680b72321f5121683f6c093b267aae19cb334262d3c6432edf",
+      "fingerprint": "a125f47783f79261ea7d67f55ae25aade60483cfd2b87626a3d24084424e8595",
       "check_name": "SQL",
       "message": "Possible SQL injection",
       "file": "app/services/redshift_masking/sql_executor.rb",
-      "line": 38,
+      "line": 36,
       "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
-      "code": "connection.execute(\"#{column_types.flat_map do\n POLICY_TEMPLATES.keys.map do\n build_policy_sql(perm_type, column_id, data_type)\n end\n end.join(\";\\n\")};\")",
+      "code": "connection.execute(\"#{column_types.flat_map do\n [PERMISSION_ALLOWED, PERMISSION_DENIED, PERMISSION_MASKED].map do\n build_policy_sql(perm_type, column_id, data_type)\n end\n end.join(\";\\n\")};\")",
       "render_path": null,
       "location": {
         "type": "method",
         "class": "RedshiftMasking::SqlExecutor",
         "method": "create_masking_policies"
       },
-      "user_input": "column_types.flat_map do\n POLICY_TEMPLATES.keys.map do\n build_policy_sql(perm_type, column_id, data_type)\n end\n end.join(\";\\n\")",
+      "user_input": "column_types.flat_map do\n [PERMISSION_ALLOWED, PERMISSION_DENIED, PERMISSION_MASKED].map do\n build_policy_sql(perm_type, column_id, data_type)\n end\n end.join(\";\\n\")",
       "confidence": "Medium",
       "cwe_id": [
         89
       ],
-      "note": ""
+      "note": "Policy names and types are sourced from config and sanitized via format()/tr(), not user input"
     }
   ],
   "brakeman_version": "7.0.0"
