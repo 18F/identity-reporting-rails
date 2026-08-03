@@ -67,6 +67,19 @@ RSpec.describe Reporting::PartnerReportDefaultV2 do
       'count_identity_resolution_attribute_mismatch' => 22,
       'count_phone_number_record_check_failure' => 18,
       'count_temporary_technical_issues' => 14,
+      'pct_proofing_success' => 0.95,
+      'pct_authentication_success' => 0.85,
+      'pct_mobile_of_auth' => 0.6,
+      'pct_desktop_of_auth' => 0.3,
+      'pct_webauthn_platform_of_auth' => 0.2,
+      'pct_totp_of_auth' => 0.1,
+      'pct_piv_cac_of_auth' => 0.05,
+      'pct_sms_of_auth' => 0.08,
+      'pct_voice_of_auth' => 0.03,
+      'pct_backup_code_of_auth' => 0.02,
+      'pct_webauthn_of_auth' => 0.07,
+      'pct_personal_key_of_auth' => 0.01,
+      'pct_account_creation_success' => 0.9,
     }
   end
 

@@ -256,7 +256,6 @@ module Reporting
       pct_backup_code_of_auth
       pct_webauthn_of_auth
       pct_personal_key_of_auth
-      count_blocked_attempted_fraud
       pct_account_creation_success
     ].freeze
 
