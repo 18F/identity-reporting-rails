@@ -69,10 +69,6 @@ test:
     migrations_paths:
       - db/data_warehouse_migrate
       - db/data_warehouse_test_migrate
-  analytics_zetl:
-    <<: *test
-    database: <%= "identity_reporting_rails_test#{ENV['TEST_ENV_NUMBER']}" %>
-    schema_search_path: 'public,test_pg_catalog,idp,logs,system_tables,fraudops,marts,qa_marts,fcms'
 
 <%
   worker_pool = if Identity::Hostdata.instance_role == 'worker'
