@@ -347,14 +347,15 @@ databases:
           - quicksight_connector
         feature_flag: redshift_quicksight_connector_enabled
 
-  # Zero-ETL replica: read-only, no schema/table access is granted to any user or group. 
+  # Zero-ETL replica: read-only, schema/table access is granted to only DBT users
   analytics_zetl:
     user_groups: []
     lambda_users: []
     system_users:
       - user_name: marts
         secret_id: "redshift/%{env_name}-analytics-dbt-marts"
-        feature_flag: dbt_enabled
+        feature_flag:
+          - zero_etl_enabled
         schemas:
           - schema_name: public
             schema_privileges: USAGE
@@ -362,7 +363,8 @@ databases:
 
       - user_name: qa_marts
         secret_id: "redshift/%{env_name}-analytics-dbt-qa_marts"
-        feature_flag: dbt_enabled
+        feature_flag:
+          - zero_etl_enabled
         schemas:
           - schema_name: public
             schema_privileges: USAGE
