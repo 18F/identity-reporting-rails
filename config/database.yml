@@ -41,8 +41,7 @@ development:
   analytics_zetl:
     <<: *defaults
     database: identity_reporting_rails_analytics_zetl_<%= Rails.env %>
-    schema_search_path: 'logs,public,idp,system_tables,fraudops,marts,qa_marts,fcms'
-    migrations_paths: db/analytics_zetl_migrate
+    schema_search_path: 'public'
 
 test:
   primary: &test
@@ -74,9 +73,6 @@ test:
     <<: *test
     database: <%= "identity_reporting_rails_test#{ENV['TEST_ENV_NUMBER']}" %>
     schema_search_path: 'public,test_pg_catalog,idp,logs,system_tables,fraudops,marts,qa_marts,fcms'
-    migrations_paths:
-      - db/analytics_zetl_migrate
-      - db/analytics_zetl_test_migrate
 
 <%
   worker_pool = if Identity::Hostdata.instance_role == 'worker'
@@ -156,5 +152,4 @@ production:
     username: "<%= Identity::Hostdata.config.redshift_username %>"
     password: "<%= Identity::Hostdata.config.redshift_password %>"
     encoding: utf8
-    migrations_paths: db/analytics_zetl_migrate
     schema_dump: false
