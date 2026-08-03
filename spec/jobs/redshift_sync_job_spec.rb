@@ -3,31 +3,45 @@
 require 'rails_helper'
 
 RSpec.describe RedshiftSyncJob, type: :job do
-  let(:redshift_sync) { instance_double(RedshiftSync) }
+  let(:dw_sync) { instance_double(RedshiftSync) }
+  let(:zetl_sync) { instance_double(RedshiftSync) }
   let(:logger) { instance_double(ActiveSupport::Logger) }
   let(:job_log_subscriber) { instance_double(IdentityJobLogSubscriber, logger: logger) }
 
   before do
-    allow(RedshiftSync).to receive(:new).and_return(redshift_sync)
+    allow(RedshiftSync).to receive(:new).
+      with(database: DataWarehouseApplicationRecord).and_return(dw_sync)
+    allow(RedshiftSync).to receive(:new).
+      with(database: AnalyticsZetlApplicationRecord).and_return(zetl_sync)
     allow(IdentityJobLogSubscriber).to receive(:new).and_return(job_log_subscriber)
   end
 
   describe '#perform' do
-    context 'when sync succeeds' do
+    context 'when both syncs succeed' do
       before do
-        allow(redshift_sync).to receive(:sync)
+        allow(dw_sync).to receive(:sync)
+        allow(zetl_sync).to receive(:sync)
         allow(logger).to receive(:info)
       end
 
-      it 'calls RedshiftSync.sync' do
+      it 'calls sync on both databases' do
         subject.perform
-        expect(redshift_sync).to have_received(:sync)
+        expect(dw_sync).to have_received(:sync)
+        expect(zetl_sync).to have_received(:sync)
       end
 
-      it 'logs success' do
+      it 'logs success for each database' do
         expect(logger).to receive(:info).with(
           {
             name: 'RedshiftSyncJob',
+            database: 'data_warehouse',
+            success: true,
+          }.to_json,
+        )
+        expect(logger).to receive(:info).with(
+          {
+            name: 'RedshiftSyncJob',
+            database: 'analytics_zetl',
             success: true,
           }.to_json,
         )
@@ -35,12 +49,19 @@ RSpec.describe RedshiftSyncJob, type: :job do
       end
     end
 
-    context 'when sync fails' do
+    context 'when the first database fails' do
       let(:error_message) { 'Database connection failed' }
       let(:error) { StandardError.new(error_message) }
 
       before do
-        allow(redshift_sync).to receive(:sync).and_raise(error)
+        allow(dw_sync).to receive(:sync).and_raise(error)
+        allow(zetl_sync).to receive(:sync)
+        allow(logger).to receive(:error)
+      end
+
+      it 'does not attempt the second database' do
+        expect { subject.perform }.to raise_error(StandardError, error_message)
+        expect(zetl_sync).not_to have_received(:sync)
       end
 
       it 'logs error' do
@@ -55,6 +76,27 @@ RSpec.describe RedshiftSyncJob, type: :job do
 
       it 're-raises the error' do
         allow(logger).to receive(:error)
+        expect { subject.perform }.to raise_error(StandardError, error_message)
+      end
+    end
+
+    context 'when the second database fails' do
+      let(:error_message) { 'Database connection failed' }
+      let(:error) { StandardError.new(error_message) }
+
+      before do
+        allow(dw_sync).to receive(:sync)
+        allow(zetl_sync).to receive(:sync).and_raise(error)
+        allow(logger).to receive(:info)
+        allow(logger).to receive(:error)
+      end
+
+      it 'still attempts the first database' do
+        expect { subject.perform }.to raise_error(StandardError, error_message)
+        expect(dw_sync).to have_received(:sync)
+      end
+
+      it 're-raises the error' do
         expect { subject.perform }.to raise_error(StandardError, error_message)
       end
     end

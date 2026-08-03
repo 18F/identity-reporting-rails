@@ -11,6 +11,10 @@ require_relative '../../config/environment'
 class RedshiftSync
   include UserSyncConfig
 
+  def initialize(database: DataWarehouseApplicationRecord)
+    @database = database
+  end
+
   def sync
     Rails.logger.info('Starting Redshift user sync')
 
@@ -40,7 +44,7 @@ class RedshiftSync
       sync_user_group(user_group)
     end
 
-    apply_masking_for_new_users(new_users) if new_users.any?
+    apply_masking_for_new_users(new_users) if new_users.any? && data_warehouse_database?
 
     user_roles.each do |user_role|
       create_user_role(user_role) if feature_enabled?(user_role['feature_flag'])
@@ -90,7 +94,19 @@ class RedshiftSync
   end
 
   def connection
-    @connection ||= DataWarehouseApplicationRecord.connection
+    @connection ||= @database.connection
+  end
+
+  def database_key
+    @database_key ||= @database.connection_db_config.name.to_s
+  end
+
+  def database_config
+    redshift_config['databases'].fetch(database_key)
+  end
+
+  def data_warehouse_database?
+    database_key == 'data_warehouse'
   end
 
   def secrets_manager_client
@@ -106,21 +122,21 @@ class RedshiftSync
   end
 
   def user_groups
-    redshift_config['user_groups'].map { |group| interpolate_config_hash(group) }
+    database_config['user_groups'].map { |group| interpolate_config_hash(group) }
   end
 
   def user_roles
-    return [] unless redshift_config['user_roles']
+    return [] unless database_config['user_roles']
 
-    redshift_config['user_roles'].map { |role| interpolate_config_hash(role) }
+    database_config['user_roles'].map { |role| interpolate_config_hash(role) }
   end
 
   def lambda_users
-    redshift_config['lambda_users'].map { |user| interpolate_config_hash(user) }
+    database_config['lambda_users'].map { |user| interpolate_config_hash(user) }
   end
 
   def system_users
-    redshift_config['system_users'].map { |user| interpolate_config_hash(user) }
+    database_config['system_users'].map { |user| interpolate_config_hash(user) }
   end
 
   def canonical_users
@@ -234,7 +250,7 @@ class RedshiftSync
     end.join("\n")
 
     <<~SQL
-      REVOKE ALL ON DATABASE analytics FROM "#{user_name}";
+      REVOKE ALL ON DATABASE #{connection.current_database} FROM "#{user_name}";
       #{revoke_statements}
       DROP USER "#{user_name}";
     SQL

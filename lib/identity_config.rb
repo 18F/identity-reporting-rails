@@ -64,11 +64,13 @@ class IdentityConfig
     config.add(:redshift_database_name, type: :string)
     config.add(:redshift_host, type: :string)
     config.add(:redshift_sia_v3_enabled, type: :boolean)
+    config.add(:redshift_zetl_database_name, type: :string)
     config.add(:report_timeout, type: :integer)
     config.add(:s3_report_bucket_prefix, type: :string)
     config.add(:s3_reports_enabled, type: :boolean)
     config.add(:s3_report_public_bucket_prefix, type: :string)
     config.add(:unload_line_count_threshold, type: :integer)
+    config.add(:zero_etl_enabled, type: :boolean)
 
     # Allow override via environment variable for worker-specific credentials
     # Two-worker setup:
