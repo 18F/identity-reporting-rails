@@ -244,6 +244,20 @@ module Reporting
       count_identity_resolution_attribute_mismatch
       count_phone_number_record_check_failure
       count_temporary_technical_issues
+      pct_proofing_success
+      pct_authentication_success
+      pct_mobile_of_auth
+      pct_desktop_of_auth
+      pct_webauthn_platform_of_auth
+      pct_totp_of_auth
+      pct_piv_cac_of_auth
+      pct_sms_of_auth
+      pct_voice_of_auth
+      pct_backup_code_of_auth
+      pct_webauthn_of_auth
+      pct_personal_key_of_auth
+      count_blocked_attempted_fraud
+      pct_account_creation_success
     ].freeze
 
     def build_data_section(row)
