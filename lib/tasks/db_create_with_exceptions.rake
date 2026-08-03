@@ -21,7 +21,7 @@ namespace :db do
 
     ActiveRecord::Tasks::DatabaseTasks.for_each(databases) do |name|
       db_config = ActiveRecord::Base.configurations.configs_for(env_name: env, name: name)
-      if ['data_warehouse', 'analytics_zetl'].include? name
+      if name == 'data_warehouse'
         $stdout.puts "Skipping creation of database: #{name} => #{db_config.database}"
         next
       end

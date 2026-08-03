@@ -38,10 +38,6 @@ development:
     database: identity_reporting_rails_data_warehouse_<%= Rails.env %>
     schema_search_path: 'logs,public,idp,system_tables,fraudops,marts,qa_marts,fcms'
     migrations_paths: db/data_warehouse_migrate
-  analytics_zetl:
-    <<: *defaults
-    database: identity_reporting_rails_analytics_zetl_<%= Rails.env %>
-    schema_search_path: 'public'
 
 test:
   primary: &test
@@ -138,14 +134,4 @@ production:
     password: "<%= Identity::Hostdata.config.redshift_password %>"
     encoding: utf8
     migrations_paths: db/data_warehouse_migrate
-    schema_dump: false
-  analytics_zetl:
-    adapter: redshift
-    host: <%= URI.parse("redshift://#{Identity::Hostdata.config.redshift_host}").host %>
-    port: 5439
-    pool: 10
-    database: "<%= Identity::Hostdata.config.redshift_zetl_database_name %>"
-    username: "<%= Identity::Hostdata.config.redshift_username %>"
-    password: "<%= Identity::Hostdata.config.redshift_password %>"
-    encoding: utf8
     schema_dump: false

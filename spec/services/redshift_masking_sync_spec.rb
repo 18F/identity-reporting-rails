@@ -729,7 +729,7 @@ RSpec.describe RedshiftMasking do
 
   describe RedshiftMaskingZetlSync do
     it_behaves_like 'a redshift masking sync',
-                    connection_class: AnalyticsZetlApplicationRecord,
+                    connection_class: RedshiftMaskingZetlSync::ZetlConnection,
                     db_section: 'analytics_zetl'
   end
 end
