@@ -351,5 +351,21 @@ databases:
   analytics_zetl:
     user_groups: []
     lambda_users: []
-    system_users: []
+    system_users:
+      - user_name: marts
+        secret_id: "redshift/%{env_name}-analytics-dbt-marts"
+        feature_flag: dbt_enabled
+        schemas:
+          - schema_name: public
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
+      - user_name: qa_marts
+        secret_id: "redshift/%{env_name}-analytics-dbt-qa_marts"
+        feature_flag: dbt_enabled
+        schemas:
+          - schema_name: public
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
     user_roles: []
