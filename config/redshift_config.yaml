@@ -347,10 +347,7 @@ databases:
           - quicksight_connector
         feature_flag: redshift_quicksight_connector_enabled
 
-  # Zero-ETL replica: read-only, no schema/table access is granted to any user
-  # or group. superuser/rdsdb are managed outside this job (see UserSyncConfig
-  # and RedshiftSync#current_users' excluded_users list), so they are
-  # unaffected by these being empty.
+  # Zero-ETL replica: read-only, no schema/table access is granted to any user or group. 
   analytics_zetl:
     user_groups: []
     lambda_users: []
