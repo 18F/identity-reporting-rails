@@ -10,9 +10,9 @@ RSpec.describe RedshiftSyncJob, type: :job do
 
   before do
     allow(RedshiftSync).to receive(:new).
-      with(database: DataWarehouseApplicationRecord).and_return(dw_sync)
+      with(database: 'analytics').and_return(dw_sync)
     allow(RedshiftSync).to receive(:new).
-      with(database: AnalyticsZetlApplicationRecord).and_return(zetl_sync)
+      with(database: 'analytics_zetl').and_return(zetl_sync)
     allow(IdentityJobLogSubscriber).to receive(:new).and_return(job_log_subscriber)
   end
 
@@ -34,7 +34,7 @@ RSpec.describe RedshiftSyncJob, type: :job do
         expect(logger).to receive(:info).with(
           {
             name: 'RedshiftSyncJob',
-            database: 'data_warehouse',
+            database: 'analytics',
             success: true,
           }.to_json,
         )
@@ -68,6 +68,7 @@ RSpec.describe RedshiftSyncJob, type: :job do
         expect(logger).to receive(:error).with(
           {
             name: 'RedshiftSyncJob',
+            database: 'analytics',
             error: error_message,
           }.to_json,
         )
@@ -97,6 +98,17 @@ RSpec.describe RedshiftSyncJob, type: :job do
       end
 
       it 're-raises the error' do
+        expect { subject.perform }.to raise_error(StandardError, error_message)
+      end
+
+      it 'logs the error against the database that failed' do
+        expect(logger).to receive(:error).with(
+          {
+            name: 'RedshiftSyncJob',
+            database: 'analytics_zetl',
+            error: error_message,
+          }.to_json,
+        )
         expect { subject.perform }.to raise_error(StandardError, error_message)
       end
     end

@@ -11,6 +11,8 @@ require_relative '../../config/environment'
 class RedshiftSync
   include UserSyncConfig
 
+  attr_reader :database
+
   def initialize(database: String)
     @database = database
   end
@@ -18,36 +20,38 @@ class RedshiftSync
   def sync
     Rails.logger.info('Starting Redshift user sync')
 
-    lambda_users.each do |lambda_user|
-      create_lambda_user(lambda_user['user_name'], lambda_user['schemas'])
-    end
-
-    system_users.each do |system_user|
-      if feature_enabled?(system_user['feature_flag'])
-        create_system_user(
-          system_user['user_name'],
-          system_user['schemas'],
-          system_user['secret_id'],
-          system_user['syslog_access'],
-        )
+    with_target_database_connection do
+      lambda_users.each do |lambda_user|
+        create_lambda_user(lambda_user['user_name'], lambda_user['schemas'])
       end
-    end
 
-    user_groups.each do |user_group|
-      create_user_group(user_group)
-    end
+      system_users.each do |system_user|
+        if feature_enabled?(system_user['feature_flag'])
+          create_system_user(
+            system_user['user_name'],
+            system_user['schemas'],
+            system_user['secret_id'],
+            system_user['syslog_access'],
+          )
+        end
+      end
 
-    drop_users
-    new_users = create_users
+      user_groups.each do |user_group|
+        create_user_group(user_group)
+      end
 
-    user_groups.each do |user_group|
-      sync_user_group(user_group)
-    end
+      drop_users
+      new_users = create_users
 
-    apply_masking_for_new_users(new_users) if new_users.any? && data_warehouse_database?
+      user_groups.each do |user_group|
+        sync_user_group(user_group)
+      end
 
-    user_roles.each do |user_role|
-      create_user_role(user_role) if feature_enabled?(user_role['feature_flag'])
+      apply_masking_for_new_users(new_users) if new_users.any? && analytics_database?
+
+      user_roles.each do |user_role|
+        create_user_role(user_role) if feature_enabled?(user_role['feature_flag'])
+      end
     end
 
     Rails.logger.info('Redshift user sync completed successfully')
@@ -95,6 +99,22 @@ class RedshiftSync
 
   def connection
     @connection ||= DataWarehouseApplicationRecord.connection
+  end
+
+  def analytics_database?
+    database == 'analytics'
+  end
+
+  def with_target_database_connection
+    return yield if analytics_database?
+
+    original_config = DataWarehouseApplicationRecord.connection_db_config.configuration_hash
+    scoped_config = original_config.merge(database: database)
+
+    DataWarehouseApplicationRecord.establish_connection(scoped_config)
+    yield
+  ensure
+    DataWarehouseApplicationRecord.establish_connection(original_config) unless analytics_database?
   end
 
   def database_config
@@ -149,6 +169,7 @@ class RedshiftSync
       {
         name: 'RedshiftSync',
         error: 'SQL execution failed',
+        database: database,
         message: e.message,
         failed_sql: redact_secrets(sql),
       }.to_json,

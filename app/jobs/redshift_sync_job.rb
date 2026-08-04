@@ -13,6 +13,7 @@ class RedshiftSyncJob < ApplicationJob
 
   def perform
     DATABASES.each do |database|
+      @current_database = database
       RedshiftSync.new(database: database).sync
 
       logger.info(
@@ -27,7 +28,7 @@ class RedshiftSyncJob < ApplicationJob
     logger.error(
       {
         name: 'RedshiftSyncJob',
-        database: database,
+        database: @current_database,
         error: e.message,
       }.to_json,
     )

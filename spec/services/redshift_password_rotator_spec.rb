@@ -7,7 +7,7 @@ RSpec.describe RedshiftPasswordRotator do
   let(:test_redshift_config) do
     {
       'databases' => {
-        'data_warehouse' => {
+        'analytics' => {
           'system_users' => [
             {
               'user_name' => 'security_audit',
@@ -211,7 +211,7 @@ RSpec.describe RedshiftPasswordRotator do
 
     it 'warns and does nothing when there are no matching users' do
       allow(rotator).to receive(:redshift_config).and_return(
-        'databases' => { 'data_warehouse' => { 'system_users' => [] } },
+        'databases' => { 'analytics' => { 'system_users' => [] } },
       )
 
       expect(rotator).not_to receive(:rotate_user_password)

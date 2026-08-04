@@ -115,7 +115,7 @@ class RedshiftPasswordRotator
   end
 
   def system_users
-    redshift_config['databases']['data_warehouse']['system_users'].map do |user|
+    redshift_config['databases']['analytics']['system_users'].map do |user|
       interpolate_config_hash(user)
     end
   end

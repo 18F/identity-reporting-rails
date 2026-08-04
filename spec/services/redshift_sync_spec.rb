@@ -12,7 +12,7 @@ RSpec.describe RedshiftSync do
                       'dwadminnonprod'],
       },
       'databases' => {
-        'data_warehouse' => {
+        'analytics' => {
           'user_groups' => [
             {
               'name' => 'lg_users',
@@ -84,11 +84,10 @@ RSpec.describe RedshiftSync do
     TERRAFORM
   end
 
-  subject(:sync) { described_class.new }
+  subject(:sync) { described_class.new(database: 'analytics') }
 
   before do
     allow(sync).to receive(:redshift_config).and_return(test_redshift_config)
-    allow(sync).to receive(:database_key).and_return('data_warehouse')
     allow(sync).to receive(:users_yaml).and_return(test_users_yaml)
     allow(sync).to receive(:config_file).and_return(terraform_config)
     allow(sync).to receive(:connection).and_return(mock_connection)
@@ -313,6 +312,51 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe '#with_target_database_connection' do
+    context 'when syncing the analytics database' do
+      it 'yields without establishing a new connection' do
+        expect(DataWarehouseApplicationRecord).not_to receive(:establish_connection)
+
+        expect { |b| sync.send(:with_target_database_connection, &b) }.to yield_control
+      end
+    end
+
+    context 'when syncing the analytics_zetl database' do
+      subject(:sync) { described_class.new(database: 'analytics_zetl') }
+
+      let(:original_db_config) do
+        instance_double(
+          ActiveRecord::DatabaseConfigurations::HashConfig,
+          configuration_hash: { adapter: 'redshift', database: 'analytics', host: 'redshift-host' },
+        )
+      end
+
+      before do
+        allow(DataWarehouseApplicationRecord).to receive(:connection_db_config).
+          and_return(original_db_config)
+        allow(DataWarehouseApplicationRecord).to receive(:establish_connection)
+      end
+
+      it 'establishes a connection scoped to the target database name, then restores it' do
+        expect(DataWarehouseApplicationRecord).to receive(:establish_connection).
+          with(hash_including(database: 'analytics_zetl')).ordered
+        expect(DataWarehouseApplicationRecord).to receive(:establish_connection).
+          with(original_db_config.configuration_hash).ordered
+
+        sync.send(:with_target_database_connection) {}
+      end
+
+      it 'restores the original connection even if the block raises' do
+        expect(DataWarehouseApplicationRecord).to receive(:establish_connection).
+          with(original_db_config.configuration_hash)
+
+        expect do
+          sync.send(:with_target_database_connection) { raise 'boom' }
+        end.to raise_error('boom')
+      end
+    end
+  end
+
   describe '#build_drop_user_sql' do
     it 'revokes on the actual connected database rather than a hardcoded name' do
       allow(mock_connection).to receive(:current_database).and_return('analytics_zetl')
@@ -511,16 +555,17 @@ RSpec.describe RedshiftSync do
       end
     end
 
-    context 'when syncing a database other than data_warehouse' do
+    context 'when syncing a database other than analytics' do
+      subject(:sync) { described_class.new(database: 'analytics_zetl') }
       let(:new_users) { ['IAM:john.doe'] }
 
       before do
-        allow(sync).to receive(:database_key).and_return('analytics_zetl')
-        data_warehouse_config = test_redshift_config['databases']['data_warehouse']
+        analytics_config = test_redshift_config['databases']['analytics']
         zetl_config = test_redshift_config.deep_merge(
-          'databases' => { 'analytics_zetl' => data_warehouse_config },
+          'databases' => { 'analytics_zetl' => analytics_config },
         )
         allow(sync).to receive(:redshift_config).and_return(zetl_config)
+        allow(sync).to receive(:with_target_database_connection).and_yield
         allow(sync).to receive(:create_users).and_return(new_users)
       end
 
@@ -570,7 +615,7 @@ RSpec.describe RedshiftSync do
           {
             'enabled_aws_groups' => { 'sandbox' => ['dwuser'] },
             'databases' => {
-              'data_warehouse' => {
+              'analytics' => {
                 'user_groups' => [],
                 'lambda_users' => [],
                 'system_users' => [],
@@ -606,7 +651,7 @@ RSpec.describe RedshiftSync do
 
       before do
         gated_config = test_redshift_config.deep_merge(
-          'databases' => { 'data_warehouse' => { 'user_roles' => gated_roles } },
+          'databases' => { 'analytics' => { 'user_roles' => gated_roles } },
         )
         allow(sync).to receive(:redshift_config).and_return(gated_config)
         allow(sync).to receive(:create_lambda_user)
