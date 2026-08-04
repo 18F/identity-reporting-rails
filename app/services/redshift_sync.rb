@@ -11,7 +11,7 @@ require_relative '../../config/environment'
 class RedshiftSync
   include UserSyncConfig
 
-  def initialize(database: DataWarehouseApplicationRecord)
+  def initialize(database: String)
     @database = database
   end
 
@@ -94,19 +94,11 @@ class RedshiftSync
   end
 
   def connection
-    @connection ||= @database.connection
-  end
-
-  def database_key
-    @database_key ||= @database.connection_db_config.name.to_s
+    @connection ||= DataWarehouseApplicationRecord.connection
   end
 
   def database_config
-    redshift_config['databases'].fetch(database_key)
-  end
-
-  def data_warehouse_database?
-    database_key == 'data_warehouse'
+    redshift_config['databases'].fetch(database)
   end
 
   def secrets_manager_client

@@ -9,7 +9,7 @@ class RedshiftSyncJob < ApplicationJob
     perform_limit: 1,
   )
 
-  DATABASES = [DataWarehouseApplicationRecord, AnalyticsZetlApplicationRecord].freeze
+  DATABASES = ['analytics', 'analytics_zetl'].freeze
 
   def perform
     DATABASES.each do |database|
@@ -18,7 +18,7 @@ class RedshiftSyncJob < ApplicationJob
       logger.info(
         {
           name: 'RedshiftSyncJob',
-          database: database.connection_db_config.name.to_s,
+          database: database,
           success: true,
         }.to_json,
       )
@@ -27,6 +27,7 @@ class RedshiftSyncJob < ApplicationJob
     logger.error(
       {
         name: 'RedshiftSyncJob',
+        database: database,
         error: e.message,
       }.to_json,
     )
