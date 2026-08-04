@@ -17,7 +17,7 @@ class RedshiftSync
   end
 
   def sync
-    Rails.logger.info('Starting Redshift user sync')
+    Rails.logger.info("Starting Redshift user sync for database=#{database}")
 
     with_target_database_connection do
       lambda_users.each do |lambda_user|
@@ -105,12 +105,16 @@ class RedshiftSync
   end
 
   def with_target_database_connection
-    return yield if analytics_database?
+    if analytics_database?
+      Rails.logger.info("Connected to Redshift database=#{connection.current_database}")
+      return yield
+    end
 
     original_config = DataWarehouseApplicationRecord.connection_db_config.configuration_hash
     scoped_config = original_config.merge(database: database)
 
     DataWarehouseApplicationRecord.establish_connection(scoped_config)
+    Rails.logger.info("Connected to Redshift database=#{connection.current_database}")
     yield
   ensure
     DataWarehouseApplicationRecord.establish_connection(original_config) unless analytics_database?

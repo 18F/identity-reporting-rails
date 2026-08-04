@@ -94,6 +94,7 @@ RSpec.describe RedshiftSync do
     allow(sync).to receive(:secrets_manager_client).and_return(secrets_manager_client)
     allow(Identity::Hostdata).to receive(:env).and_return('testenv')
     allow(mock_connection).to receive(:execute).and_return(double(any?: false, to_a: [], map: []))
+    allow(mock_connection).to receive(:current_database).and_return('analytics')
     allow(Rails.logger).to receive(:info)
     allow(Rails.logger).to receive(:error)
   end
