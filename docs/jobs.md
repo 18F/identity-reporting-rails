@@ -16,13 +16,7 @@ belong to) stays in `identity-devops`.
   - `config/redshift_config.yaml` — single source of truth for the DW role
     model shared by both syncs: `enabled_aws_groups` (which DW groups are active
     per environment), `aws_role_map` (`aws_group` → normalized DW role), and
-    `role_priority` (which role wins when a user has several). These three
-    keys stay top-level and are shared across every Redshift database. Each
-    database's own grants (`user_groups`, `lambda_users`, `system_users`,
-    `user_roles`) live under `databases.<database_key>.*`, e.g.
-    `databases.analytics.user_groups` / `databases.analytics_zetl.user_groups`.
-    The `databases.*` key itself doubles as the physical Redshift database
-    name to connect to (see below).
+    `role_priority` (which role wins when a user has several).
   - `config/quicksight_config.yaml` — QuickSight-specific mappings only
     (`quicksight_aws_role`, `quicksight_group`, `protected_accounts`,
     `non_human_accounts`, `default_email_domain`).
@@ -36,31 +30,6 @@ belong to) stays in `identity-devops`.
 
 - Service: `app/services/redshift_sync.rb`
 - Job: `app/jobs/redshift_sync_job.rb` (`RedshiftSyncJob`, every 15 minutes)
-
-`RedshiftSync.new(database:)` accepts a plain database name string (`'analytics'`
-or `'analytics_zetl'`) — both the lookup key into `redshift_config.yaml`'s
-`databases.*` section and the actual Redshift database name to connect to.
-All databases share the single `DataWarehouseApplicationRecord` connection —
-there's no separate AR class or `database.yml` role per database. For the
-primary `'analytics'` database, `RedshiftSync` uses that connection as-is.
-For any other database (currently just `'analytics_zetl'`), it temporarily
-re-establishes `DataWarehouseApplicationRecord`'s connection pool against that
-database name (same host/credentials, just a different `database:`), runs the
-sync, then restores the original connection — this is necessary because
-Redshift has no cross-database DDL/GRANT syntax, so schema/table grants must
-run on a connection actually attached to the target database. Cluster-wide
-catalogs (`pg_user`, `pg_group`, `svv_roles`, `svv_user_grants`) are unaffected
-either way since Redshift shares those across databases on the same cluster.
-
-`RedshiftSyncJob#perform` runs the sync against `'analytics'` then
-`'analytics_zetl'`, in that order, on the existing single 15-minute cron entry.
-If the first database's sync fails, the second is not attempted that run — the
-job re-raises immediately, same fail-fast behavior as before this was extended
-to two databases.
-
-Masking policy sync (`RedshiftMaskingSync`, triggered after new users are
-created) only runs for the `'analytics'` pass — it is skipped entirely when
-syncing `'analytics_zetl'`.
 
 ### QuickSight sync
 
