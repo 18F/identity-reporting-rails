@@ -3,7 +3,6 @@
 
 require 'yaml'
 require 'aws-sdk-secretsmanager'
-require 'optparse'
 require 'digest'
 require 'json'
 
@@ -13,7 +12,7 @@ class RedshiftSync
 
   attr_reader :database
 
-  def initialize(database: String)
+  def initialize(database: 'analytics')
     @database = database
   end
 
