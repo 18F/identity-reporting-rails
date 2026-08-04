@@ -2,7 +2,12 @@
 
 require 'yaml'
 
-# Service for syncing Redshift masking policies based on configuration files
+# Service for syncing Redshift masking policies based on configuration files.
+#
+# All databases in the cluster are synced through a single data_warehouse
+# connection: masking policies are created once and attached cross-database by
+# name (database.policy_name ON database.schema.table), driven by the db groups
+# in mask.yaml.
 class RedshiftMaskingSync
   DATA_CONTROLS_PATH = IdentityConfig.local_devops_path(
     :identity_devops,
@@ -20,26 +25,11 @@ class RedshiftMaskingSync
 
   private
 
-  # Subclasses override this to target a different database section.
-  def database_name
-    'analytics'
-  end
-
-  def connection_class
-    DataWarehouseApplicationRecord
-  end
-
   def sync_masking_policies(data_controls, users_yaml, user_filter: nil)
     env_name = Identity::Hostdata.env
 
-    config = RedshiftMasking::Configuration.new(
-      data_controls, users_yaml,
-      env_name: env_name, database_name: database_name
-    )
-    db_queries = RedshiftMasking::DatabaseQueries.new(
-      Rails.logger,
-      connection_class: connection_class,
-    )
+    config = RedshiftMasking::Configuration.new(data_controls, users_yaml, env_name: env_name)
+    db_queries = RedshiftMasking::DatabaseQueries.new(Rails.logger)
 
     users = db_queries.fetch_users
     db_user_case_map = users.index_by { |u| u.upcase }
@@ -61,7 +51,7 @@ class RedshiftMaskingSync
     )
     policy_builder = RedshiftMasking::PolicyBuilder.new(config, user_resolver)
     drift_detector = RedshiftMasking::DriftDetector.new
-    sql_executor = RedshiftMasking::SqlExecutor.new(config, connection_class: connection_class)
+    sql_executor = RedshiftMasking::SqlExecutor.new(config)
 
     sql_executor.create_masking_policies(column_types)
 
@@ -80,8 +70,8 @@ class RedshiftMaskingSync
   end
 
   def extract_columns(config)
-    config.columns_config.flat_map do |entry|
-      entry.keys.filter_map { |id| RedshiftMasking::Column.parse(id) }
+    config.each_column.filter_map do |database, column_id, _permissions|
+      RedshiftMasking::Column.parse(column_id, database: database)
     end
   end
 end

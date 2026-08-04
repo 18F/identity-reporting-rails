@@ -7,6 +7,7 @@ RSpec.describe RedshiftMasking do
     let(:policy) do
       described_class.new(
         policy_name: 'mask_public_users_ssn',
+        database: 'analytics',
         schema: 'public',
         table: 'users',
         column: 'ssn',
@@ -17,25 +18,26 @@ RSpec.describe RedshiftMasking do
 
     describe '#key' do
       it 'combines column_id and upper-cased grantee' do
-        expect(policy.key).to eq('public.users.ssn::IAM:ALICE')
+        expect(policy.key).to eq('analytics.public.users.ssn::IAM:ALICE')
       end
 
       it 'converts grantee to uppercase in key' do
         policy_lowercase = described_class.new(
           policy_name: 'test',
+          database: 'analytics',
           schema: 's',
           table: 't',
           column: 'c',
           grantee: 'iam:bob',
           priority: 100,
         )
-        expect(policy_lowercase.key).to eq('s.t.c::IAM:BOB')
+        expect(policy_lowercase.key).to eq('analytics.s.t.c::IAM:BOB')
       end
     end
 
     describe '#column_id' do
-      it 'returns schema.table.column' do
-        expect(policy.column_id).to eq('public.users.ssn')
+      it 'returns database.schema.table.column' do
+        expect(policy.column_id).to eq('analytics.public.users.ssn')
       end
     end
 
@@ -43,6 +45,7 @@ RSpec.describe RedshiftMasking do
       let(:matching_policy) do
         described_class.new(
           policy_name: 'mask_public_users_ssn',
+          database: 'analytics',
           schema: 'public',
           table: 'users',
           column: 'ssn',
@@ -54,6 +57,7 @@ RSpec.describe RedshiftMasking do
       let(:different_name) do
         described_class.new(
           policy_name: 'unmask_public_users_ssn',
+          database: 'analytics',
           schema: 'public',
           table: 'users',
           column: 'ssn',
@@ -65,6 +69,7 @@ RSpec.describe RedshiftMasking do
       let(:different_priority) do
         described_class.new(
           policy_name: 'mask_public_users_ssn',
+          database: 'analytics',
           schema: 'public',
           table: 'users',
           column: 'ssn',
@@ -91,6 +96,7 @@ RSpec.describe RedshiftMasking do
         expect(policy.to_h).to eq(
           {
             policy_name: 'mask_public_users_ssn',
+            database: 'analytics',
             schema: 'public',
             table: 'users',
             column: 'ssn',
@@ -104,59 +110,77 @@ RSpec.describe RedshiftMasking do
 
   describe RedshiftMasking::Column do
     describe '.parse' do
-      it 'parses valid schema.table.column identifier' do
-        column = described_class.parse('public.users.ssn')
+      it 'parses valid schema.table.column identifier scoped to a database' do
+        column = described_class.parse('public.users.ssn', database: 'analytics')
+        expect(column.database).to eq('analytics')
         expect(column.schema).to eq('public')
         expect(column.table).to eq('users')
         expect(column.column).to eq('ssn')
       end
 
       it 'returns nil for invalid identifier with fewer than 3 parts' do
-        expect(described_class.parse('public.users')).to be_nil
+        expect(described_class.parse('public.users', database: 'analytics')).to be_nil
       end
 
       it 'returns nil for invalid identifier with more than 3 parts' do
-        expect(described_class.parse('catalog.public.users.ssn')).to be_nil
+        expect(
+          described_class.parse('catalog.public.users.ssn', database: 'analytics'),
+        ).to be_nil
       end
     end
 
     describe '#id' do
+      it 'returns database.schema.table.column' do
+        column = described_class.new(
+          database: 'analytics', schema: 'public', table: 'users', column: 'email'
+        )
+        expect(column.id).to eq('analytics.public.users.email')
+      end
+    end
+
+    describe '#unqualified_id' do
       it 'returns schema.table.column' do
-        column = described_class.new(schema: 'public', table: 'users', column: 'email')
-        expect(column.id).to eq('public.users.email')
+        column = described_class.new(
+          database: 'analytics', schema: 'public', table: 'users', column: 'email'
+        )
+        expect(column.unqualified_id).to eq('public.users.email')
       end
     end
 
     describe '#to_h' do
       it 'returns hash representation' do
-        column = described_class.new(schema: 'public', table: 'users', column: 'email')
-        expect(column.to_h).to eq({ schema: 'public', table: 'users', column: 'email' })
+        column = described_class.new(
+          database: 'analytics', schema: 'public', table: 'users', column: 'email'
+        )
+        expect(column.to_h).to eq(
+          { database: 'analytics', schema: 'public', table: 'users', column: 'email' },
+        )
       end
     end
   end
 
   describe RedshiftMasking::DatabaseQueries do
-    subject(:db_queries) { described_class.new(Rails.logger, connection_class: connection_class) }
+    subject(:db_queries) { described_class.new(Rails.logger) }
 
-    let(:connection_class) { class_double(DataWarehouseApplicationRecord) }
     let(:connection) { instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter) }
 
     before do
-      allow(connection_class).to receive(:connection).and_return(connection)
+      allow(DataWarehouseApplicationRecord).to receive(:connection).and_return(connection)
       allow(connection).to receive(:quote) { |v| "'#{v}'" }
     end
 
     describe '#fetch_column_types' do
-      it 'preserves varchar length from information_schema for policy compatibility' do
+      it 'preserves varchar length from svv_all_columns for policy compatibility' do
         columns = [RedshiftMasking::Column.new(
-          schema: 'idp', table: 'users',
+          database: 'analytics', schema: 'idp', table: 'users',
           column: 'otp_fingerprint'
         )]
 
         allow(connection).to receive(:execute).and_return(
           [
             {
-              'table_schema' => 'idp',
+              'database_name' => 'analytics',
+              'schema_name' => 'idp',
               'table_name' => 'users',
               'column_name' => 'otp_fingerprint',
               'data_type' => 'character varying',
@@ -166,17 +190,20 @@ RSpec.describe RedshiftMasking do
         )
 
         expect(db_queries.fetch_column_types(columns)).to eq(
-          'idp.users.otp_fingerprint' => 'VARCHAR(65535)',
+          'analytics.idp.users.otp_fingerprint' => 'VARCHAR(65535)',
         )
       end
 
       it 'maps text columns to VARCHAR(MAX)' do
-        columns = [RedshiftMasking::Column.new(schema: 'idp', table: 'users', column: 'notes')]
+        columns = [RedshiftMasking::Column.new(
+          database: 'analytics', schema: 'idp', table: 'users', column: 'notes'
+        )]
 
         allow(connection).to receive(:execute).and_return(
           [
             {
-              'table_schema' => 'idp',
+              'database_name' => 'analytics',
+              'schema_name' => 'idp',
               'table_name' => 'users',
               'column_name' => 'notes',
               'data_type' => 'text',
@@ -186,7 +213,22 @@ RSpec.describe RedshiftMasking do
         )
 
         expect(db_queries.fetch_column_types(columns)).to eq(
-          'idp.users.notes' => 'VARCHAR(MAX)',
+          'analytics.idp.users.notes' => 'VARCHAR(MAX)',
+        )
+      end
+
+      it 'queries svv_all_columns scoped by database_name' do
+        columns = [RedshiftMasking::Column.new(
+          database: 'analytics_zetl', schema: 'public', table: 'users', column: 'ssn'
+        )]
+
+        allow(connection).to receive(:execute).and_return([])
+
+        db_queries.fetch_column_types(columns)
+
+        expect(connection).to have_received(:execute).with(
+          a_string_matching(/FROM svv_all_columns/).
+            and(a_string_matching(/database_name = 'analytics_zetl'/)),
         )
       end
     end
@@ -198,6 +240,7 @@ RSpec.describe RedshiftMasking do
     let(:expected_policy) do
       RedshiftMasking::PolicyAttachment.new(
         policy_name: 'mask_public_users_ssn',
+        database: 'analytics',
         schema: 'public',
         table: 'users',
         column: 'ssn',
@@ -209,6 +252,7 @@ RSpec.describe RedshiftMasking do
     let(:actual_policy) do
       RedshiftMasking::PolicyAttachment.new(
         policy_name: 'mask_public_users_ssn',
+        database: 'analytics',
         schema: 'public',
         table: 'users',
         column: 'ssn',
@@ -241,7 +285,7 @@ RSpec.describe RedshiftMasking do
         context 'with silent: false (default)' do
           it 'logs warning for missing policy' do
             expect(Rails.logger).to receive(:warn).with(
-              'MISSING: IAM:alice on public.users.ssn',
+              'MISSING: IAM:alice on analytics.public.users.ssn',
             )
             detector.detect([expected_policy], [], silent: false)
           end
@@ -269,7 +313,7 @@ RSpec.describe RedshiftMasking do
         context 'with silent: false (default)' do
           it 'logs warning for extra policy' do
             expect(Rails.logger).to receive(:warn).with(
-              'EXTRA: IAM:alice on public.users.ssn',
+              'EXTRA: IAM:alice on analytics.public.users.ssn',
             )
             detector.detect([], [actual_policy], silent: false)
           end
@@ -292,6 +336,7 @@ RSpec.describe RedshiftMasking do
         let(:mismatched_actual) do
           RedshiftMasking::PolicyAttachment.new(
             policy_name: 'unmask_public_users_ssn',
+            database: 'analytics',
             schema: 'public',
             table: 'users',
             column: 'ssn',
@@ -310,7 +355,7 @@ RSpec.describe RedshiftMasking do
         context 'with silent: false (default)' do
           it 'logs warning for mismatched policy' do
             expect(Rails.logger).to receive(:warn).with(
-              'MISMATCH: IAM:alice on public.users.ssn ' \
+              'MISMATCH: IAM:alice on analytics.public.users.ssn ' \
               '(Expected mask_public_users_ssn Priority 100)',
             )
             detector.detect([expected_policy], [mismatched_actual], silent: false)
@@ -334,6 +379,7 @@ RSpec.describe RedshiftMasking do
         let(:extra_policy) do
           RedshiftMasking::PolicyAttachment.new(
             policy_name: 'mask_public_users_email',
+            database: 'analytics',
             schema: 'public',
             table: 'users',
             column: 'email',
@@ -345,6 +391,7 @@ RSpec.describe RedshiftMasking do
         let(:missing_policy) do
           RedshiftMasking::PolicyAttachment.new(
             policy_name: 'mask_public_users_phone',
+            database: 'analytics',
             schema: 'public',
             table: 'users',
             column: 'phone',
@@ -356,6 +403,7 @@ RSpec.describe RedshiftMasking do
         let(:mismatched_expected) do
           RedshiftMasking::PolicyAttachment.new(
             policy_name: 'unmask_public_users_address',
+            database: 'analytics',
             schema: 'public',
             table: 'users',
             column: 'address',
@@ -367,6 +415,7 @@ RSpec.describe RedshiftMasking do
         let(:mismatched_actual) do
           RedshiftMasking::PolicyAttachment.new(
             policy_name: 'mask_public_users_address',
+            database: 'analytics',
             schema: 'public',
             table: 'users',
             column: 'address',
@@ -441,6 +490,18 @@ RSpec.describe RedshiftMasking do
                 },
               ],
             },
+            {
+              'db' => 'analytics_zetl',
+              'tables' => [
+                {
+                  'public.users.email' => {
+                    'allowed' => [],
+                    'masked' => ['dwuser'],
+                    'denied' => [],
+                  },
+                },
+              ],
+            },
           ],
         },
       }
@@ -448,7 +509,7 @@ RSpec.describe RedshiftMasking do
 
     let(:users_yaml) { { 'alice' => { 'aws_groups' => ['engineers'] } } }
     let(:config) do
-      described_class.new(data_controls, users_yaml, env_name: 'test', database_name: 'analytics')
+      described_class.new(data_controls, users_yaml, env_name: 'test')
     end
 
     describe '#user_types' do
@@ -457,18 +518,30 @@ RSpec.describe RedshiftMasking do
       end
     end
 
-    describe '#columns_config' do
-      it 'returns the tables list for the configured database' do
-        expect(config.columns_config).to eq(
-          data_controls['masking_policies']['columns'].first['tables'],
+    describe '#databases' do
+      it 'returns every configured database name' do
+        expect(config.databases).to eq(['analytics', 'analytics_zetl'])
+      end
+    end
+
+    describe '#each_column' do
+      it 'yields [database, column_id, permissions] for every db group' do
+        yielded = config.each_column.to_a
+
+        expect(yielded).to contain_exactly(
+          [
+            'analytics', 'public.users.ssn',
+            { 'allowed' => ['dwadmin'], 'masked' => ['dwuser'], 'denied' => ['analyst'] }
+          ],
+          [
+            'analytics_zetl', 'public.users.email',
+            { 'allowed' => [], 'masked' => ['dwuser'], 'denied' => [] }
+          ],
         )
       end
 
-      it 'returns an empty list when the database has no columns entry' do
-        other = described_class.new(
-          data_controls, users_yaml, env_name: 'test', database_name: 'analytics_zetl'
-        )
-        expect(other.columns_config).to eq([])
+      it 'returns an Enumerator when called without a block' do
+        expect(config.each_column).to be_a(Enumerator)
       end
     end
 
@@ -552,22 +625,22 @@ RSpec.describe RedshiftMasking do
   end
 
   describe RedshiftMasking::SqlExecutor do
-    subject(:executor) { described_class.new(config, connection_class: connection_class) }
+    subject(:executor) { described_class.new(config) }
 
-    let(:connection_class) { class_double(DataWarehouseApplicationRecord) }
     let(:connection) { instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter) }
     let(:config) { instance_double(RedshiftMasking::Configuration) }
 
     before do
-      allow(connection_class).to receive(:connection).and_return(connection)
+      allow(DataWarehouseApplicationRecord).to receive(:connection).and_return(connection)
       allow(connection).to receive(:execute)
+      allow(connection).to receive(:quote_column_name) { |v| "\"#{v}\"" }
       allow(config).to receive(:policy_name) do |permission_type, column_id|
         "#{permission_type}_#{column_id.tr('.', '_')}"
       end
     end
 
     it 'uses a valid timestamp masked literal for TIMESTAMP columns' do
-      executor.create_masking_policies('idp.events.created_at' => 'TIMESTAMP')
+      executor.create_masking_policies('analytics.idp.events.created_at' => 'TIMESTAMP')
 
       expect(connection).to have_received(:execute).with(
         a_string_including("'1970-01-01 00:00:00'::TIMESTAMP"),
@@ -575,7 +648,7 @@ RSpec.describe RedshiftMasking do
     end
 
     it 'uses a numeric masked literal for NUMERIC columns' do
-      executor.create_masking_policies('idp.events.count' => 'NUMERIC')
+      executor.create_masking_policies('analytics.idp.events.count' => 'NUMERIC')
 
       expect(connection).to have_received(:execute).with(
         a_string_including('USING (0::NUMERIC)'),
@@ -583,7 +656,7 @@ RSpec.describe RedshiftMasking do
     end
 
     it 'creates a policy for every permission type, including masked' do
-      executor.create_masking_policies('idp.users.ssn' => 'VARCHAR(65535)')
+      executor.create_masking_policies('analytics.idp.users.ssn' => 'VARCHAR(65535)')
 
       expect(connection).to have_received(:execute).with(
         a_string_matching(/CREATE MASKING POLICY allowed_idp_users_ssn/).
@@ -591,10 +664,40 @@ RSpec.describe RedshiftMasking do
           and(a_string_matching(/CREATE MASKING POLICY masked_idp_users_ssn/)),
       )
     end
+
+    it 'creates policies once for a column shared across databases (db-less names)' do
+      executor.create_masking_policies(
+        'analytics.idp.users.ssn' => 'VARCHAR(65535)',
+        'analytics_zetl.idp.users.ssn' => 'VARCHAR(65535)',
+      )
+
+      create_sql = nil
+      expect(connection).to have_received(:execute) { |sql| create_sql = sql }
+      expect(create_sql.scan(/CREATE MASKING POLICY masked_idp_users_ssn/).size).to eq(1)
+      expect(create_sql).not_to include('analytics.masked')
+    end
+
+    it 'attaches cross-database using database-qualified policy and relation' do
+      policy = RedshiftMasking::PolicyAttachment.new(
+        policy_name: 'mask_public_users_email',
+        database: 'analytics_zetl',
+        schema: 'public',
+        table: 'users',
+        column: 'email',
+        grantee: 'IAM:alice',
+        priority: 100,
+      )
+
+      executor.apply_corrections(missing: [policy], extra: [], mismatched: [])
+
+      expect(connection).to have_received(:execute).with(
+        a_string_matching(/ATTACH MASKING POLICY analytics_zetl\.mask_public_users_email/).
+          and(a_string_matching(/ON analytics_zetl\.public\.users \(email\)/)),
+      )
+    end
   end
 
-  # zetl sync processes masking identically to the base sync.
-  shared_examples 'a redshift masking sync' do |connection_class:, db_section:|
+  describe RedshiftMaskingSync do
     subject(:service) { described_class.new }
 
     let(:data_controls) do
@@ -637,9 +740,6 @@ RSpec.describe RedshiftMasking do
 
     let(:users_yaml) { { 'users' => { 'alice' => { 'aws_groups' => ['dwadmin'] } } } }
 
-    # The column configured for the section under test.
-    let(:target_column) { db_section == 'analytics_zetl' ? 'zetl_secret' : 'dw_secret' }
-
     let(:connection) { instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter) }
     let(:executed_sql) { [] }
 
@@ -651,7 +751,8 @@ RSpec.describe RedshiftMasking do
       allow(File).to receive(:read).with(IdentityConfig.identity_devops_users_yaml_path).
         and_return(users_yaml.to_yaml)
 
-      allow(connection_class).to receive(:connection).and_return(connection)
+      # All databases are synced through the single data_warehouse connection.
+      allow(DataWarehouseApplicationRecord).to receive(:connection).and_return(connection)
       allow(connection).to receive(:quote) { |v| "'#{v}'" }
       allow(connection).to receive(:quote_column_name) { |v| "\"#{v}\"" }
 
@@ -660,14 +761,21 @@ RSpec.describe RedshiftMasking do
         case sql
         when /FROM pg_user/
           [{ 'usename' => 'pii_reader' }, { 'usename' => 'dwadmin' }]
-        when /information_schema\.columns/
-          [{
-            'table_schema' => 'idp',
-            'table_name' => 'users',
-            'column_name' => target_column,
-            'data_type' => 'character varying',
-            'character_maximum_length' => 255,
-          }]
+        when /svv_all_columns/
+          [
+            {
+              'database_name' => 'analytics',
+              'schema_name' => 'idp', 'table_name' => 'users',
+              'column_name' => 'dw_secret',
+              'data_type' => 'character varying', 'character_maximum_length' => 255
+            },
+            {
+              'database_name' => 'analytics_zetl',
+              'schema_name' => 'idp', 'table_name' => 'users',
+              'column_name' => 'zetl_secret',
+              'data_type' => 'character varying', 'character_maximum_length' => 255
+            },
+          ]
         when /svv_attached_masking_policy/
           []
         else
@@ -676,39 +784,42 @@ RSpec.describe RedshiftMasking do
       end
     end
 
-    it 'queries against the expected connection class' do
+    it 'reads column metadata across databases with a single connection' do
       service.sync
 
-      expect(connection_class).to have_received(:connection).at_least(:once)
+      expect(DataWarehouseApplicationRecord).to have_received(:connection).at_least(:once)
+      column_sql = executed_sql.find { |s| s.include?('svv_all_columns') }
+      expect(column_sql).to include("database_name = 'analytics'").
+        and include("database_name = 'analytics_zetl'")
     end
 
-    it 'creates masking policies only for the configured db section columns' do
+    it 'creates policies (db-less names) for columns in every db group' do
       service.sync
 
       create_sql = executed_sql.find { |s| s.include?('CREATE MASKING POLICY') }
-      expect(create_sql).to include("mask_idp_users_#{target_column}")
-
-      other_column = db_section == 'analytics_zetl' ? 'dw_secret' : 'zetl_secret'
-      expect(create_sql).not_to include(other_column)
+      expect(create_sql).to include('mask_idp_users_dw_secret').
+        and include('mask_idp_users_zetl_secret')
     end
 
-    it 'attaches the expected policies to resolved users' do
+    it 'attaches policies cross-database with db-qualified names and relations' do
       service.sync
 
       attach_sql = executed_sql.select { |s| s.include?('ATTACH MASKING POLICY') }
 
       # No superuser in +allowed+, so this takes the public-baseline path:
       # PUBLIC is masked at priority 10, and the +allowed+ redshift_user
-      # (pii_reader) is unmasked at priority 300.
+      # (pii_reader) is unmasked at priority 300 — in each database.
       expect(attach_sql).to include(
-        a_string_matching(
-          /ATTACH MASKING POLICY mask_idp_users_#{target_column}.*PUBLIC.*PRIORITY 10/m,
-        ),
+        a_string_matching(/analytics\.mask_idp_users_dw_secret/).
+          and(a_string_matching(/ON analytics\.idp\.users/)).
+          and(a_string_matching(/PUBLIC/)).
+          and(a_string_matching(/PRIORITY 10/)),
       )
       expect(attach_sql).to include(
-        a_string_matching(
-          /ATTACH MASKING POLICY unmask_idp_users_#{target_column}.*"pii_reader".*PRIORITY 300/m,
-        ),
+        a_string_matching(/analytics_zetl\.unmask_idp_users_zetl_secret/).
+          and(a_string_matching(/ON analytics_zetl\.idp\.users/)).
+          and(a_string_matching(/"pii_reader"/)).
+          and(a_string_matching(/PRIORITY 300/)),
       )
     end
 
@@ -719,17 +830,5 @@ RSpec.describe RedshiftMasking do
 
       expect(Rails.logger).to have_received(:info).with('sync completed')
     end
-  end
-
-  describe RedshiftMaskingSync do
-    it_behaves_like 'a redshift masking sync',
-                    connection_class: DataWarehouseApplicationRecord,
-                    db_section: 'analytics'
-  end
-
-  describe RedshiftMaskingZetlSync do
-    it_behaves_like 'a redshift masking sync',
-                    connection_class: RedshiftMaskingZetlSync::ZetlConnection,
-                    db_section: 'analytics_zetl'
   end
 end

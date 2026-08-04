@@ -18,9 +18,8 @@ module RedshiftMasking
       /^(?:boolean|bool)/i => 'BOOLEAN',
     }.freeze
 
-    def initialize(logger, connection_class: DataWarehouseApplicationRecord)
+    def initialize(logger)
       @logger = logger
-      @connection_class = connection_class
     end
 
     def fetch_column_types(columns)
@@ -29,20 +28,23 @@ module RedshiftMasking
       logger.info("fetching data types for #{columns.size} columns")
 
       conditions = columns.map do |col|
-        "(table_schema = #{connection.quote(col.schema)} " \
+        "(database_name = #{connection.quote(col.database)} " \
+        "AND schema_name = #{connection.quote(col.schema)} " \
         "AND table_name = #{connection.quote(col.table)} " \
         "AND column_name = #{connection.quote(col.column)})"
       end.join("\n OR ")
 
       sql = <<~SQL
-        SELECT table_schema, table_name, column_name, data_type, character_maximum_length
-        FROM information_schema.columns
+        SELECT database_name, schema_name, table_name, column_name,
+               data_type, character_maximum_length
+        FROM svv_all_columns
         WHERE #{conditions}
       SQL
 
       # Safe: All values properly escaped using connection.quote()
       connection.execute(sql).to_a.each_with_object({}) do |row, hash|
-        key = "#{row['table_schema']}.#{row['table_name']}.#{row['column_name']}"
+        key = "#{row['database_name']}.#{row['schema_name']}." \
+              "#{row['table_name']}.#{row['column_name']}"
         hash[key] = normalize_data_type(
           row['data_type'],
           row['character_maximum_length']&.to_i,
@@ -52,7 +54,7 @@ module RedshiftMasking
 
     def fetch_existing_policies
       sql = <<~SQL
-        SELECT policy_name, schema_name, table_name,
+        SELECT policy_name, database_name, schema_name, table_name,
                JSON_EXTRACT_ARRAY_ELEMENT_TEXT(input_columns, 0) AS column_name,
                grantee, priority
         FROM svv_attached_masking_policy
@@ -61,6 +63,7 @@ module RedshiftMasking
       connection.execute(sql).to_a.map do |row|
         PolicyAttachment.new(
           policy_name: row['policy_name'],
+          database: row['database_name'],
           schema: row['schema_name'],
           table: row['table_name'],
           column: row['column_name'],
@@ -78,7 +81,7 @@ module RedshiftMasking
     private
 
     def connection
-      @connection ||= @connection_class.connection
+      @connection ||= DataWarehouseApplicationRecord.connection
     end
 
     # Normalize a Redshift data type to a standardized format

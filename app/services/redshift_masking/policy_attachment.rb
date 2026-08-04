@@ -3,10 +3,11 @@
 module RedshiftMasking
   # Represents a masking policy attachment to a database column for a specific grantee
   class PolicyAttachment
-    attr_reader :policy_name, :schema, :table, :column, :grantee, :priority
+    attr_reader :policy_name, :database, :schema, :table, :column, :grantee, :priority
 
-    def initialize(policy_name:, schema:, table:, column:, grantee:, priority:)
+    def initialize(policy_name:, database:, schema:, table:, column:, grantee:, priority:)
       @policy_name = policy_name
+      @database = database
       @schema = schema
       @table = table
       @column = column
@@ -18,8 +19,9 @@ module RedshiftMasking
       "#{column_id}::#{grantee.upcase}"
     end
 
+    # database.schema.table.column
     def column_id
-      "#{schema}.#{table}.#{column}"
+      "#{database}.#{schema}.#{table}.#{column}"
     end
 
     def matches?(other)
@@ -29,6 +31,7 @@ module RedshiftMasking
     def to_h
       {
         policy_name: policy_name,
+        database: database,
         schema: schema,
         table: table,
         column: column,

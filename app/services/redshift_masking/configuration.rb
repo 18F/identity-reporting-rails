@@ -18,13 +18,12 @@ module RedshiftMasking
 
     UNATTACHABLE_USER_TYPES = %w[superuser].freeze
 
-    attr_reader :data_controls, :users_yaml, :env_name, :database_name
+    attr_reader :data_controls, :users_yaml, :env_name
 
-    def initialize(data_controls, users_yaml, env_name: nil, database_name: nil)
+    def initialize(data_controls, users_yaml, env_name: nil)
       @data_controls = data_controls
       @users_yaml = users_yaml
       @env_name = env_name
-      @database_name = database_name
     end
 
     def masking_config
@@ -35,10 +34,24 @@ module RedshiftMasking
       masking_config['user_types']
     end
 
-    # Returns the +tables+ list +database_name+,or [] when database has no entry.
-    def columns_config
-      entry = (masking_config['columns'] || []).find { |group| group['db'] == database_name }
-      entry ? (entry['tables'] || []) : []
+    # Every configured database, e.g. ['analytics', 'analytics_zetl'].
+    def databases
+      (masking_config['columns'] || []).map { |group| group['db'] }
+    end
+
+    # Yields [database, column_id, permissions] for every configured column
+    # across all database groups. Returns an Enumerator without a block.
+    def each_column
+      return enum_for(:each_column) unless block_given?
+
+      (masking_config['columns'] || []).each do |group|
+        database = group['db']
+        (group['tables'] || []).each do |table_entry|
+          table_entry.each do |column_id, permissions|
+            yield database, column_id, permissions
+          end
+        end
+      end
     end
 
     def policy_config(permission_type)

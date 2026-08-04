@@ -9,19 +9,19 @@
       "file": "app/services/redshift_masking/database_queries.rb",
       "line": 41,
       "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
-      "code": "connection.execute(\"SELECT table_schema, table_name, column_name, data_type, character_maximum_length\\nFROM information_schema.columns\\nWHERE #{columns.map do\n \"(table_schema = #{connection.quote(col.schema)} AND table_name = #{connection.quote(col.table)} AND column_name = #{connection.quote(col.column)})\"\n end.join(\"\\n OR \")}\\n\")",
+      "code": "connection.execute(\"SELECT database_name, schema_name, table_name, column_name,\\n       data_type, character_maximum_length\\nFROM svv_all_columns\\nWHERE #{columns.map do\n \"(database_name = #{connection.quote(col.database)} AND schema_name = #{connection.quote(col.schema)} AND table_name = #{connection.quote(col.table)} AND column_name = #{connection.quote(col.column)})\"\n end.join(\"\\n OR \")}\\n\")",
       "render_path": null,
       "location": {
         "type": "method",
         "class": "RedshiftMasking::DatabaseQueries",
         "method": "fetch_column_types"
       },
-      "user_input": "columns.map do\n \"(table_schema = #{connection.quote(col.schema)} AND table_name = #{connection.quote(col.table)} AND column_name = #{connection.quote(col.column)})\"\n end.join(\"\\n OR \")",
+      "user_input": "columns.map do\n \"(database_name = #{connection.quote(col.database)} AND schema_name = #{connection.quote(col.schema)} AND table_name = #{connection.quote(col.table)} AND column_name = #{connection.quote(col.column)})\"\n end.join(\"\\n OR \")",
       "confidence": "Medium",
       "cwe_id": [
         89
       ],
-      "note": ""
+      "note": "All identifier values are escaped via connection.quote(), not raw user input"
     },
     {
       "warning_type": "SQL Injection",

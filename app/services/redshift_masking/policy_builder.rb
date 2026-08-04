@@ -12,16 +12,14 @@ module RedshiftMasking
     end
 
     def build_expected_state(column_types, db_users)
-      config.columns_config.flat_map do |entry|
-        entry.map do |column_id, permissions|
-          build_policies_for_column(column_id, permissions, column_types, db_users)
-        end
-      end.flatten
+      config.each_column.flat_map do |database, column_id, permissions|
+        build_policies_for_column(database, column_id, permissions, column_types, db_users)
+      end
     end
 
-    def build_policies_for_column(column_id, permissions, column_types, db_users)
-      column = Column.parse(column_id)
-      return [] unless column && column_types[column_id]
+    def build_policies_for_column(database, column_id, permissions, column_types, db_users)
+      column = Column.parse(column_id, database: database)
+      return [] unless column && column_types[column.id]
 
       if user_resolver.superuser_allowed?(permissions)
         build_per_user_policies(column_id, column, permissions, db_users)
@@ -110,6 +108,7 @@ module RedshiftMasking
     def build_policy_entry(p_name, col, grantee, priority)
       PolicyAttachment.new(
         policy_name: p_name,
+        database: col.database,
         schema: col.schema,
         table: col.table,
         column: col.column,

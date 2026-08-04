@@ -13,9 +13,8 @@ module RedshiftMasking
 
     attr_reader :config
 
-    def initialize(config, connection_class: DataWarehouseApplicationRecord)
+    def initialize(config)
       @config = config
-      @connection_class = connection_class
     end
 
     def create_masking_policies(column_types)
@@ -23,15 +22,22 @@ module RedshiftMasking
 
       Rails.logger.info('creating masking policies')
 
-      sql_parts = column_types.flat_map do |column_id, data_type|
+      # Policies are created once (db-less) and referenced cross-database by name.
+      # Deduplicate by unqualified column id so a column present in multiple
+      # databases only produces one CREATE per policy type.
+      policy_names = column_types.each_with_object({}) do |(column_id, data_type), hash|
+        hash[unqualified_id(column_id)] ||= data_type
+      end
+
+      sql_parts = policy_names.flat_map do |unqualified, data_type|
         Configuration::PERMISSION_TYPES.map do |perm_type|
-          build_policy_sql(perm_type, column_id, data_type)
+          build_policy_sql(perm_type, unqualified, data_type)
         end
       end
 
       sql = "#{sql_parts.join(";\n")};"
 
-      Rails.logger.info("created/verified policies for #{column_types.size} columns")
+      Rails.logger.info("created/verified policies for #{policy_names.size} columns")
       # Safe: Policy names/types from config, sanitized via tr() and format()
       connection.execute(sql)
     end
@@ -53,7 +59,13 @@ module RedshiftMasking
     private
 
     def connection
-      @connection ||= @connection_class.connection
+      @connection ||= DataWarehouseApplicationRecord.connection
+    end
+
+    # Drops the leading database segment from a "db.schema.table.column" id,
+    # leaving the "schema.table.column" basis used for policy names.
+    def unqualified_id(column_id)
+      column_id.split('.', 2).last
     end
 
     def build_policy_sql(permission_type, column_id, data_type)
@@ -106,19 +118,30 @@ module RedshiftMasking
 
     def detach_sql(policy)
       <<~SQL
-        DETACH MASKING POLICY #{policy.policy_name}
-        ON #{policy.schema}.#{policy.table} (#{policy.column})
+        DETACH MASKING POLICY #{qualified_policy_name(policy)}
+        ON #{qualified_relation(policy)} (#{policy.column})
         FROM #{quote_grantee(policy.grantee)};
       SQL
     end
 
     def attach_sql(policy)
       <<~SQL
-        ATTACH MASKING POLICY #{policy.policy_name}
-        ON #{policy.schema}.#{policy.table} (#{policy.column})
+        ATTACH MASKING POLICY #{qualified_policy_name(policy)}
+        ON #{qualified_relation(policy)} (#{policy.column})
         TO #{quote_grantee(policy.grantee)}
         PRIORITY #{policy.priority};
       SQL
+    end
+
+    # Policies are created db-less but referenced cross-database as
+    # "database.policy_name".
+    def qualified_policy_name(policy)
+      "#{policy.database}.#{policy.policy_name}"
+    end
+
+    # "database.schema.table" for cross-database ATTACH/DETACH.
+    def qualified_relation(policy)
+      "#{policy.database}.#{policy.schema}.#{policy.table}"
     end
 
     # Quote grantee with special handling for PUBLIC keyword
