@@ -465,6 +465,71 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe '#sync database-level feature flag gating' do
+    before do
+      allow(sync).to receive(:create_lambda_user)
+      allow(sync).to receive(:create_system_user)
+      allow(sync).to receive(:create_user_group)
+      allow(sync).to receive(:sync_user_group)
+      allow(sync).to receive(:create_user_role)
+    end
+
+    context 'when the database has no feature_flag configured' do
+      it 'runs the sync' do
+        expect(sync).to receive(:drop_users)
+
+        sync.sync
+      end
+    end
+
+    context "when the database's feature_flag is disabled" do
+      subject(:sync) { described_class.new(database: 'analytics_zetl') }
+
+      before do
+        analytics_config = test_redshift_config['databases']['analytics']
+        zetl_config = test_redshift_config.deep_merge(
+          'databases' => {
+            'analytics_zetl' => analytics_config.merge('feature_flag' => 'zero_etl_enabled'),
+          },
+        )
+        allow(sync).to receive(:redshift_config).and_return(zetl_config)
+      end
+
+      it 'skips the sync entirely without executing any SQL' do
+        expect(sync).not_to receive(:drop_users)
+        expect(mock_connection).not_to receive(:execute)
+
+        sync.sync
+      end
+
+      it 'logs that the sync was skipped' do
+        expect(Rails.logger).to receive(:info).with(/Skipping Redshift user sync/)
+
+        sync.sync
+      end
+    end
+
+    context "when the database's feature_flag is enabled" do
+      subject(:sync) { described_class.new(database: 'analytics_zetl') }
+
+      before do
+        analytics_config = test_redshift_config['databases']['analytics']
+        zetl_config = test_redshift_config.deep_merge(
+          'databases' => {
+            'analytics_zetl' => analytics_config.merge('feature_flag' => 'dbt_enabled'),
+          },
+        )
+        allow(sync).to receive(:redshift_config).and_return(zetl_config)
+      end
+
+      it 'runs the sync' do
+        expect(sync).to receive(:drop_users)
+
+        sync.sync
+      end
+    end
+  end
+
   describe '#sync execution order' do
     it 'executes all steps in correct sequence' do
       call_order = []

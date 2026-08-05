@@ -22,6 +22,13 @@ class RedshiftSync
   end
 
   def sync
+    unless feature_enabled?(database_config['feature_flag'])
+      Rails.logger.info(
+        "Skipping Redshift user sync for database=#{database}: feature flag disabled",
+      )
+      return
+    end
+
     Rails.logger.info("Starting Redshift user sync for database=#{database}")
 
     lambda_users.each do |lambda_user|
