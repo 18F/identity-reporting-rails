@@ -12,6 +12,10 @@ class RedshiftSync
 
   attr_reader :database
 
+  def initialize(database: 'analytics')
+    @database = database
+  end
+
   def sync
     unless feature_enabled?(database_config['feature_flag'])
       Rails.logger.info(
