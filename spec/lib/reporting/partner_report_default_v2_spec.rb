@@ -369,7 +369,7 @@ RSpec.describe Reporting::PartnerReportDefaultV2 do
 
       it 'logs error and sets field to nil' do
         expect(Rails.logger).to receive(:error).with(
-          /Failed to convert 'invalid_number' to integer for field count_active_users/,
+          /Failed to convert 'invalid_number' for field count_active_users/,
         )
 
         result = report.generate_reports
@@ -613,7 +613,7 @@ RSpec.describe Reporting::PartnerReportDefaultV2 do
 
         it 'logs error and sets field to nil for unexpected alphanumeric values' do
           expect(Rails.logger).to receive(:error).with(
-            /Failed to convert 'invalid_number' to integer for field count_active_users/,
+            /Failed to convert 'invalid_number' for field count_active_users/,
           )
 
           result = report.generate_reports
@@ -685,11 +685,16 @@ RSpec.describe Reporting::PartnerReportDefaultV2 do
       expect(data[:count_auth_successful]).to eq(50)
       expect(data[:count_creation_successful]).to eq(45)
 
+      # Float (pct) fields preserved as floats, not truncated to integers
+      expect(data[:pct_proofing_success]).to eq(0.95)
+      expect(data[:pct_authentication_success]).to eq(0.85)
+      expect(data[:pct_mobile_of_auth]).to be_a(Float)
+
       # Verify all expected fields are present
-      expect(data.keys.size).to eq(Reporting::PartnerReportDefaultV2::INTEGER_DATA_FIELDS.size)
+      expect(data.keys.size).to eq(Reporting::PartnerReportDefaultV2::ALL_DATA_FIELDS.size)
 
       # Verify all fields from constant are present
-      Reporting::PartnerReportDefaultV2::INTEGER_DATA_FIELDS.each do |field|
+      Reporting::PartnerReportDefaultV2::ALL_DATA_FIELDS.each do |field|
         expect(data).to have_key(field.to_sym)
       end
     end

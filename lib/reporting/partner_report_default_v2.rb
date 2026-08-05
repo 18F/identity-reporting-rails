@@ -244,6 +244,9 @@ module Reporting
       count_identity_resolution_attribute_mismatch
       count_phone_number_record_check_failure
       count_temporary_technical_issues
+    ].freeze
+
+    FLOAT_DATA_FIELDS = %w[
       pct_proofing_success
       pct_authentication_success
       pct_mobile_of_auth
@@ -259,21 +262,29 @@ module Reporting
       pct_account_creation_success
     ].freeze
 
+    ALL_DATA_FIELDS = (INTEGER_DATA_FIELDS + FLOAT_DATA_FIELDS).freeze
+
     def build_data_section(row)
-      INTEGER_DATA_FIELDS.each_with_object({}) do |field, hash|
-        value = row[field]
-        if value.nil? || value.to_s.strip.empty?
-          hash[field.to_sym] = nil
-        else
-          begin
-            hash[field.to_sym] = Integer(value)
-          rescue ArgumentError, TypeError => e
-            Rails.logger.error "Failed to convert '#{value}' " \
-                              "to integer for field #{field}: #{e.message}"
-            hash[field.to_sym] = nil
-          end
-        end
+      hash = {}
+
+      INTEGER_DATA_FIELDS.each do |field|
+        hash[field.to_sym] = convert_field(row[field], field) { |v| Integer(v) }
       end
+
+      FLOAT_DATA_FIELDS.each do |field|
+        hash[field.to_sym] = convert_field(row[field], field) { |v| Float(v) }
+      end
+
+      hash
+    end
+
+    def convert_field(value, field)
+      return nil if value.nil? || value.to_s.strip.empty?
+
+      yield(value)
+    rescue ArgumentError, TypeError => e
+      Rails.logger.error "Failed to convert '#{value}' for field #{field}: #{e.message}"
+      nil
     end
 
     def fetch_bulk_data
@@ -314,7 +325,7 @@ module Reporting
         period_date_id
       ]
 
-      all_columns = base_columns + INTEGER_DATA_FIELDS
+      all_columns = base_columns + ALL_DATA_FIELDS
       all_columns.join(', ')
     end
 
