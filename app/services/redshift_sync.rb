@@ -63,7 +63,7 @@ class RedshiftSync
       create_user_role(user_role) if feature_enabled?(user_role['feature_flag'])
     end
 
-    Rails.logger.info('Redshift user sync completed successfully')
+    Rails.logger.info('Redshift user sync completed successfully for database=' + database)
   end
 
   private
