@@ -313,47 +313,24 @@ RSpec.describe RedshiftSync do
     end
   end
 
-  describe '#with_target_database_connection' do
+  describe '#connection' do
     context 'when syncing the analytics database' do
-      it 'yields without establishing a new connection' do
-        expect(DataWarehouseApplicationRecord).not_to receive(:establish_connection)
+      it 'uses DataWarehouseApplicationRecord' do
+        allow(sync).to receive(:connection).and_call_original
+        expect(DataWarehouseApplicationRecord).to receive(:connection).and_return(mock_connection)
 
-        expect { |b| sync.send(:with_target_database_connection, &b) }.to yield_control
+        sync.send(:connection)
       end
     end
 
     context 'when syncing the analytics_zetl database' do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
 
-      let(:original_db_config) do
-        instance_double(
-          ActiveRecord::DatabaseConfigurations::HashConfig,
-          configuration_hash: { adapter: 'redshift', database: 'analytics', host: 'redshift-host' },
-        )
-      end
+      it 'uses AnalyticsZetlApplicationRecord' do
+        allow(sync).to receive(:connection).and_call_original
+        expect(AnalyticsZetlApplicationRecord).to receive(:connection).and_return(mock_connection)
 
-      before do
-        allow(DataWarehouseApplicationRecord).to receive(:connection_db_config).
-          and_return(original_db_config)
-        allow(DataWarehouseApplicationRecord).to receive(:establish_connection)
-      end
-
-      it 'establishes a connection scoped to the target database name, then restores it' do
-        expect(DataWarehouseApplicationRecord).to receive(:establish_connection).
-          with(hash_including(database: 'analytics_zetl')).ordered
-        expect(DataWarehouseApplicationRecord).to receive(:establish_connection).
-          with(original_db_config.configuration_hash).ordered
-
-        sync.send(:with_target_database_connection) {}
-      end
-
-      it 'restores the original connection even if the block raises' do
-        expect(DataWarehouseApplicationRecord).to receive(:establish_connection).
-          with(original_db_config.configuration_hash)
-
-        expect do
-          sync.send(:with_target_database_connection) { raise 'boom' }
-        end.to raise_error('boom')
+        sync.send(:connection)
       end
     end
   end
@@ -566,7 +543,6 @@ RSpec.describe RedshiftSync do
           'databases' => { 'analytics_zetl' => analytics_config },
         )
         allow(sync).to receive(:redshift_config).and_return(zetl_config)
-        allow(sync).to receive(:with_target_database_connection).and_yield
         allow(sync).to receive(:create_users).and_return(new_users)
       end
 
