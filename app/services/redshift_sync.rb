@@ -105,6 +105,10 @@ class RedshiftSync
     database == 'analytics'
   end
 
+  def connection
+    @connection ||= DataWarehouseApplicationRecord.connection
+  end
+
   def database_config
     redshift_config['databases'].fetch(database)
   end
