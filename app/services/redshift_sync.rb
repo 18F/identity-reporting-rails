@@ -28,6 +28,15 @@ class RedshiftSync
       return
     end
 
+    unless database_name_configured?
+      Rails.logger.warn(
+        "Skipping Redshift user sync for database=#{database}: the " \
+        "'#{connection_name}' connection has no database name configured. " \
+        "Set it in application.yml before enabling this database.",
+      )
+      return
+    end
+
     Rails.logger.info("Starting Redshift user sync for database=#{database}")
 
     lambda_users.each do |lambda_user|
@@ -125,6 +134,11 @@ class RedshiftSync
     connection_class.connection_db_config.name
   end
 
+  # The database name comes from application.yml, which is deployed separately from the
+  # terraform feature flag that gates this database. If the flag lands first the name is
+  # still blank, and connecting fails deep inside the first query with an opaque
+  # "Database not found: ." — so check the resolved config before opening a connection.
+  # connection_db_config reads database.yml without checking out a connection.
   def database_name_configured?
     connection_class.connection_db_config.database.present?
   end
