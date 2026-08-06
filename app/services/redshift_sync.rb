@@ -10,13 +10,17 @@ require_relative '../../config/environment'
 class RedshiftSync
   include UserSyncConfig
 
+  DATABASES = ['analytics', 'analytics_zetl'].freeze
+
   attr_reader :database
 
-  def initialize(database: 'analytics')
+  def initialize(database: nil)
     @database = database
   end
 
   def sync
+    return DATABASES.each { |name| self.class.new(database: name).sync } if database.nil?
+
     unless feature_enabled?(database_config['feature_flag'])
       Rails.logger.info(
         "Skipping Redshift user sync for database=#{database}: feature flag disabled",
@@ -105,8 +109,16 @@ class RedshiftSync
     database == 'analytics'
   end
 
+  def connection_class
+    case database
+    when 'analytics' then DataWarehouseApplicationRecord
+    when 'analytics_zetl' then DataWarehouseApplicationRecordZetl
+    else raise ArgumentError, "unknown database #{database.inspect}"
+    end
+  end
+
   def connection
-    @connection ||= DataWarehouseApplicationRecord.connection
+    connection_class.connection
   end
 
   def database_config
@@ -249,13 +261,13 @@ class RedshiftSync
   def build_drop_user_sql(user_name, schemas)
     revoke_statements = schemas.map do |schema|
       <<~SQL
-        REVOKE ALL ON SCHEMA #{database}.#{schema} FROM "#{user_name}";
-        REVOKE ALL ON ALL TABLES IN SCHEMA #{database}.#{schema} FROM "#{user_name}";
+        REVOKE ALL ON SCHEMA #{schema} FROM "#{user_name}";
+        REVOKE ALL ON ALL TABLES IN SCHEMA #{schema} FROM "#{user_name}";
       SQL
     end.join("\n")
 
     <<~SQL
-      REVOKE ALL ON DATABASE #{database} FROM "#{user_name}";
+      REVOKE ALL ON DATABASE #{connection.current_database} FROM "#{user_name}";
       #{revoke_statements}
       DROP USER "#{user_name}";
     SQL
@@ -324,11 +336,11 @@ class RedshiftSync
 
   def create_lambda_user_privileges(user_name, schema)
     <<~SQL
-      CREATE SCHEMA IF NOT EXISTS #{database}.#{schema};
-      GRANT CREATE ON SCHEMA #{database}.#{schema} TO "#{user_name}";
-      GRANT USAGE ON SCHEMA #{database}.#{schema} TO "#{user_name}";
-      GRANT ALL PRIVILEGES ON SCHEMA #{database}.#{schema} TO "#{user_name}";
-      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA #{database}.#{schema} TO "#{user_name}";
+      CREATE SCHEMA IF NOT EXISTS #{schema};
+      GRANT CREATE ON SCHEMA #{schema} TO "#{user_name}";
+      GRANT USAGE ON SCHEMA #{schema} TO "#{user_name}";
+      GRANT ALL PRIVILEGES ON SCHEMA #{schema} TO "#{user_name}";
+      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA #{schema} TO "#{user_name}";
     SQL
   end
 

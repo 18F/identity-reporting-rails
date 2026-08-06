@@ -62,6 +62,26 @@ RSpec.describe RedshiftSync do
             },
           ],
         },
+        # Mirrors the real config: the zero-ETL replica is gated behind
+        # zero_etl_enabled, which is absent from terraform_config below (disabled).
+        'analytics_zetl' => {
+          'feature_flag' => 'zero_etl_enabled',
+          'user_groups' => [],
+          'lambda_users' => [],
+          'system_users' => [
+            {
+              'user_name' => 'marts',
+              'secret_id' => 'redshift/testenv-analytics-dbt-marts',
+              'feature_flag' => 'dbt_enabled',
+              'schemas' => [
+                { 'schema_name' => 'public',
+                  'schema_privileges' => 'USAGE',
+                  'table_privileges' => 'SELECT' },
+              ],
+            },
+          ],
+          'user_roles' => [],
+        },
       },
     }
   end
@@ -326,12 +346,19 @@ RSpec.describe RedshiftSync do
     context 'when syncing the analytics_zetl database' do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
 
-      it 'uses AnalyticsZetlApplicationRecord' do
+      it 'uses DataWarehouseApplicationRecordZetl' do
         allow(sync).to receive(:connection).and_call_original
-        expect(AnalyticsZetlApplicationRecord).to receive(:connection).and_return(mock_connection)
+        expect(DataWarehouseApplicationRecordZetl).to receive(:connection).
+          and_return(mock_connection)
 
         sync.send(:connection)
       end
+    end
+
+    it 'raises for an unknown database rather than returning a nil connection' do
+      unknown = described_class.new(database: 'nope')
+
+      expect { unknown.send(:connection_class) }.to raise_error(ArgumentError, /unknown database/)
     end
   end
 
@@ -343,6 +370,15 @@ RSpec.describe RedshiftSync do
 
       expect(sql).to include('REVOKE ALL ON DATABASE analytics_zetl FROM "IAM:john.doe"')
       expect(sql).not_to include('REVOKE ALL ON DATABASE analytics FROM')
+    end
+
+    it 'revokes schema privileges unqualified, since Redshift has no cross-database DDL' do
+      sql = sync.send(:build_drop_user_sql, 'IAM:john.doe', ['idp'])
+
+      expect(sql).to include('REVOKE ALL ON SCHEMA idp FROM "IAM:john.doe"')
+      expect(sql).to include('REVOKE ALL ON ALL TABLES IN SCHEMA idp FROM "IAM:john.doe"')
+      expect(sql).not_to include('SCHEMA analytics.idp')
+      expect(sql).to include('DROP USER "IAM:john.doe"')
     end
   end
 
@@ -465,6 +501,47 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  # Constructed with no database, #sync fans out to one instance per database in
+  # DATABASES. Every other spec here builds an instance for a single database, so
+  # this is the only place the fan-out itself needs covering.
+  describe '#sync fan-out across databases' do
+    subject(:sync) { described_class.new }
+
+    let(:per_database) { [] }
+
+    before do
+      allow(described_class).to receive(:new).and_call_original
+      described_class::DATABASES.each do |name|
+        per_database_sync = instance_double(described_class)
+        allow(per_database_sync).to receive(:sync) { per_database << name }
+        allow(described_class).to receive(:new).with(database: name).
+          and_return(per_database_sync)
+      end
+    end
+
+    it 'syncs one instance per database, in order' do
+      sync.sync
+
+      expect(per_database).to eq(['analytics', 'analytics_zetl'])
+    end
+
+    it 'does not sync itself, so no database state is shared between databases' do
+      expect(sync).not_to receive(:drop_users)
+
+      sync.sync
+    end
+
+    it 'propagates an error and does not continue to the next database' do
+      allow(described_class).to receive(:new).with(database: 'analytics').
+        and_return(instance_double(described_class).tap do |first|
+          allow(first).to receive(:sync).and_raise(StandardError, 'boom')
+        end)
+
+      expect { sync.sync }.to raise_error(StandardError, 'boom')
+      expect(per_database).to be_empty
+    end
+  end
+
   describe '#sync database-level feature flag gating' do
     before do
       allow(sync).to receive(:create_lambda_user)
@@ -485,16 +562,6 @@ RSpec.describe RedshiftSync do
     context "when the database's feature_flag is disabled" do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
 
-      before do
-        analytics_config = test_redshift_config['databases']['analytics']
-        zetl_config = test_redshift_config.deep_merge(
-          'databases' => {
-            'analytics_zetl' => analytics_config.merge('feature_flag' => 'zero_etl_enabled'),
-          },
-        )
-        allow(sync).to receive(:redshift_config).and_return(zetl_config)
-      end
-
       it 'skips the sync entirely without executing any SQL' do
         expect(sync).not_to receive(:drop_users)
         expect(mock_connection).not_to receive(:execute)
@@ -513,13 +580,7 @@ RSpec.describe RedshiftSync do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
 
       before do
-        analytics_config = test_redshift_config['databases']['analytics']
-        zetl_config = test_redshift_config.deep_merge(
-          'databases' => {
-            'analytics_zetl' => analytics_config.merge('feature_flag' => 'dbt_enabled'),
-          },
-        )
-        allow(sync).to receive(:redshift_config).and_return(zetl_config)
+        allow(sync).to receive(:config_file).and_return("zero_etl_enabled = true\n")
       end
 
       it 'runs the sync' do
@@ -600,14 +661,12 @@ RSpec.describe RedshiftSync do
 
     context 'when syncing a database other than analytics' do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
+
       let(:new_users) { ['IAM:john.doe'] }
 
       before do
-        analytics_config = test_redshift_config['databases']['analytics']
-        zetl_config = test_redshift_config.deep_merge(
-          'databases' => { 'analytics_zetl' => analytics_config },
-        )
-        allow(sync).to receive(:redshift_config).and_return(zetl_config)
+        # Enable the zero_etl_enabled gate so the sync body actually runs.
+        allow(sync).to receive(:config_file).and_return("zero_etl_enabled = true\n")
         allow(sync).to receive(:create_users).and_return(new_users)
       end
 

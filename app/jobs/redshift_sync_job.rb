@@ -9,26 +9,19 @@ class RedshiftSyncJob < ApplicationJob
     perform_limit: 1,
   )
 
-  DATABASES = ['analytics', 'analytics_zetl'].freeze
-
   def perform
-    DATABASES.each do |database|
-      @current_database = database
-      RedshiftSync.new(database: database).sync
+    RedshiftSync.new.sync
 
-      logger.info(
-        {
-          name: 'RedshiftSyncJob',
-          database: database,
-          success: true,
-        }.to_json,
-      )
-    end
+    logger.info(
+      {
+        name: 'RedshiftSyncJob',
+        success: true,
+      }.to_json,
+    )
   rescue StandardError => e
     logger.error(
       {
         name: 'RedshiftSyncJob',
-        database: @current_database,
         error: e.message,
       }.to_json,
     )
