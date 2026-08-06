@@ -121,11 +121,6 @@ class RedshiftSync
     connection_class.connection
   end
 
-  def connection_name
-    connection_class.connection_db_config.name
-  end
-
-
   def database_config
     redshift_config['databases'].fetch(database)
   end
