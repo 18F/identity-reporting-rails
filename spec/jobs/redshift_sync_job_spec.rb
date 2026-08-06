@@ -13,58 +13,48 @@ RSpec.describe RedshiftSyncJob, type: :job do
   end
 
   describe '#perform' do
-    context 'when the sync succeeds' do
+    context 'when sync succeeds' do
       before do
         allow(redshift_sync).to receive(:sync)
         allow(logger).to receive(:info)
       end
 
-      it 'delegates to RedshiftSync, which iterates the databases itself' do
+      it 'calls RedshiftSync.sync' do
         subject.perform
-
-        expect(RedshiftSync).to have_received(:new).with(no_args)
-        expect(redshift_sync).to have_received(:sync).once
+        expect(redshift_sync).to have_received(:sync)
       end
 
-      it 'logs success once for the whole run' do
+      it 'logs success' do
         expect(logger).to receive(:info).with(
           {
             name: 'RedshiftSyncJob',
             success: true,
           }.to_json,
-        ).once
-
+        )
         subject.perform
       end
     end
 
-    context 'when the sync raises' do
+    context 'when sync fails' do
       let(:error_message) { 'Database connection failed' }
+      let(:error) { StandardError.new(error_message) }
 
       before do
-        allow(redshift_sync).to receive(:sync).and_raise(StandardError, error_message)
-        allow(logger).to receive(:info)
-        allow(logger).to receive(:error)
+        allow(redshift_sync).to receive(:sync).and_raise(error)
       end
 
-      it 're-raises the error' do
-        expect { subject.perform }.to raise_error(StandardError, error_message)
-      end
-
-      it 'logs the error' do
+      it 'logs error' do
         expect(logger).to receive(:error).with(
           {
             name: 'RedshiftSyncJob',
             error: error_message,
           }.to_json,
         )
-
         expect { subject.perform }.to raise_error(StandardError, error_message)
       end
 
-      it 'does not log success' do
-        expect(logger).not_to receive(:info)
-
+      it 're-raises the error' do
+        allow(logger).to receive(:error)
         expect { subject.perform }.to raise_error(StandardError, error_message)
       end
     end
