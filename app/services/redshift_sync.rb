@@ -267,7 +267,7 @@ class RedshiftSync
     end.join("\n")
 
     <<~SQL
-      REVOKE ALL ON DATABASE #{@database} FROM "#{user_name}";
+      REVOKE ALL ON DATABASE #{connection.current_database} FROM "#{user_name}";
       #{revoke_statements}
       DROP USER "#{user_name}";
     SQL
