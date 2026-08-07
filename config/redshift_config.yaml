@@ -37,9 +37,9 @@ databases:
             - dwusernonprod
         schemas:
           - schema_name: idp
-        schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: idp_curated_views
+            schema_privileges: USAGE
+            table_privileges: SELECT
+          - schema_name: idp_curated_views
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: logs
@@ -65,9 +65,9 @@ databases:
         schemas:
           - schema_name: idp
             schema_privileges: USAGE
-        table_privileges: SELECT
-      - schema_name: idp_curated_views
-        schema_privileges: USAGE
+            table_privileges: SELECT
+          - schema_name: idp_curated_views
+            schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: logs
             schema_privileges: USAGE
@@ -92,9 +92,9 @@ databases:
         schemas:
           - schema_name: idp
             schema_privileges: ALL PRIVILEGES
-        table_privileges: ALL PRIVILEGES
-      - schema_name: idp_curated_views
-        schema_privileges: ALL PRIVILEGES
+            table_privileges: ALL PRIVILEGES
+          - schema_name: idp_curated_views
+            schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
           - schema_name: logs
             schema_privileges: ALL PRIVILEGES

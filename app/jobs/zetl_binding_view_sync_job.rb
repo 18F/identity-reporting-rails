@@ -12,6 +12,16 @@ class ZetlBindingViewSyncJob < ApplicationJob
   )
 
   def perform
+    unless IdentityConfig.store.zero_etl_enabled
+      logger.info(
+        {
+          name: 'ZetlBindingViewSyncJob',
+          skipped: 'zero_etl_enabled is false',
+        }.to_json,
+      )
+      return
+    end
+
     ZetlBindingViewSync.new.sync
 
     logger.info(

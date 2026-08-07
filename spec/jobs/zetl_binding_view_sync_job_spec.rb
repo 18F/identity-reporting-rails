@@ -10,9 +10,33 @@ RSpec.describe ZetlBindingViewSyncJob, type: :job do
   before do
     allow(ZetlBindingViewSync).to receive(:new).and_return(zetl_binding_view_sync)
     allow(IdentityJobLogSubscriber).to receive(:new).and_return(job_log_subscriber)
+    allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(true)
   end
 
   describe '#perform' do
+    context 'when zero_etl_enabled is false' do
+      before do
+        allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(false)
+        allow(zetl_binding_view_sync).to receive(:sync)
+        allow(logger).to receive(:info)
+      end
+
+      it 'does not call ZetlBindingViewSync.sync' do
+        subject.perform
+        expect(zetl_binding_view_sync).not_to have_received(:sync)
+      end
+
+      it 'logs that it was skipped' do
+        expect(logger).to receive(:info).with(
+          {
+            name: 'ZetlBindingViewSyncJob',
+            skipped: 'zero_etl_enabled is false',
+          }.to_json,
+        )
+        subject.perform
+      end
+    end
+
     context 'when sync succeeds' do
       before do
         allow(zetl_binding_view_sync).to receive(:sync)
