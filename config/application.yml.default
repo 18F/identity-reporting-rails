@@ -40,6 +40,7 @@ fraud_ops_private_key: ''
 fraud_ops_tracker_enabled: false
 extractor_row_checker_enqueue_cron: '0 6 * * *'
 aws_region: 'us-west-2'
+zero_etl_enabled: false
 
 development:
   database_host: ''
@@ -56,6 +57,7 @@ development:
   domain_name: localhost:3000
   secret_key_base: dev_secret_key_base
   redshift_database_name: ''
+  redshift_database_zetl_name: ''
   redshift_host: ''
   redshift/local-analytics-superuser: '{"username":"","password":""}'
   s3_report_public_bucket_prefix: ''
@@ -77,6 +79,7 @@ production:
   database_worker_jobs_password: ''
   secret_key_base: ''
   redshift_database_name: ''
+  redshift_database_zetl_name: ''
   redshift_host: ''
   report_timeout: 1_000_000
   s3_reports_enabled: false
@@ -97,6 +100,7 @@ test:
   domain_name: www.example.com
   secret_key_base: test_secret_key_base
   redshift_database_name: ''
+  redshift_database_zetl_name: ''
   redshift_host: ''
   redshift/local-analytics-superuser: '{"username":"","password":""}'
   s3_report_public_bucket_prefix: ''

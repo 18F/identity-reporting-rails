@@ -3,7 +3,6 @@
 
 require 'yaml'
 require 'aws-sdk-secretsmanager'
-require 'optparse'
 require 'digest'
 require 'json'
 
@@ -11,8 +10,25 @@ require_relative '../../config/environment'
 class RedshiftSync
   include UserSyncConfig
 
+  DATABASES = ['analytics', 'analytics_zetl'].freeze
+
+  attr_reader :database
+
+  def initialize(database: nil)
+    @database = database
+  end
+
   def sync
-    Rails.logger.info('Starting Redshift user sync')
+    return DATABASES.each { |name| self.class.new(database: name).sync } if database.nil?
+
+    unless feature_enabled?(database_config['feature_flag'])
+      Rails.logger.info(
+        "Skipping Redshift user sync for database=#{database}: feature flag disabled",
+      )
+      return
+    end
+
+    Rails.logger.info("Starting Redshift user sync for database=#{database}")
 
     lambda_users.each do |lambda_user|
       create_lambda_user(lambda_user['user_name'], lambda_user['schemas'])
@@ -40,13 +56,13 @@ class RedshiftSync
       sync_user_group(user_group)
     end
 
-    apply_masking_for_new_users(new_users) if new_users.any?
+    apply_masking_for_new_users(new_users) if new_users.any? && analytics_database?
 
     user_roles.each do |user_role|
       create_user_role(user_role) if feature_enabled?(user_role['feature_flag'])
     end
 
-    Rails.logger.info('Redshift user sync completed successfully')
+    Rails.logger.info("Redshift user sync completed successfully for database=#{database}")
   end
 
   private
@@ -89,8 +105,24 @@ class RedshiftSync
     end
   end
 
+  def analytics_database?
+    database == 'analytics'
+  end
+
+  def connection_class
+    case database
+    when 'analytics' then DataWarehouseApplicationRecord
+    when 'analytics_zetl' then DataWarehouseApplicationRecordZetl
+    else raise ArgumentError, "unknown database #{database.inspect}"
+    end
+  end
+
   def connection
-    @connection ||= DataWarehouseApplicationRecord.connection
+    connection_class.connection
+  end
+
+  def database_config
+    redshift_config['databases'].fetch(database)
   end
 
   def secrets_manager_client
@@ -106,21 +138,21 @@ class RedshiftSync
   end
 
   def user_groups
-    redshift_config['user_groups'].map { |group| interpolate_config_hash(group) }
+    database_config['user_groups'].map { |group| interpolate_config_hash(group) }
   end
 
   def user_roles
-    return [] unless redshift_config['user_roles']
+    return [] unless database_config['user_roles']
 
-    redshift_config['user_roles'].map { |role| interpolate_config_hash(role) }
+    database_config['user_roles'].map { |role| interpolate_config_hash(role) }
   end
 
   def lambda_users
-    redshift_config['lambda_users'].map { |user| interpolate_config_hash(user) }
+    database_config['lambda_users'].map { |user| interpolate_config_hash(user) }
   end
 
   def system_users
-    redshift_config['system_users'].map { |user| interpolate_config_hash(user) }
+    database_config['system_users'].map { |user| interpolate_config_hash(user) }
   end
 
   def canonical_users
@@ -141,6 +173,7 @@ class RedshiftSync
       {
         name: 'RedshiftSync',
         error: 'SQL execution failed',
+        database: database,
         message: e.message,
         failed_sql: redact_secrets(sql),
       }.to_json,
@@ -234,7 +267,7 @@ class RedshiftSync
     end.join("\n")
 
     <<~SQL
-      REVOKE ALL ON DATABASE analytics FROM "#{user_name}";
+      REVOKE ALL ON DATABASE #{connection.current_database} FROM "#{user_name}";
       #{revoke_statements}
       DROP USER "#{user_name}";
     SQL
