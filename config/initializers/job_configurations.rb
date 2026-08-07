@@ -10,6 +10,7 @@ cron_1d_offset_2am = '0 2 * * *' # 2:00am UTC
 cron_24h = '0 0 * * *'
 cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever else runs at 0000 UTC
 cron_1st_of_month_6am = '0 6 1 * *' # 6 AM UTC on the 1st of each month
+cron_weekly_sunday_6am = '0 6 * * 0' # 6:00am UTC on Sundays
 
 extractor_row_checker_enqueue_cron_config =
   Fugit.parse_cron(IdentityConfig.store.extractor_row_checker_enqueue_cron).presence&.original
@@ -126,6 +127,11 @@ else
       quicksight_sync_job: {
         class: 'QuicksightSyncJob',
         cron: cron_15m,
+      },
+      # Refresh idp_curated_views late-binding views from analytics_zetl
+      zetl_binding_view_sync_job: {
+        class: 'ZetlBindingViewSyncJob',
+        cron: cron_weekly_sunday_6am,
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
