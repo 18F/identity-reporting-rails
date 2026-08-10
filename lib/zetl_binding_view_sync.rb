@@ -3,19 +3,7 @@
 require 'yaml'
 
 # Creates/refreshes late-binding views in the analytics warehouse's
-# `idp_curated_views` schema from tables replicated (zero-ETL) into the
-# read-only `analytics_zetl` database.
-#
-# The views MUST be late-binding (`WITH NO SCHEMA BINDING`) because the source
-# tables live in a different database and a normal (bound) view cannot reference
-# cross-database objects.
-#
-# Rather than maintaining an allowlist of views/columns by hand, this discovers
-# every table + column in the source schema from `svv_all_columns` and builds an
-# explicit-column view per table, subtracting any columns named in the exclusion
-# config (`config/zetl_column_config.yaml`). NOTE: a table absent from that
-# exclusion config exposes ALL of its columns — keep exclusions current for any
-# table that gains sensitive columns.
+# `idp_curated_views` schema from the `public` schema of the read-only `analytics_zetl` database.
 class ZetlBindingViewSync
   DEFAULT_EXCLUSION_CONFIG_PATH =
     Rails.root.join('config', 'zetl_column_config.yaml').freeze
@@ -24,9 +12,7 @@ class ZetlBindingViewSync
   SOURCE_DATABASE = 'analytics_zetl'
   SOURCE_SCHEMA = 'public'
 
-  # Redshift/Postgres unquoted identifier shape. Source is a replicated Postgres
-  # DB, so names are lowercase snake_case. We validate rather than escape because
-  # these feed straight into DDL (identifiers cannot use bind params).
+  # Redshift/Postgres unquoted identifier shape. names are lowercase snake_case.
   IDENTIFIER = /\A[a-z_][a-z0-9_]*\z/
 
   class InvalidIdentifierError < StandardError; end
@@ -43,8 +29,7 @@ class ZetlBindingViewSync
     @exclusion_config_path = exclusion_config_path
   end
 
-  # Discover the source schema, create the target schema (if needed) and
-  # CREATE OR REPLACE a late-binding view per source table. Idempotent.
+  # CREATE OR REPLACE a late-binding view per source table.
   def sync
     [target_schema, source_database, source_schema].each { |id| validate_identifier!(id) }
 
@@ -90,10 +75,6 @@ class ZetlBindingViewSync
 
   attr_reader :target_schema, :source_database, :source_schema, :exclusion_config_path
 
-  # Views that exist in the target schema but are no longer produced by this sync
-  # (source table dropped/renamed, or now fully excluded). We only warn — a stale
-  # late-binding view is harmless until queried, and dropping is destructive.
-  # Returns the list of stale view names.
   def warn_stale_views(intended_views)
     stale = existing_views - intended_views
     stale.each do |view_name|
@@ -105,7 +86,6 @@ class ZetlBindingViewSync
     stale
   end
 
-  # => ['view_a', 'view_b', ...] currently defined in the target schema.
   def existing_views
     execute_query(<<~SQL, target_schema).map { |row| row['table_name'] }
       SELECT table_name
@@ -114,7 +94,6 @@ class ZetlBindingViewSync
     SQL
   end
 
-  # => { 'table_name' => ['col_a', 'col_b', ...] } in ordinal order.
   def source_tables
     rows = execute_query(<<~SQL, source_database, source_schema)
       SELECT table_name, column_name
@@ -128,7 +107,6 @@ class ZetlBindingViewSync
     end
   end
 
-  # => { 'table_name' => ['excluded_col', ...] } from the exclusion config.
   def excluded_columns
     return {} unless File.exist?(exclusion_config_path)
 
