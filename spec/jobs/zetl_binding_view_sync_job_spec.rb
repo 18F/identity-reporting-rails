@@ -38,8 +38,10 @@ RSpec.describe ZetlBindingViewSyncJob, type: :job do
     end
 
     context 'when sync succeeds' do
+      let(:results) { { created: 2, skipped: 1, failed: 0, stale: 0 } }
+
       before do
-        allow(zetl_binding_view_sync).to receive(:sync)
+        allow(zetl_binding_view_sync).to receive(:sync).and_return(results)
         allow(logger).to receive(:info)
       end
 
@@ -53,6 +55,8 @@ RSpec.describe ZetlBindingViewSyncJob, type: :job do
           {
             name: 'ZetlBindingViewSyncJob',
             success: true,
+            message: 'ZETL binding view sync completed successfully',
+            results: results,
           }.to_json,
         )
         subject.perform
