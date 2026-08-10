@@ -22,12 +22,14 @@ class ZetlBindingViewSyncJob < ApplicationJob
       return
     end
 
-    ZetlBindingViewSync.new.sync
+    results = ZetlBindingViewSync.new.sync
 
     logger.info(
       {
         name: 'ZetlBindingViewSyncJob',
         success: true,
+        message: 'ZETL binding view sync completed successfully',
+        results: results,
       }.to_json,
     )
   rescue StandardError => e

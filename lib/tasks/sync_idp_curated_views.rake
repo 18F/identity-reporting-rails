@@ -17,6 +17,10 @@ namespace :db do
       next
     end
 
-    ZetlBindingViewSync.new.sync
+    results = ZetlBindingViewSync.new.sync
+
+    puts 'idp_curated_views binding view sync completed successfully ' \
+         "(#{results[:created]} synced, #{results[:skipped]} skipped, " \
+         "#{results[:stale]} stale, #{results[:failed]} failed)"
   end
 end
