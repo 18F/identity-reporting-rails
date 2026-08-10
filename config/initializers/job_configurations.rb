@@ -85,7 +85,7 @@ else
       },
       monthly_key_metrics_idv_s3_report: {
         class: 'Reports::MonthlyKeyMetricsIdvS3Report',
-        cron: cron_24h_and_a_bit, # staggered a bit so logs can sync to redshift?
+        cron: cron_1d_offset_2am, # Previously scheduled midnight, but there seemed to be data lag
         args: -> { [Time.zone.yesterday.end_of_day] },
       },
       # Idv Legacy Conversion Supplement Report to S3
