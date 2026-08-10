@@ -40,6 +40,7 @@ development:
     migrations_paths: db/data_warehouse_migrate
   data_warehouse_zetl:
     <<: *dev_data_warehouse
+    database_tasks: false
     migrations_paths: []
 
 test:
@@ -70,6 +71,7 @@ test:
       - db/data_warehouse_test_migrate
   data_warehouse_zetl:
     <<: *test_data_warehouse
+    database_tasks: false
     migrations_paths: []
 
 <%
@@ -144,3 +146,5 @@ production:
   data_warehouse_zetl:
     <<: *data_warehouse
     database: "<%= Identity::Hostdata.config.redshift_database_zetl_name %>"
+    database_tasks: false
+    migrations_paths: []
