@@ -247,6 +247,7 @@ module Reporting
     ].freeze
 
     FLOAT_DATA_FIELDS = %w[
+      pct_path_to_access
       pct_proofing_success
       pct_authentication_success
       pct_mobile_of_auth
