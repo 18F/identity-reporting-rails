@@ -346,3 +346,9 @@ databases:
         users:
           - quicksight_connector
         feature_flag: redshift_quicksight_connector_enabled
+
+  analytics_zetl:
+    user_groups: []
+    lambda_users: []
+    system_users: []
+    user_roles: []
