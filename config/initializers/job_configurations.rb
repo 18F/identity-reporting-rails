@@ -134,6 +134,11 @@ else
         class: 'IdpZeroEtlBindingViewSyncJob',
         cron: cron_1d_offset_430am,
       },
+      # Sync fraudops email addresses from the zero-ETL curated view
+      fraud_ops_email_addresses_zetl_job: {
+        class: 'FraudOpsEmailAddressesZetlJob',
+        cron: '5-59/15 * * * *',
+      },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
   end
