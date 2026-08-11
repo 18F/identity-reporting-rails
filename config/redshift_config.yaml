@@ -347,7 +347,9 @@ databases:
           - quicksight_connector
         feature_flag: redshift_quicksight_connector_enabled
 
+  # Zero-ETL replica: read-only, schema/table access is granted to only DBT users
   analytics_zetl:
+    feature_flag: zero_etl_enabled
     user_groups: []
     lambda_users: []
     system_users: []
