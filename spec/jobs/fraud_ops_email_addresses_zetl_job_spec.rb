@@ -4,7 +4,6 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
   let(:job) { described_class.new }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
   let(:target_table_exists) { true }
-  let(:adapter_name) { 'PostgreSQL' }
 
   # Every SQL string handed to the connection, in order.
   let(:executed_sql) { [] }
@@ -14,7 +13,9 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
     allow(DataWarehouseApplicationRecord).to receive(:transaction).and_yield
     allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(true)
 
-    allow(mock_connection).to receive(:adapter_name).and_return(adapter_name)
+    # Stubbed only so the "does not branch on the adapter" example can assert the
+    # job never reaches for it.
+    allow(mock_connection).to receive(:adapter_name).and_return('PostgreSQL')
     allow(mock_connection).to receive(:table_exists?).and_return(target_table_exists)
     allow(mock_connection).to receive(:quote) { |value| "'#{value}'" }
     allow(mock_connection).to receive(:execute) { |sql| executed_sql << sql }
@@ -156,44 +157,37 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
       end
     end
 
-    describe 'merge dialect' do
-      context 'on Redshift' do
-        let(:adapter_name) { 'Redshift' }
+    describe 'merge' do
+      it 'uses the MERGE construct keyed on id' do
+        job.perform
 
-        it 'uses the MERGE construct keyed on id' do
-          job.perform
+        merge_sql = executed_sql.find { |sql| sql.include?('MERGE INTO') }
 
-          merge_sql = executed_sql.find { |sql| sql.include?('MERGE INTO') }
-
-          expect(merge_sql).to match(/MERGE INTO fraudops\.frd_email_addresses_zetl/)
-          expect(merge_sql).to match(
-            /ON fraudops\.frd_email_addresses_zetl\.id = source\.id/,
-          )
-          expect(merge_sql).to match(/WHEN MATCHED THEN UPDATE SET/)
-          expect(merge_sql).to match(/WHEN NOT MATCHED THEN INSERT/)
-        end
-
-        it 'preserves dw_created_at on update' do
-          job.perform
-
-          merge_sql = executed_sql.find { |sql| sql.include?('MERGE INTO') }
-          matched_clause = merge_sql[/WHEN MATCHED THEN UPDATE SET(.*?)WHEN NOT MATCHED/m, 1]
-
-          expect(matched_clause).not_to include('dw_created_at')
-          expect(matched_clause).to include('dw_updated_at')
-        end
+        expect(merge_sql).to match(/MERGE INTO fraudops\.frd_email_addresses_zetl/)
+        expect(merge_sql).to match(
+          /ON fraudops\.frd_email_addresses_zetl\.id = source\.id/,
+        )
+        expect(merge_sql).to match(/WHEN MATCHED THEN UPDATE SET/)
+        expect(merge_sql).to match(/WHEN NOT MATCHED THEN INSERT/)
       end
 
-      context 'on PostgreSQL' do
-        let(:adapter_name) { 'PostgreSQL' }
+      it 'preserves dw_created_at on update' do
+        job.perform
 
-        it 'uses the CTE-based upsert instead of MERGE' do
-          job.perform
+        merge_sql = executed_sql.find { |sql| sql.include?('MERGE INTO') }
+        matched_clause = merge_sql[/WHEN MATCHED THEN UPDATE SET(.*?)WHEN NOT MATCHED/m, 1]
 
-          expect(executed_sql).not_to include(a_string_matching(/MERGE INTO/))
-          expect(executed_sql).to include(a_string_matching(/WITH updated AS \( UPDATE/))
-          expect(executed_sql).to include(a_string_matching(/WHERE NOT EXISTS/))
-        end
+        expect(matched_clause).not_to include('dw_created_at')
+        expect(matched_clause).to include('dw_updated_at')
+      end
+
+      # Redshift requires the fully-qualified target with no alias on the left of
+      # ON. That form is also valid on PostgreSQL 15+, so one statement serves
+      # every environment and the job never branches on the adapter.
+      it 'does not branch on the adapter' do
+        job.perform
+
+        expect(mock_connection).not_to have_received(:adapter_name)
       end
     end
 
@@ -207,6 +201,75 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
         expect(Rails.logger).to receive(:error).with(a_string_matching(/Job failed/))
 
         expect { job.perform }.to raise_error(ActiveRecord::StatementInvalid)
+      end
+    end
+
+    # The examples above assert on generated SQL strings, which cannot show that a
+    # statement is actually executable. This one runs the real MERGE against the
+    # test database so the production statement is exercised, not just matched.
+    describe 'the generated MERGE, executed against PostgreSQL' do
+      let(:connection) { DataWarehouseApplicationRecord.connection }
+      let(:target) { 'fraudops.frd_email_addresses_zetl' }
+      let(:staging) { 'fraudops.frd_email_addresses_zetl_staging' }
+
+      before do
+        allow(DataWarehouseApplicationRecord).to receive(:connection).and_call_original
+
+        connection.execute('CREATE SCHEMA IF NOT EXISTS fraudops')
+        [target, staging].each do |table|
+          connection.execute("DROP TABLE IF EXISTS #{table} CASCADE")
+          connection.execute(<<~SQL)
+            CREATE TABLE #{table} (
+              id bigint NOT NULL,
+              encrypted_email varchar(2048),
+              user_id bigint,
+              email varchar(2048),
+              dw_created_at timestamp,
+              dw_updated_at timestamp
+            )
+          SQL
+        end
+        connection.execute("ALTER TABLE #{target} ADD PRIMARY KEY (id)")
+
+        # id 2 already exists and should be updated; id 3 is new and should insert.
+        connection.execute(<<~SQL)
+          INSERT INTO #{target}
+          VALUES (2, 'old-enc', 22, 'stale', '2020-01-01', '2020-01-01')
+        SQL
+        connection.execute(<<~SQL)
+          INSERT INTO #{staging} VALUES
+            (2, 'new-enc', 222, 'fresh', NULL, NULL),
+            (3, 'enc3', 33, 'brand-new', NULL, NULL)
+        SQL
+      end
+
+      after do
+        [target, staging].each do |table|
+          connection.execute("DROP TABLE IF EXISTS #{table} CASCADE")
+        end
+      end
+
+      it 'updates matched rows and inserts unmatched ones' do
+        connection.execute(described_class.new.send(:merge_staging_into_target_query))
+
+        rows = connection.select_all(
+          "SELECT id, user_id, email FROM #{target} ORDER BY id",
+        ).to_a
+
+        expect(rows).to eq(
+          [
+            { 'id' => 2, 'user_id' => 222, 'email' => 'fresh' },
+            { 'id' => 3, 'user_id' => 33, 'email' => 'brand-new' },
+          ],
+        )
+      end
+
+      it 'does not overwrite dw_created_at on a matched row' do
+        connection.execute(described_class.new.send(:merge_staging_into_target_query))
+
+        created_at = connection.select_value("SELECT dw_created_at FROM #{target} WHERE id = 2")
+
+        expect(created_at.to_date.to_s).to eq('2020-01-01')
       end
     end
 
