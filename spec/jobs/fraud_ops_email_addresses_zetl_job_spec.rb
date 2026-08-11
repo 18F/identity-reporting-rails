@@ -2,24 +2,15 @@ require 'rails_helper'
 
 RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
   let(:job) { described_class.new }
-  let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
-  let(:target_table_exists) { true }
-
-  # Every SQL string handed to the connection, in order.
-  let(:executed_sql) { [] }
+  let(:sync) { instance_double(FraudOps::EmailAddressesZetlSync) }
+  let(:sync_result) do
+    { bootstrapped: false, cutoff: '2026-08-10T00:00:00Z', lookback_minutes: 15 }
+  end
 
   before do
-    allow(DataWarehouseApplicationRecord).to receive(:connection).and_return(mock_connection)
-    allow(DataWarehouseApplicationRecord).to receive(:transaction).and_yield
+    allow(FraudOps::EmailAddressesZetlSync).to receive(:new).and_return(sync)
+    allow(sync).to receive(:sync).and_return(sync_result)
     allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(true)
-
-    # Stubbed only so the "does not branch on the adapter" example can assert the
-    # job never reaches for it.
-    allow(mock_connection).to receive(:adapter_name).and_return('PostgreSQL')
-    allow(mock_connection).to receive(:table_exists?).and_return(target_table_exists)
-    allow(mock_connection).to receive(:quote) { |value| "'#{value}'" }
-    allow(mock_connection).to receive(:execute) { |sql| executed_sql << sql }
-
     allow(Rails.logger).to receive(:info)
     allow(Rails.logger).to receive(:error)
   end
@@ -28,172 +19,56 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
     context 'when zero_etl_enabled is false' do
       before { allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(false) }
 
-      it 'logs that it skipped and executes no SQL' do
+      it 'logs that it skipped and does not run the sync' do
         expect(Rails.logger).to receive(:info).with(
           a_string_matching(/zero_etl_enabled is false/),
         )
-        expect(mock_connection).not_to receive(:execute)
-
-        job.perform
-      end
-
-      it 'does not check for or bootstrap the target table' do
-        expect(mock_connection).not_to receive(:table_exists?)
+        expect(sync).not_to receive(:sync)
 
         job.perform
       end
     end
 
-    context 'when the target table does not exist' do
-      let(:target_table_exists) { false }
+    context 'when zero_etl_enabled is true' do
+      it 'runs the sync' do
+        expect(sync).to receive(:sync).with(lookback_minutes: 15)
 
-      it 'creates the table as a copy of the legacy table' do
         job.perform
+      end
 
-        expect(executed_sql).to include(
-          a_string_matching(
-            /CREATE TABLE fraudops\.frd_email_addresses_zetl \(LIKE fraudops\.frd_email_addresses/,
-          ),
+      it 'defaults the lookback to the service default' do
+        expect(sync).to receive(:sync).with(
+          lookback_minutes: FraudOps::EmailAddressesZetlSync::DEFAULT_LOOKBACK_MINUTES,
         )
-      end
 
-      it 'adds the primary key that LIKE does not copy' do
         job.perform
-
-        expect(executed_sql).to include(
-          a_string_matching(
-            /ALTER TABLE fraudops\.frd_email_addresses_zetl ADD PRIMARY KEY \(id\)/,
-          ),
-        )
       end
 
-      it 'seeds the new table with the existing records' do
-        job.perform
+      it 'passes a custom lookback_minutes through' do
+        expect(sync).to receive(:sync).with(lookback_minutes: 60)
 
-        expect(executed_sql).to include(
-          a_string_matching(/INSERT INTO fraudops\.frd_email_addresses_zetl SELECT \*/).
-            and(a_string_matching(/FROM fraudops\.frd_email_addresses\z/)),
-        )
-      end
-
-      it 'creates the table before seeding it' do
-        job.perform
-
-        create_index = executed_sql.index { |sql| sql.match?(/CREATE TABLE .*_zetl \(LIKE/) }
-        seed_index = executed_sql.index { |sql| sql.match?(/INSERT INTO .*_zetl SELECT \*/) }
-
-        expect(create_index).to be < seed_index
-      end
-    end
-
-    context 'when the target table already exists' do
-      let(:target_table_exists) { true }
-
-      it 'does not create or seed the table' do
-        job.perform
-
-        expect(executed_sql).not_to include(a_string_matching(/CREATE TABLE .*_zetl \(LIKE/))
-        expect(executed_sql).not_to include(a_string_matching(/INSERT INTO .*_zetl SELECT \*/))
-      end
-
-      it 'still performs the merge' do
-        job.perform
-
-        expect(executed_sql).to include(a_string_matching(/frd_email_addresses_zetl_staging/))
-      end
-    end
-
-    describe 'staging load' do
-      let(:staging_load_sql) do
-        job.perform
-        executed_sql.find do |sql|
-          sql.include?('INSERT INTO fraudops.frd_email_addresses_zetl_staging')
-        end
-      end
-
-      it 'drops any leftover staging table before creating it' do
-        job.perform
-
-        drop_index = executed_sql.index { |sql| sql.match?(/DROP TABLE IF EXISTS .*_staging/) }
-        create_index = executed_sql.index { |sql| sql.match?(/CREATE TABLE .*_staging \(LIKE/) }
-
-        expect(drop_index).to be < create_index
-      end
-
-      it 'decrypts the email through the decryption UDF' do
-        expect(staging_load_sql).to match(
-          /fraudops\.decrypt_udf\(curated\.encrypted_email, curated\.id\)/,
-        )
-      end
-
-      it 'reads from the curated view' do
-        expect(staging_load_sql).to match(/FROM idp_curated_views\.email_addresses curated/)
-      end
-
-      it 'filters on the curated view updated_at' do
-        expect(staging_load_sql).to match(/WHERE curated\.updated_at >= /)
-      end
-
-      it 'drops the staging table after the merge' do
-        job.perform
-
-        expect(executed_sql.last).to match(/DROP TABLE IF EXISTS .*_staging/)
-      end
-    end
-
-    describe 'lookback window', freeze_time: true do
-      it 'defaults to a 15 minute lookback' do
-        job.perform
-
-        staging_load = executed_sql.find { |sql| sql.match?(/INSERT INTO .*_staging/) }
-        expect(staging_load).to include(15.minutes.ago.utc.to_s)
-      end
-
-      it 'honors a custom lookback_minutes argument' do
         job.perform(lookback_minutes: 60)
-
-        staging_load = executed_sql.find { |sql| sql.match?(/INSERT INTO .*_staging/) }
-        expect(staging_load).to include(60.minutes.ago.utc.to_s)
       end
-    end
 
-    describe 'merge' do
-      it 'uses the MERGE construct keyed on id' do
+      it 'logs start and completion' do
         job.perform
 
-        merge_sql = executed_sql.find { |sql| sql.include?('MERGE INTO') }
+        expect(Rails.logger).to have_received(:info).with(a_string_matching(/Job started/))
+        expect(Rails.logger).to have_received(:info).with(a_string_matching(/Job completed/))
+      end
 
-        expect(merge_sql).to match(/MERGE INTO fraudops\.frd_email_addresses_zetl/)
-        expect(merge_sql).to match(
-          /ON fraudops\.frd_email_addresses_zetl\.id = source\.id/,
+      it 'includes the sync summary in the completion log' do
+        job.perform
+
+        expect(Rails.logger).to have_received(:info).with(
+          a_string_matching(/"cutoff":"2026-08-10T00:00:00Z"/),
         )
-        expect(merge_sql).to match(/WHEN MATCHED THEN UPDATE SET/)
-        expect(merge_sql).to match(/WHEN NOT MATCHED THEN INSERT/)
-      end
-
-      it 'preserves dw_created_at on update' do
-        job.perform
-
-        merge_sql = executed_sql.find { |sql| sql.include?('MERGE INTO') }
-        matched_clause = merge_sql[/WHEN MATCHED THEN UPDATE SET(.*?)WHEN NOT MATCHED/m, 1]
-
-        expect(matched_clause).not_to include('dw_created_at')
-        expect(matched_clause).to include('dw_updated_at')
-      end
-
-      # Redshift requires the fully-qualified target with no alias on the left of
-      # ON. That form is also valid on PostgreSQL 15+, so one statement serves
-      # every environment and the job never branches on the adapter.
-      it 'does not branch on the adapter' do
-        job.perform
-
-        expect(mock_connection).not_to have_received(:adapter_name)
       end
     end
 
-    context 'when a query fails' do
+    context 'when the sync raises' do
       before do
-        allow(mock_connection).to receive(:execute).
+        allow(sync).to receive(:sync).
           and_raise(ActiveRecord::StatementInvalid, 'relation does not exist')
       end
 
@@ -204,77 +79,8 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
       end
     end
 
-    # The examples above assert on generated SQL strings, which cannot show that a
-    # statement is actually executable. This one runs the real MERGE against the
-    # test database so the production statement is exercised, not just matched.
-    describe 'the generated MERGE, executed against PostgreSQL' do
-      let(:connection) { DataWarehouseApplicationRecord.connection }
-      let(:target) { 'fraudops.frd_email_addresses_zetl' }
-      let(:staging) { 'fraudops.frd_email_addresses_zetl_staging' }
-
-      before do
-        allow(DataWarehouseApplicationRecord).to receive(:connection).and_call_original
-
-        connection.execute('CREATE SCHEMA IF NOT EXISTS fraudops')
-        [target, staging].each do |table|
-          connection.execute("DROP TABLE IF EXISTS #{table} CASCADE")
-          connection.execute(<<~SQL)
-            CREATE TABLE #{table} (
-              id bigint NOT NULL,
-              encrypted_email varchar(2048),
-              user_id bigint,
-              email varchar(2048),
-              dw_created_at timestamp,
-              dw_updated_at timestamp
-            )
-          SQL
-        end
-        connection.execute("ALTER TABLE #{target} ADD PRIMARY KEY (id)")
-
-        # id 2 already exists and should be updated; id 3 is new and should insert.
-        connection.execute(<<~SQL)
-          INSERT INTO #{target}
-          VALUES (2, 'old-enc', 22, 'stale', '2020-01-01', '2020-01-01')
-        SQL
-        connection.execute(<<~SQL)
-          INSERT INTO #{staging} VALUES
-            (2, 'new-enc', 222, 'fresh', NULL, NULL),
-            (3, 'enc3', 33, 'brand-new', NULL, NULL)
-        SQL
-      end
-
-      after do
-        [target, staging].each do |table|
-          connection.execute("DROP TABLE IF EXISTS #{table} CASCADE")
-        end
-      end
-
-      it 'updates matched rows and inserts unmatched ones' do
-        connection.execute(described_class.new.send(:merge_staging_into_target_query))
-
-        rows = connection.select_all(
-          "SELECT id, user_id, email FROM #{target} ORDER BY id",
-        ).to_a
-
-        expect(rows).to eq(
-          [
-            { 'id' => 2, 'user_id' => 222, 'email' => 'fresh' },
-            { 'id' => 3, 'user_id' => 33, 'email' => 'brand-new' },
-          ],
-        )
-      end
-
-      it 'does not overwrite dw_created_at on a matched row' do
-        connection.execute(described_class.new.send(:merge_staging_into_target_query))
-
-        created_at = connection.select_value("SELECT dw_created_at FROM #{target} WHERE id = 2")
-
-        expect(created_at.to_date.to_s).to eq('2020-01-01')
-      end
-    end
-
     describe 'PII safety' do
-      it 'never logs the generated SQL or any row values' do
+      it 'never logs SQL or row values' do
         logged = []
         allow(Rails.logger).to receive(:info) { |msg| logged << msg }
 
