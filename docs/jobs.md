@@ -81,15 +81,3 @@ The service specs stub `Aws::QuickSight::Client`, `Aws::STS::Client`, and
   `UserResolver` from `redshift_config.yaml`'s `aws_role_map` (or a shared
   loader) so there is a single source of truth. Verify all `UserResolver`
   consumers and the redshift masking specs when doing this.
-
-## FraudOps email addresses Zero-ETL sync
-
-- Service: `app/services/fraud_ops/email_addresses_zetl_sync.rb`
-- Job: `app/jobs/fraud_ops_email_addresses_zetl_job.rb`, every 15 minutes, gated
-  on `zero_etl_enabled` (default `false`)
-- Copies `fraudops.frd_email_addresses` into `fraudops.frd_email_addresses_zetl`
-  on first run, then `MERGE`s deltas from `idp_curated_views.email_addresses` on
-  `id`, decrypting `email` via `fraudops.decrypt_udf`
-- **Before enabling the flag:** add the table and its `_staging` twin to
-  identity-devops' `bin/data-warehouse/mask.yaml` — `fraudops` privileges are
-  schema-level, so plaintext `email` is otherwise readable by every grantee
