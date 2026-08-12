@@ -78,6 +78,19 @@ The service specs stub `Aws::QuickSight::Client`, `Aws::STS::Client`, and
   `RedshiftMasking::UserResolver::IAM_ROLE_GROUPS` constant
   (`app/services/redshift_masking/user_resolver.rb`). These encode the same
   knowledge in two forms and can drift apart. A future change should drive
-  `UserResolver` from `redshift_config.yaml`'s `aws_role_map` (or a shared
+   `UserResolver` from `redshift_config.yaml`'s `aws_role_map` (or a shared
   loader) so there is a single source of truth. Verify all `UserResolver`
   consumers and the redshift masking specs when doing this.
+
+## Backfilling flattened frd_events columns
+
+`FraudOpsPiiDecryptJob` populates the flattened event columns (`event_type`,
+`success`, `device_id`, `user_ip_address`, `agency_uuid`, `unique_session_id`)
+for events ingested going forward. To populate historical rows from the retained
+`message` blob, run the one-time, batched, idempotent backfill:
+
+    bundle exec rails frd_events:backfill_columns          # default batch size 1000
+    bundle exec rails frd_events:backfill_columns[5000]    # custom batch size
+
+It only updates rows where `event_type IS NULL`, so it is safe to re-run and to
+run while ingestion continues. No ingestion pause is required.
