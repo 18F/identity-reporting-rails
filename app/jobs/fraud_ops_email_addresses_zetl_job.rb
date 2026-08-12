@@ -10,7 +10,10 @@ class FraudOpsEmailAddressesZetlJob < ApplicationJob
     total_limit: 1,
   )
 
-  def perform(lookback_minutes: IdentityConfig.store.zero_etl_email_addresses_lookback_minutes)
+  def perform(
+    lookback_minutes: IdentityConfig.store.zero_etl_email_addresses_lookback_minutes ||
+      FraudOps::EmailAddressesZetlSync::DEFAULT_LOOKBACK_MINUTES
+  )
     unless IdentityConfig.store.zero_etl_enabled
       return log_message(:info, 'zero_etl_enabled is false, skipping job.', false)
     end
