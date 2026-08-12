@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_10_120000) do
   create_schema "fraudops"
   create_schema "idp"
   create_schema "logs"
@@ -107,10 +107,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
   end
 
   create_table "fraudops.frd_events", primary_key: "event_key", id: { type: :string, limit: 256 }, force: :cascade do |t|
+    t.string "agency_uuid", limit: 256
+    t.string "device_id", limit: 256
     t.datetime "dw_created_at", precision: nil
     t.datetime "event_timestamp", precision: nil
+    t.string "event_type", limit: 256
     t.jsonb "message"
+    t.boolean "success"
+    t.string "unique_session_id", limit: 256
     t.bigint "user_id"
+    t.string "user_ip_address", limit: 256
     t.string "user_uuid", limit: 256
   end
 
