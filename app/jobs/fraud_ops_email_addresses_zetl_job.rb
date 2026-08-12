@@ -10,14 +10,14 @@ class FraudOpsEmailAddressesZetlJob < ApplicationJob
     total_limit: 1,
   )
 
-  def perform
+  def perform(lookback_minutes: IdentityConfig.store.zero_etl_email_addresses_lookback_minutes)
     unless IdentityConfig.store.zero_etl_enabled
       return log_message(:info, 'zero_etl_enabled is false, skipping job.', false)
     end
 
-    log_message(:info, 'Job started.', true)
+    log_message(:info, 'Job started.', true, { lookback_minutes: lookback_minutes })
 
-    result = FraudOps::EmailAddressesZetlSync.new.sync
+    result = FraudOps::EmailAddressesZetlSync.new.sync(lookback_minutes: lookback_minutes)
 
     log_message(:info, 'Job completed.', true, result)
   rescue => e
