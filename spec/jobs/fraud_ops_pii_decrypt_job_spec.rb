@@ -428,6 +428,39 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
         expect(Rails.logger).to receive(:info).with(a_string_matching(/row_count.*2/))
         job.send(:bulk_insert_decrypted_events, decrypted_events)
       end
+
+      it 'binds success: false as a real value (SQL FALSE, not NULL)' do
+        events = [decrypted_events.first.merge(success: false)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          # sanitize_sql_array renders a bound Ruby false as SQL FALSE.
+          expect(sql).to match(/\bFALSE\b/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'binds success: nil (not false) so it becomes SQL NULL' do
+        events = [decrypted_events.first.merge(success: nil)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/\bNULL\b/)
+          # A nil that was wrongly coerced to false would render FALSE here.
+          expect(sql).not_to match(/\bFALSE\b/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'binds an absent flattened field (device_id nil) so it becomes SQL NULL' do
+        events = [decrypted_events.first.merge(device_id: nil)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/\bNULL\b/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
     end
 
     context 'when using Redshift adapter' do
@@ -483,6 +516,47 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
         job.send(:bulk_insert_decrypted_events, events)
       end
+
+      it 'emits SQL FALSE (not NULL) when success is false' do
+        events = [decrypted_events.first.merge(success: false)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('FALSE')
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'emits SQL NULL (not FALSE) when success is nil' do
+        events = [decrypted_events.first.merge(success: nil)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('NULL')
+          expect(sql).not_to include('FALSE')
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'emits SQL TRUE when success is true' do
+        events = [decrypted_events.first.merge(success: true)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('TRUE')
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'emits SQL NULL for an absent flattened field (device_id nil)' do
+        events = [decrypted_events.first.merge(device_id: nil)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('NULL')
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
     end
 
     context 'when decrypted_events is empty' do
@@ -491,6 +565,20 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
         job.send(:bulk_insert_decrypted_events, [])
       end
+    end
+  end
+
+  describe '#redshift_bool' do
+    it "returns 'NULL' for nil" do
+      expect(job.send(:redshift_bool, nil)).to eq('NULL')
+    end
+
+    it "returns 'FALSE' for false" do
+      expect(job.send(:redshift_bool, false)).to eq('FALSE')
+    end
+
+    it "returns 'TRUE' for true" do
+      expect(job.send(:redshift_bool, true)).to eq('TRUE')
     end
   end
 
