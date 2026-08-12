@@ -86,15 +86,16 @@ class FraudOpsPiiDecryptJob < ApplicationJob
       decrypted = decrypt_data(row['message'], private_key, row['event_key'])
       next unless decrypted
 
-      event_data = event_payload(decrypted)
+      event_object = FraudOps::EventFieldExtractor.event_object(decrypted) || {}
+      flattened = FraudOps::EventFieldExtractor.call(decrypted)
 
       decrypted_events << {
         event_key: row['event_key'],
         message: decrypted,
-        user_id: event_data[:user_id],
-        user_uuid: event_data[:user_uuid],
-        event_timestamp: event_data[:occurred_at] && Time.zone.at(event_data[:occurred_at]),
-      }
+        user_id: event_object[:user_id],
+        user_uuid: event_object[:user_uuid],
+        event_timestamp: event_object[:occurred_at] && Time.zone.at(event_object[:occurred_at]),
+      }.merge(flattened)
       successful_ids << row['event_key']
     end
 
@@ -108,11 +109,13 @@ class FraudOpsPiiDecryptJob < ApplicationJob
       values_sql = decrypted_events.map { |event| redshift_insert_values(event) }.join(', ')
       connection.execute(<<~SQL.squish)
         INSERT INTO fraudops.frd_events
-          (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)
+          (event_key, message, user_id, user_uuid, event_timestamp,
+           event_type, success, device_id, user_ip_address, agency_uuid,
+           unique_session_id, dw_created_at)
         VALUES #{values_sql}
       SQL
     else
-      value_fragment = '(?, ?::jsonb, ?, ?, ?, CURRENT_TIMESTAMP)'
+      value_fragment = '(?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
       placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
       values = decrypted_events.flat_map do |event|
         [
@@ -121,11 +124,19 @@ class FraudOpsPiiDecryptJob < ApplicationJob
           event[:user_id],
           event[:user_uuid],
           event[:event_timestamp],
+          event[:event_type],
+          event[:success],
+          event[:device_id],
+          event[:user_ip_address],
+          event[:agency_uuid],
+          event[:unique_session_id],
         ]
       end
       insert_sql = <<~SQL.squish
         INSERT INTO fraudops.frd_events
-          (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)
+          (event_key, message, user_id, user_uuid, event_timestamp,
+           event_type, success, device_id, user_ip_address, agency_uuid,
+           unique_session_id, dw_created_at)
         VALUES #{placeholders}
       SQL
       sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [insert_sql, *values])
@@ -143,8 +154,20 @@ class FraudOpsPiiDecryptJob < ApplicationJob
       event[:user_id] || 'NULL',
       event[:user_uuid] ? connection.quote(event[:user_uuid]) : 'NULL',
       event[:event_timestamp] ? connection.quote(event[:event_timestamp]) : 'NULL',
+      event[:event_type] ? connection.quote(event[:event_type]) : 'NULL',
+      redshift_bool(event[:success]),
+      event[:device_id] ? connection.quote(event[:device_id]) : 'NULL',
+      event[:user_ip_address] ? connection.quote(event[:user_ip_address]) : 'NULL',
+      event[:agency_uuid] ? connection.quote(event[:agency_uuid]) : 'NULL',
+      event[:unique_session_id] ? connection.quote(event[:unique_session_id]) : 'NULL',
       'CURRENT_TIMESTAMP',
     ].then { |parts| "(#{parts.join(', ')})" }
+  end
+
+  def redshift_bool(value)
+    return 'NULL' if value.nil?
+
+    value ? 'TRUE' : 'FALSE'
   end
 
   def dollar_quote(str)
@@ -167,13 +190,6 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     connection.execute(sanitized)
 
     Rails.logger.info(log_format('Bulk update completed', updated_count: event_ids.size))
-  end
-
-  def event_payload(decrypted)
-    events = decrypted[:events]
-    return decrypted unless events.is_a?(Hash) && events.any?
-
-    events.values.first
   end
 
   def decrypt_data(encrypted_data, key, event_key)

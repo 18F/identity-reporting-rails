@@ -14,6 +14,10 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
       user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
       user_id: 1,
       success: true,
+      device_id: 'dev-xyz',
+      user_ip_address: '104.56.43.23',
+      agency_uuid: 'agency-bbb',
+      unique_session_id: 'sess-ccc',
     }
   end
   let(:sample_event_data) do
@@ -181,6 +185,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
           user_id: 1,
           user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
+          event_type: 'login-email-and-password-auth',
+          success: true,
+          device_id: 'dev-xyz',
+          user_ip_address: '104.56.43.23',
+          agency_uuid: 'agency-bbb',
+          unique_session_id: 'sess-ccc',
         },
         {
           event_key: 'event_2',
@@ -188,6 +198,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
           user_id: 1,
           user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
+          event_type: 'login-email-and-password-auth',
+          success: true,
+          device_id: 'dev-xyz',
+          user_ip_address: '104.56.43.23',
+          agency_uuid: 'agency-bbb',
+          unique_session_id: 'sess-ccc',
         },
       ]
     end
@@ -282,6 +298,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
               user_id: 1,
               user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
+              event_type: 'login-email-and-password-auth',
+              success: true,
+              device_id: 'dev-xyz',
+              user_ip_address: '104.56.43.23',
+              agency_uuid: 'agency-bbb',
+              unique_session_id: 'sess-ccc',
             },
             {
               event_key: 'event_2',
@@ -289,6 +311,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
               user_id: 1,
               user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
+              event_type: 'login-email-and-password-auth',
+              success: true,
+              device_id: 'dev-xyz',
+              user_ip_address: '104.56.43.23',
+              agency_uuid: 'agency-bbb',
+              unique_session_id: 'sess-ccc',
             },
           ],
         )
@@ -312,11 +340,30 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
               user_id: 1,
               user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
+              event_type: 'login-email-and-password-auth',
+              success: true,
+              device_id: 'dev-xyz',
+              user_ip_address: '104.56.43.23',
+              agency_uuid: 'agency-bbb',
+              unique_session_id: 'sess-ccc',
             },
           ],
         )
         expect(ids).to eq(['event_1'])
       end
+    end
+
+    it 'includes the flattened event fields in the decrypted event hash' do
+      allow(job).to receive(:decrypt_data).and_return(sample_event_data)
+      decrypted, = job.send(:decrypt_events, encrypted_events)
+      expect(decrypted.first).to include(
+        event_type: 'login-email-and-password-auth',
+        success: true,
+        device_id: 'dev-xyz',
+        user_ip_address: '104.56.43.23',
+        agency_uuid: 'agency-bbb',
+        unique_session_id: 'sess-ccc',
+      )
     end
   end
 
@@ -329,6 +376,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
           user_id: 1,
           user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
+          event_type: 'login-email-and-password-auth',
+          success: true,
+          device_id: 'dev-xyz',
+          user_ip_address: '104.56.43.23',
+          agency_uuid: 'agency-bbb',
+          unique_session_id: 'sess-ccc',
         },
         {
           event_key: 'event_2',
@@ -336,6 +389,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
           user_id: 1,
           user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
+          event_type: 'login-email-and-password-auth',
+          success: true,
+          device_id: 'dev-xyz',
+          user_ip_address: '104.56.43.23',
+          agency_uuid: 'agency-bbb',
+          unique_session_id: 'sess-ccc',
         },
       ]
     end
@@ -354,8 +413,9 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses jsonb cast in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ user_id,\ user_uuid,
-                      \s*event_timestamp,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,
+                      \s*event_type,\ success,\ device_id,\ user_ip_address,
+                      \s*agency_uuid,\ unique_session_id,\ dw_created_at\)
                       \s*VALUES.*::jsonb}x
 
         expect(mock_connection).to receive(:execute).
@@ -381,8 +441,9 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses dollar-quoted JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ user_id,\ user_uuid,
-                      \s*event_timestamp,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,
+                      \s*event_type,\ success,\ device_id,\ user_ip_address,
+                      \s*agency_uuid,\ unique_session_id,\ dw_created_at\)
                       \s*VALUES.*JSON_PARSE\(\$json\$}x
 
         expect(mock_connection).to receive(:execute).
@@ -406,6 +467,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
             user_id: 1,
             user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
             event_timestamp: sample_event_timestamp,
+            event_type: 'login-email-and-password-auth',
+            success: true,
+            device_id: 'dev-xyz',
+            user_ip_address: '104.56.43.23',
+            agency_uuid: 'agency-bbb',
+            unique_session_id: 'sess-ccc',
           },
         ]
 
@@ -461,17 +528,6 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
         job.send(:bulk_update_processed_timestamp, [])
       end
-    end
-  end
-
-  describe '#event_payload' do
-    it 'extracts fields from the nested events hash' do
-      expect(job.send(:event_payload, sample_event_data)).to eq(sample_event_payload)
-    end
-
-    it 'falls back to the top-level payload when events is missing' do
-      flat_payload = { user_uuid: 'flat-uuid', occurred_at: 1_780_602_749.0 }
-      expect(job.send(:event_payload, flat_payload)).to eq(flat_payload)
     end
   end
 
