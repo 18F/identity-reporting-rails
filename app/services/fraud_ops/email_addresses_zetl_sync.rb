@@ -4,7 +4,6 @@ module FraudOps
   # Maintains a Zero-ETL-sourced twin of fraudops.frd_email_addresses.
   class EmailAddressesZetlSync
     SCHEMA_NAME = 'fraudops'
-    SOURCE_TABLE = 'frd_email_addresses'
     TARGET_TABLE = 'frd_email_addresses_zetl'
     STAGING_TABLE = 'frd_email_addresses_zetl_staging'
     CURATED_VIEW = 'idp_curated_views.email_addresses'
@@ -12,25 +11,20 @@ module FraudOps
     DEFAULT_LOOKBACK_MINUTES = 15
 
     def sync(lookback_minutes: DEFAULT_LOOKBACK_MINUTES)
-      bootstrapped = bootstrap_target_table
+      unless target_table_exists?
+        Rails.logger.info(
+          "#{qualified(TARGET_TABLE)} does not exist, skipping sync. " \
+          "Run rake fraudops:bootstrap_email_addresses_zetl to create it.",
+        )
+        return { skipped: true }
+      end
+
       cutoff = merge_delta(lookback_minutes)
 
-      { bootstrapped: bootstrapped, cutoff: cutoff.iso8601, lookback_minutes: lookback_minutes }
+      { skipped: false, cutoff: cutoff.iso8601, lookback_minutes: lookback_minutes }
     end
 
     private
-
-    def bootstrap_target_table
-      return false if target_table_exists?
-
-      DataWarehouseApplicationRecord.transaction do
-        connection.execute(create_target_table_query)
-        connection.execute(add_primary_key_query)
-        connection.execute(seed_target_table_query)
-      end
-
-      true
-    end
 
     def merge_delta(lookback_minutes)
       cutoff = lookback_minutes.minutes.ago.utc
@@ -49,24 +43,6 @@ module FraudOps
 
     def target_table_exists?
       connection.table_exists?(qualified(TARGET_TABLE))
-    end
-
-    def create_target_table_query
-      format(<<~SQL.squish, build_params)
-        CREATE TABLE %{target_table} (LIKE %{source_table} INCLUDING DEFAULTS)
-      SQL
-    end
-
-    def add_primary_key_query
-      format(<<~SQL.squish, build_params)
-        ALTER TABLE %{target_table} ADD PRIMARY KEY (%{merge_key})
-      SQL
-    end
-
-    def seed_target_table_query
-      format(<<~SQL.squish, build_params)
-        INSERT INTO %{target_table} SELECT * FROM %{source_table}
-      SQL
     end
 
     def drop_staging_table_query
@@ -126,7 +102,6 @@ module FraudOps
     def build_params
       {
         schema_name: SCHEMA_NAME,
-        source_table: qualified(SOURCE_TABLE),
         target_table: qualified(TARGET_TABLE),
         staging_table: qualified(STAGING_TABLE),
         curated_view: CURATED_VIEW,

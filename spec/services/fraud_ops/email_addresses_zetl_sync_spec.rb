@@ -18,73 +18,51 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
     allow(mock_connection).to receive(:table_exists?).and_return(target_table_exists)
     allow(mock_connection).to receive(:quote) { |value| "'#{value}'" }
     allow(mock_connection).to receive(:execute) { |sql| executed_sql << sql }
+    allow(Rails.logger).to receive(:info)
   end
 
   describe '#sync' do
     context 'when the target table does not exist' do
       let(:target_table_exists) { false }
 
-      it 'creates the table as a copy of the legacy table' do
+      it 'executes no SQL' do
         service.sync
 
-        expect(executed_sql).to include(
-          a_string_matching(
-            /CREATE TABLE fraudops\.frd_email_addresses_zetl \(LIKE fraudops\.frd_email_addresses/,
-          ),
+        expect(executed_sql).to be_empty
+      end
+
+      it 'logs the skip and names the rake task that provisions the table' do
+        expect(Rails.logger).to receive(:info).with(
+          a_string_matching(/fraudops\.frd_email_addresses_zetl does not exist/).
+            and(a_string_matching(/rake fraudops:bootstrap_email_addresses_zetl/)),
         )
+
+        service.sync
       end
 
-      it 'adds the primary key that LIKE does not copy' do
+      it 'reports that it skipped' do
+        expect(service.sync).to eq(skipped: true)
+      end
+
+      it 'does not provision the table itself' do
         service.sync
 
-        expect(executed_sql).to include(
-          a_string_matching(
-            /ALTER TABLE fraudops\.frd_email_addresses_zetl ADD PRIMARY KEY \(id\)/,
-          ),
-        )
-      end
-
-      it 'seeds the new table with the existing records' do
-        service.sync
-
-        expect(executed_sql).to include(
-          a_string_matching(/INSERT INTO fraudops\.frd_email_addresses_zetl SELECT \*/).
-            and(a_string_matching(/FROM fraudops\.frd_email_addresses\z/)),
-        )
-      end
-
-      it 'creates the table before seeding it' do
-        service.sync
-
-        create_index = executed_sql.index { |sql| sql.match?(/CREATE TABLE .*_zetl \(LIKE/) }
-        seed_index = executed_sql.index { |sql| sql.match?(/INSERT INTO .*_zetl SELECT \*/) }
-
-        expect(create_index).to be < seed_index
-      end
-
-      it 'reports that it bootstrapped' do
-        expect(service.sync[:bootstrapped]).to be(true)
+        expect(executed_sql).not_to include(a_string_matching(/CREATE TABLE .*_zetl \(LIKE/))
+        expect(executed_sql).not_to include(a_string_matching(/INSERT INTO .*_zetl SELECT \*/))
       end
     end
 
     context 'when the target table already exists' do
       let(:target_table_exists) { true }
 
-      it 'does not create or seed the table' do
-        service.sync
-
-        expect(executed_sql).not_to include(a_string_matching(/CREATE TABLE .*_zetl \(LIKE/))
-        expect(executed_sql).not_to include(a_string_matching(/INSERT INTO .*_zetl SELECT \*/))
-      end
-
-      it 'still performs the merge' do
+      it 'performs the merge' do
         service.sync
 
         expect(executed_sql).to include(a_string_matching(/frd_email_addresses_zetl_staging/))
       end
 
-      it 'reports that it did not bootstrap' do
-        expect(service.sync[:bootstrapped]).to be(false)
+      it 'reports that it did not skip' do
+        expect(service.sync[:skipped]).to be(false)
       end
     end
 

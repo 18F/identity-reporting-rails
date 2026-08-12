@@ -4,7 +4,7 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
   let(:job) { described_class.new }
   let(:sync) { instance_double(FraudOps::EmailAddressesZetlSync) }
   let(:sync_result) do
-    { bootstrapped: false, cutoff: '2026-08-10T00:00:00Z', lookback_minutes: 15 }
+    { skipped: false, cutoff: '2026-08-10T00:00:00Z', lookback_minutes: 15 }
   end
 
   before do
