@@ -10,11 +10,8 @@ PORT ?= 3000
 GZIP_COMMAND ?= gzip
 ARTIFACT_DESTINATION_FILE ?= ./tmp/idp.tar.gz
 
-# RuboCop parallelism flag. Defaults to --parallel (fast; used by CI and host
-# devs). Override with `--no-parallel` in environments where RuboCop's forked
-# workers crash (e.g. the devenv sandbox, which dies with Parallel::DeadWorker):
-#   make lint RUBOCOP_PARALLELISM=--no-parallel
-# or export RUBOCOP_PARALLELISM=--no-parallel in that environment's config.
+# RuboCop parallelism flag. Defaults to --parallel; override with --no-parallel
+# where RuboCop's forked workers crash (e.g. the devenv sandbox: Parallel::DeadWorker).
 RUBOCOP_PARALLELISM ?= --parallel
 
 .PHONY: \
