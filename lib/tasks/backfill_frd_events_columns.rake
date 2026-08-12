@@ -57,20 +57,21 @@ namespace :frd_events do
       # in local/test (jsonb) and against Redshift in prod (SUPER). The Redshift path
       # is verified-by-inspection only — it is not exercised by these specs, per the
       # plan's Redshift caveat — but the statement shape is adapter-agnostic.
+      #
+      # The SET clause and its bound values are both derived from
+      # FraudOps::EventFieldExtractor::COLUMNS, so adding/removing a flattened column
+      # (via FIELDS + a migration) needs no change here.
+      columns = FraudOps::EventFieldExtractor::COLUMNS
+      set_clause = columns.map { |column| "#{column} = ?" }.join(', ')
+      update_sql = "UPDATE fraudops.frd_events SET #{set_clause} WHERE event_key = ?"
+
       DataWarehouseApplicationRecord.transaction do
         rows.each do |row|
           decrypted = BackfillColumns.parse_message(row['message'])
           fields = FraudOps::EventFieldExtractor.call(decrypted)
+          bindings = columns.map { |column| fields[column] } + [row['event_key']]
           connection.execute(
-            ActiveRecord::Base.send(
-              :sanitize_sql_array,
-              ['UPDATE fraudops.frd_events SET ' \
-               'event_type = ?, success = ?, device_id = ?, user_ip_address = ?, ' \
-               'agency_uuid = ?, unique_session_id = ? WHERE event_key = ?',
-               fields[:event_type], fields[:success], fields[:device_id],
-               fields[:user_ip_address], fields[:agency_uuid], fields[:unique_session_id],
-               row['event_key']],
-            ),
+            ActiveRecord::Base.send(:sanitize_sql_array, [update_sql, *bindings]),
           )
         end
       end

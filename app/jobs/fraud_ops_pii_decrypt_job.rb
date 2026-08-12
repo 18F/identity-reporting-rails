@@ -102,41 +102,36 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     [decrypted_events, successful_ids]
   end
 
+  # Columns written on every insert, in order. The flattened event columns are
+  # sourced from FraudOps::EventFieldExtractor::COLUMNS so adding/removing a
+  # flattened column requires no change here — edit FIELDS in the extractor.
+  FIXED_LEADING_COLUMNS = %i[
+    event_key message user_id user_uuid event_timestamp
+  ].freeze
+
+  def insert_columns
+    FIXED_LEADING_COLUMNS + FraudOps::EventFieldExtractor::COLUMNS + [:dw_created_at]
+  end
+
   def bulk_insert_decrypted_events(decrypted_events)
     return if decrypted_events.empty?
+
+    column_list = insert_columns.join(', ')
 
     if using_redshift_adapter?
       values_sql = decrypted_events.map { |event| redshift_insert_values(event) }.join(', ')
       connection.execute(<<~SQL.squish)
         INSERT INTO fraudops.frd_events
-          (event_key, message, user_id, user_uuid, event_timestamp,
-           event_type, success, device_id, user_ip_address, agency_uuid,
-           unique_session_id, dw_created_at)
+          (#{column_list})
         VALUES #{values_sql}
       SQL
     else
-      value_fragment = '(?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
+      value_fragment = "(#{postgres_value_fragment})"
       placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
-      values = decrypted_events.flat_map do |event|
-        [
-          event[:event_key],
-          JSON.generate(event[:message]),
-          event[:user_id],
-          event[:user_uuid],
-          event[:event_timestamp],
-          event[:event_type],
-          event[:success],
-          event[:device_id],
-          event[:user_ip_address],
-          event[:agency_uuid],
-          event[:unique_session_id],
-        ]
-      end
+      values = decrypted_events.flat_map { |event| postgres_insert_values(event) }
       insert_sql = <<~SQL.squish
         INSERT INTO fraudops.frd_events
-          (event_key, message, user_id, user_uuid, event_timestamp,
-           event_type, success, device_id, user_ip_address, agency_uuid,
-           unique_session_id, dw_created_at)
+          (#{column_list})
         VALUES #{placeholders}
       SQL
       sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [insert_sql, *values])
@@ -146,22 +141,59 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     Rails.logger.info(log_format('Bulk insert completed', row_count: decrypted_events.size))
   end
 
+  # Postgres placeholder fragment (without the surrounding parens). message casts
+  # to jsonb; dw_created_at is a literal; every other column binds one `?`.
+  def postgres_value_fragment
+    fragments = insert_columns.map do |column|
+      case column
+      when :message then '?::jsonb'
+      when :dw_created_at then 'CURRENT_TIMESTAMP'
+      else '?'
+      end
+    end
+    fragments.join(', ')
+  end
+
+  # Bound values for the Postgres path, in insert_columns order, skipping the
+  # literal dw_created_at (which is inlined in the fragment). Nil values are
+  # preserved as binds (they become SQL NULL) — only the literal column is dropped.
+  def postgres_insert_values(event)
+    bound_columns = insert_columns - [:dw_created_at]
+    bound_columns.map do |column|
+      column == :message ? JSON.generate(event[:message]) : event[column]
+    end
+  end
+
   def redshift_insert_values(event)
-    json_literal = dollar_quote(JSON.generate(event[:message]))
-    [
-      connection.quote(event[:event_key]),
-      "JSON_PARSE(#{json_literal})",
-      event[:user_id] || 'NULL',
-      event[:user_uuid] ? connection.quote(event[:user_uuid]) : 'NULL',
-      event[:event_timestamp] ? connection.quote(event[:event_timestamp]) : 'NULL',
-      event[:event_type] ? connection.quote(event[:event_type]) : 'NULL',
-      redshift_bool(event[:success]),
-      event[:device_id] ? connection.quote(event[:device_id]) : 'NULL',
-      event[:user_ip_address] ? connection.quote(event[:user_ip_address]) : 'NULL',
-      event[:agency_uuid] ? connection.quote(event[:agency_uuid]) : 'NULL',
-      event[:unique_session_id] ? connection.quote(event[:unique_session_id]) : 'NULL',
-      'CURRENT_TIMESTAMP',
-    ].then { |parts| "(#{parts.join(', ')})" }
+    parts = insert_columns.map do |column|
+      redshift_column_literal(column, event)
+    end
+    "(#{parts.join(', ')})"
+  end
+
+  # Renders a single column's Redshift SQL literal. Fixed columns keep their
+  # bespoke handling; flattened columns are rendered by their configured sql_type.
+  def redshift_column_literal(column, event)
+    case column
+    when :event_key then connection.quote(event[:event_key])
+    when :message then "JSON_PARSE(#{dollar_quote(JSON.generate(event[:message]))})"
+    when :user_id then event[:user_id] || 'NULL'
+    when :user_uuid, :event_timestamp
+      event[column] ? connection.quote(event[column]) : 'NULL'
+    when :dw_created_at then 'CURRENT_TIMESTAMP'
+    else redshift_flattened_literal(column, event[column])
+    end
+  end
+
+  # Renders a flattened column per its FIELDS sql_type: booleans via redshift_bool
+  # (nil-safe), everything else quoted-or-NULL.
+  def redshift_flattened_literal(column, value)
+    config = FraudOps::EventFieldExtractor::FIELDS.fetch(column)
+    if config[:sql_type] == :boolean
+      redshift_bool(value)
+    else
+      value ? connection.quote(value) : 'NULL'
+    end
   end
 
   def redshift_bool(value)

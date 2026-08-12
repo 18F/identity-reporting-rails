@@ -5,7 +5,34 @@ module FraudOps
   # columns promoted onto fraudops.frd_events. Used by both FraudOpsPiiDecryptJob
   # (going-forward ingestion) and the frd_events:backfill_columns rake task so the
   # two can never drift.
+  #
+  # To add or remove a flattened column, edit FIELDS below (and add/drop the column
+  # via a migration). Everything downstream — the extracted hash, both INSERT
+  # column lists/values in FraudOpsPiiDecryptJob, and the backfill UPDATE — derives
+  # from FIELDS, so no other code needs to change.
   class EventFieldExtractor
+    # Declarative column configuration. Each entry maps a flattened column name to:
+    #   sql_type: :string or :boolean — controls how the Redshift value is rendered
+    #             (strings are quoted, booleans use TRUE/FALSE/NULL literals). The
+    #             Postgres path binds every value directly regardless of type.
+    #   from:     an optional lambda deriving the value from the decrypted payload;
+    #             when omitted, the value is read from the event object by column name.
+    # The order here is the canonical column order used by every SQL statement.
+    FIELDS = {
+      event_type: {
+        sql_type: :string,
+        from: ->(extractor) { extractor.event_type_slug },
+      },
+      success: { sql_type: :boolean },
+      device_id: { sql_type: :string },
+      user_ip_address: { sql_type: :string },
+      agency_uuid: { sql_type: :string },
+      unique_session_id: { sql_type: :string },
+    }.freeze
+
+    # Ordered list of flattened column names — the canonical column order.
+    COLUMNS = FIELDS.keys.freeze
+
     # Marks a key that looks like an attempts-api event-type identifier (URL) —
     # used to locate the event object in the no-envelope shape.
     EVENT_TYPE_KEY = %r{/event-type/}
@@ -22,16 +49,17 @@ module FraudOps
       @decrypted = decrypted || {}
     end
 
+    # Returns the flattened fields as a Hash keyed by COLUMNS, in canonical order.
     def call
       obj = event_object || {}
-      {
-        event_type: event_type_slug,
-        success: obj[:success],
-        device_id: obj[:device_id],
-        user_ip_address: obj[:user_ip_address],
-        agency_uuid: obj[:agency_uuid],
-        unique_session_id: obj[:unique_session_id],
-      }
+      FIELDS.each_with_object({}) do |(column, config), result|
+        result[column] =
+          if config[:from]
+            config[:from].call(self)
+          else
+            obj[column]
+          end
+      end
     end
 
     # The single event value, in either shape. One record == one event (verified
@@ -41,14 +69,15 @@ module FraudOps
       value
     end
 
-    private
-
+    # Public because a FIELDS `from:` lambda derives event_type from it.
     def event_type_slug
       key, _value = event_pair
       return nil if key.nil?
 
       key.to_s.split('/').last
     end
+
+    private
 
     # Returns [event_type_key, event_object] for both payload shapes, or [nil, nil].
     def event_pair
