@@ -162,19 +162,18 @@ in `spec/factories/`.
   only explicitly enabled cops run).
 - Target Ruby 3.4, Target Rails 8.1.
 - Run `make lint` before finishing a change; use `make lintfix` to auto-correct.
-- **In the sandbox, do NOT run `make lint` — it dies at the RuboCop step with
-  `Parallel::DeadWorker` (exit 2).** That is RuboCop's parallel mode crashing a
-  forked worker — a sandbox/resource artifact, **not** a lint offense. Don't
-  bother trying the parallel path first; go straight to the serial run.
-  Instead, run the sub-checks directly, using serial RuboCop:
-  - `bundle exec rubocop --no-parallel` (the real RuboCop result)
-  - `make brakeman`
-  - `make lint_lockfiles`
-  - `make lint_readme`
-  - `make lint_migrations`
-- `make lint_lockfiles` can also fail spuriously in the sandbox with "There are
-  uncommitted changes after running 'bundle install'". This is the same
-  bind-mount phantom-change artifact as the symlink issue: `git diff-index`
+- **In the sandbox, `make lint`'s default parallel RuboCop step dies with
+  `Parallel::DeadWorker` (exit 2)** — RuboCop's forked workers crashing, a
+  sandbox/resource artifact, **not** a lint offense. Run lint with serial
+  RuboCop instead:
+  - `make lint RUBOCOP_PARALLELISM=--no-parallel` (runs the full lint suite,
+    serial RuboCop) — or `export RUBOCOP_PARALLELISM=--no-parallel` once per
+    shell. If the Team Data sandbox already exports this, plain `make lint`
+    works.
+  - To run just the RuboCop result on its own: `bundle exec rubocop --no-parallel`.
+- `make lint`/`make lint_lockfiles` can also fail spuriously in the sandbox with
+  "There are uncommitted changes after running 'bundle install'". This is the
+  same bind-mount phantom-change artifact as the symlink issue: `git diff-index`
   reports `Gemfile.lock` as modified while `git diff Gemfile.lock` shows no
   content change. Confirm with `git diff Gemfile.lock` (empty = clean); it
   passes on the host.
