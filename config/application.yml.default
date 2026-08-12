@@ -41,6 +41,8 @@ fraud_ops_tracker_enabled: false
 extractor_row_checker_enqueue_cron: '0 6 * * *'
 aws_region: 'us-west-2'
 idp_zero_etl_enabled: false
+zero_etl_enabled: false
+zero_etl_email_addresses_lookback_minutes: 15
 
 development:
   database_host: ''

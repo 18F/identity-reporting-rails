@@ -30,24 +30,12 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
     end
 
     context 'when zero_etl_enabled is true' do
-      it 'runs the sync' do
-        expect(sync).to receive(:sync).with(lookback_minutes: 15)
+      # The lookback window is config-driven and owned by the service, so the job
+      # passes nothing and reports back whatever the service says it used.
+      it 'runs the sync with no arguments' do
+        expect(sync).to receive(:sync).with(no_args)
 
         job.perform
-      end
-
-      it 'defaults the lookback to the service default' do
-        expect(sync).to receive(:sync).with(
-          lookback_minutes: FraudOps::EmailAddressesZetlSync::DEFAULT_LOOKBACK_MINUTES,
-        )
-
-        job.perform
-      end
-
-      it 'passes a custom lookback_minutes through' do
-        expect(sync).to receive(:sync).with(lookback_minutes: 60)
-
-        job.perform(lookback_minutes: 60)
       end
 
       it 'logs start and completion' do
@@ -62,6 +50,18 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
 
         expect(Rails.logger).to have_received(:info).with(
           a_string_matching(/"cutoff":"2026-08-10T00:00:00Z"/),
+        )
+      end
+
+      # The job no longer computes the lookback, so the only way it can appear in
+      # the log is by way of the service's return value.
+      it 'reports the lookback the service used' do
+        allow(sync).to receive(:sync).and_return(sync_result.merge(lookback_minutes: 60))
+
+        job.perform
+
+        expect(Rails.logger).to have_received(:info).with(
+          a_string_matching(/"lookback_minutes":60/),
         )
       end
     end

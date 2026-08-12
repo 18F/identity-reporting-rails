@@ -105,22 +105,38 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
     end
 
     describe 'lookback window', freeze_time: true do
-      it 'defaults to a 15 minute lookback' do
+      let(:staging_load_cutoff) do
         service.sync
-
-        staging_load = executed_sql.find { |sql| sql.match?(/INSERT INTO .*_staging/) }
-        expect(staging_load).to include(15.minutes.ago.utc.to_s)
+        executed_sql.find { |sql| sql.match?(/INSERT INTO .*_staging/) }
       end
 
-      it 'honors a custom lookback_minutes argument' do
-        service.sync(lookback_minutes: 60)
+      it 'reads the window from config' do
+        allow(IdentityConfig.store).
+          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(60)
 
-        staging_load = executed_sql.find { |sql| sql.match?(/INSERT INTO .*_staging/) }
-        expect(staging_load).to include(60.minutes.ago.utc.to_s)
+        expect(staging_load_cutoff).to include(60.minutes.ago.utc.to_s)
       end
 
+      it 'falls back to the default when config is unset' do
+        allow(IdentityConfig.store).
+          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(nil)
+
+        expect(staging_load_cutoff).to include(
+          described_class::DEFAULT_LOOKBACK_MINUTES.minutes.ago.utc.to_s,
+        )
+      end
+
+      it 'defaults to a 15 minute lookback' do
+        expect(described_class::DEFAULT_LOOKBACK_MINUTES).to eq(15)
+      end
+
+      # Guards against the config being read a second time and drifting from the
+      # value the SQL actually used.
       it 'returns the cutoff and lookback it used' do
-        expect(service.sync(lookback_minutes: 60)).to include(
+        allow(IdentityConfig.store).
+          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(60)
+
+        expect(service.sync).to include(
           cutoff: 60.minutes.ago.utc.iso8601,
           lookback_minutes: 60,
         )

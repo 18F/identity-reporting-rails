@@ -71,6 +71,8 @@ class IdentityConfig
     config.add(:s3_report_public_bucket_prefix, type: :string)
     config.add(:unload_line_count_threshold, type: :integer)
     config.add(:idp_zero_etl_enabled, type: :boolean)
+    config.add(:zero_etl_email_addresses_lookback_minutes, type: :integer)
+    config.add(:zero_etl_enabled, type: :boolean)
 
     # Allow override via environment variable for worker-specific credentials
     # Two-worker setup:
