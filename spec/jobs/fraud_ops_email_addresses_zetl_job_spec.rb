@@ -11,8 +11,6 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
     allow(FraudOps::EmailAddressesZetlSync).to receive(:new).and_return(sync)
     allow(sync).to receive(:sync).and_return(sync_result)
     allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(true)
-    allow(IdentityConfig.store).
-      to receive(:zero_etl_email_addresses_lookback_minutes).and_return(15)
     allow(Rails.logger).to receive(:info)
     allow(Rails.logger).to receive(:error)
   end
@@ -32,27 +30,12 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
     end
 
     context 'when zero_etl_enabled is true' do
-      it 'passes the configured lookback to the sync' do
-        expect(sync).to receive(:sync).with(lookback_minutes: 15)
+      # The lookback window is config-driven and owned by the service, so the job
+      # hands it nothing and reports back whatever the service says it used.
+      it 'runs the sync with no arguments' do
+        expect(sync).to receive(:sync).with(no_args)
 
         job.perform
-      end
-
-      # The default argument is evaluated per invocation, so a config change takes
-      # effect on the next run rather than needing a worker restart.
-      it 'resolves the lookback from config on every run' do
-        allow(IdentityConfig.store).
-          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(45)
-
-        expect(sync).to receive(:sync).with(lookback_minutes: 45)
-
-        job.perform
-      end
-
-      it 'lets an explicit lookback_minutes override the config default' do
-        expect(sync).to receive(:sync).with(lookback_minutes: 60)
-
-        job.perform(lookback_minutes: 60)
       end
 
       it 'logs start and completion' do
@@ -70,13 +53,15 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
         )
       end
 
-      # Regression guard: the start log interpolates the resolved lookback, so a
-      # signature that drops the keyword argument raises NameError here.
-      it 'records the resolved lookback in the start log' do
+      # The job never resolves the lookback itself, so the only way it can reach
+      # the log is by way of the service's return value.
+      it 'reports the lookback the service used' do
+        allow(sync).to receive(:sync).and_return(sync_result.merge(lookback_minutes: 45))
+
         job.perform
 
         expect(Rails.logger).to have_received(:info).with(
-          a_string_matching(/Job started/).and(a_string_matching(/"lookback_minutes":15/)),
+          a_string_matching(/Job completed/).and(a_string_matching(/"lookback_minutes":45/)),
         )
       end
     end

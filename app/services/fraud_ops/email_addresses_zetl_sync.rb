@@ -10,7 +10,7 @@ module FraudOps
     MERGE_KEY = 'id'
     DEFAULT_LOOKBACK_MINUTES = 15
 
-    def sync(lookback_minutes: DEFAULT_LOOKBACK_MINUTES)
+    def sync
       unless target_table_exists?
         Rails.logger.info(
           "#{qualified(TARGET_TABLE)} does not exist, skipping sync. " \
@@ -25,6 +25,11 @@ module FraudOps
     end
 
     private
+
+    def lookback_minutes
+      @lookback_minutes ||=
+        IdentityConfig.store.zero_etl_email_addresses_lookback_minutes || DEFAULT_LOOKBACK_MINUTES
+    end
 
     def merge_delta(lookback_minutes)
       cutoff = lookback_minutes.minutes.ago.utc

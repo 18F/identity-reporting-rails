@@ -110,22 +110,26 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
         executed_sql.find { |sql| sql.match?(/INSERT INTO .*_staging/) }
       end
 
-      # The service takes the window as an argument; resolving it from config is
-      # the job's responsibility, asserted in the job spec.
-      it 'defaults to a 15 minute lookback' do
+      it 'reads the window from config so each environment can override it' do
+        allow(IdentityConfig.store).
+          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(60)
+
+        expect(staging_load_cutoff).to include(60.minutes.ago.utc.to_s)
+      end
+
+      it 'falls back to the default when config is unset' do
+        allow(IdentityConfig.store).
+          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(nil)
+
         expect(described_class::DEFAULT_LOOKBACK_MINUTES).to eq(15)
         expect(staging_load_cutoff).to include(15.minutes.ago.utc.to_s)
       end
 
-      it 'honors a custom lookback_minutes argument' do
-        service.sync(lookback_minutes: 60)
-
-        staging_load = executed_sql.find { |sql| sql.match?(/INSERT INTO .*_staging/) }
-        expect(staging_load).to include(60.minutes.ago.utc.to_s)
-      end
-
       it 'returns the cutoff and lookback it used' do
-        expect(service.sync(lookback_minutes: 60)).to include(
+        allow(IdentityConfig.store).
+          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(60)
+
+        expect(service.sync).to include(
           cutoff: 60.minutes.ago.utc.iso8601,
           lookback_minutes: 60,
         )
