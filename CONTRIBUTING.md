@@ -87,7 +87,9 @@ fix/1517-redshift-sync-secret-fetch
   (`.gitlab/merge_request_templates/Default.md`) — link the issue in the
   **Ticket** section, explain the change in **Summary**, and record how it was
   checked in **Verification**. Because commit headers carry no body, the MR
-  description is where the "why" and context live.
+  description is where the "why" and context live. Remove any template section
+  or checklist item that does not apply — don't leave placeholders or mark them
+  N/A.
 
 ### Additional notes on pull requests and code reviews
 
