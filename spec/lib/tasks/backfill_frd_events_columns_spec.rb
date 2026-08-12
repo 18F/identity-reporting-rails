@@ -23,17 +23,21 @@ RSpec.describe 'frd_events:backfill_columns', type: :task do
     }
   end
 
-  after { task.reenable }
-
-  before do
-    connection.execute('DELETE FROM fraudops.frd_events')
+  def insert_row(event_key, message_hash)
     connection.execute(
       ActiveRecord::Base.send(
         :sanitize_sql_array,
         ['INSERT INTO fraudops.frd_events (event_key, message, dw_created_at) ' \
-         'VALUES (?, ?::jsonb, CURRENT_TIMESTAMP)', 'evt-1', JSON.generate(message)],
+         'VALUES (?, ?::jsonb, CURRENT_TIMESTAMP)', event_key, JSON.generate(message_hash)],
       ),
     )
+  end
+
+  after { task.reenable }
+
+  before do
+    connection.execute('DELETE FROM fraudops.frd_events')
+    insert_row('evt-1', message)
   end
 
   it 'backfills the six flattened columns from message' do
@@ -58,5 +62,53 @@ RSpec.describe 'frd_events:backfill_columns', type: :task do
       "SELECT COUNT(*) AS c FROM fraudops.frd_events WHERE event_type = 'idv-phone-submitted'",
     ).first['c']
     expect(count).to eq(1)
+  end
+
+  it 'terminates on rows whose message yields no event object (no /event-type/ key)' do
+    # These rows extract to event_type = nil, so the UPDATE leaves event_type NULL and
+    # they keep matching `event_type IS NULL`. Without the monotonic event_key cursor,
+    # a full batch of such rows would re-select forever. With batch_size = 2 and 3 such
+    # rows, the OLD code would never advance; the cursor makes each visited exactly once.
+    connection.execute('DELETE FROM fraudops.frd_events')
+    insert_row('no-evt-1', { foo: 'bar' })
+    insert_row('no-evt-2', {})
+    insert_row('no-evt-3', { baz: { qux: 1 } })
+
+    update_count = 0
+    allow(connection).to receive(:execute).and_wrap_original do |orig, sql|
+      update_count += 1 if sql.is_a?(String) && sql.start_with?('UPDATE fraudops.frd_events')
+      orig.call(sql)
+    end
+
+    Timeout.timeout(15) do
+      expect { task.invoke(2) }.not_to raise_error
+    end
+
+    # Each of the 3 rows is UPDATEd exactly once — never re-processed.
+    expect(update_count).to eq(3)
+
+    null_count = connection.exec_query(
+      'SELECT COUNT(*) AS c FROM fraudops.frd_events WHERE event_type IS NULL',
+    ).first['c']
+    expect(null_count).to eq(3)
+  end
+
+  it 'backfills across multiple batches and terminates on a partial batch' do
+    # 3 backfillable rows with batch_size = 2 forces a full batch then a partial batch,
+    # exercising the cursor advance + partial-batch termination the single-row fixture
+    # never does.
+    connection.execute('DELETE FROM fraudops.frd_events')
+    insert_row('multi-1', message)
+    insert_row('multi-2', message)
+    insert_row('multi-3', message)
+
+    Timeout.timeout(15) do
+      expect { task.invoke(2) }.not_to raise_error
+    end
+
+    count = connection.exec_query(
+      "SELECT COUNT(*) AS c FROM fraudops.frd_events WHERE event_type = 'idv-phone-submitted'",
+    ).first['c']
+    expect(count).to eq(3)
   end
 end

@@ -28,17 +28,35 @@ namespace :frd_events do
 
     log.call('Backfill started', batch_size: batch_size)
 
+    # Monotonic cursor over event_key drives termination INDEPENDENTLY of what the
+    # UPDATE writes. This is critical: the extractor returns event_type = nil for
+    # rows whose message yields no event object (empty hash, unparseable JSON, or no
+    # /event-type/ key), so those rows keep matching `event_type IS NULL`. Without a
+    # cursor, a batch full of such rows would re-select forever and never terminate.
+    # event_key is a VARCHAR, so every real key sorts greater than '' — starting the
+    # cursor at '' includes the lowest event_key in the first batch.
+    #
+    # The `event_type IS NULL` predicate is retained on top of the cursor so a re-run
+    # after a partial/interrupted run skips already-populated rows and never collides
+    # with the live ingestion job. Within a run the cursor guarantees forward progress;
+    # across runs the predicate guarantees idempotency.
+    cursor = ''
+
     loop do
       rows = connection.exec_query(
         ActiveRecord::Base.send(
           :sanitize_sql_array,
           ['SELECT event_key, message FROM fraudops.frd_events ' \
-           'WHERE event_type IS NULL AND message IS NOT NULL ' \
-           'ORDER BY event_key LIMIT ?', batch_size],
+           'WHERE event_type IS NULL AND message IS NOT NULL AND event_key > ? ' \
+           'ORDER BY event_key LIMIT ?', cursor, batch_size],
         ),
       ).to_a
       break if rows.empty?
 
+      # NOTE: this single Postgres-style parameterized UPDATE is what actually runs
+      # in local/test (jsonb) and against Redshift in prod (SUPER). The Redshift path
+      # is verified-by-inspection only — it is not exercised by these specs, per the
+      # plan's Redshift caveat — but the statement shape is adapter-agnostic.
       DataWarehouseApplicationRecord.transaction do
         rows.each do |row|
           decrypted = BackfillColumns.parse_message(row['message'])
@@ -57,6 +75,9 @@ namespace :frd_events do
         end
       end
 
+      # Advance the cursor past the last processed key so the next batch strictly
+      # progresses, even for rows that were left with event_type = NULL.
+      cursor = rows.last['event_key']
       total += rows.size
       log.call('Batch complete', batch_rows: rows.size, total_updated: total)
       break if rows.size < batch_size
