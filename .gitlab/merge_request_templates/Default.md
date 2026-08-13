@@ -3,7 +3,7 @@
 
 ## :ticket: Ticket
 
-[issue-<issue-id>](https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/issues/<issue-id>)
+[issue-<issue_id>](https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/work_items/<issue_id>)
 
 ## :tools: Summary
 
