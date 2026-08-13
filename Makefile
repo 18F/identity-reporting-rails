@@ -10,6 +10,10 @@ PORT ?= 3000
 GZIP_COMMAND ?= gzip
 ARTIFACT_DESTINATION_FILE ?= ./tmp/idp.tar.gz
 
+# RuboCop parallelism flag. Defaults to --parallel; override with --no-parallel
+# where RuboCop's forked workers crash (e.g. the devenv sandbox: Parallel::DeadWorker).
+RUBOCOP_PARALLELISM ?= --parallel
+
 .PHONY: \
 	brakeman \
 	check \
@@ -49,9 +53,9 @@ lint: ## Runs all lint tests
 	# Ruby
 	@echo "--- rubocop ---"
 ifdef JUNIT_OUTPUT
-	bundle exec rubocop --parallel --format progress --format junit --out rubocop.xml --display-only-failed
+	bundle exec rubocop $(RUBOCOP_PARALLELISM) --format progress --format junit --out rubocop.xml --display-only-failed
 else
-	bundle exec rubocop --parallel
+	bundle exec rubocop $(RUBOCOP_PARALLELISM)
 endif
 	@echo "--- brakeman ---"
 	make brakeman
