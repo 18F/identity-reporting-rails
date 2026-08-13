@@ -22,7 +22,7 @@ class IdpZeroEtlBindingViewSyncJob < ApplicationJob
       return
     end
 
-    results = ZetlBindingViewSync.new.sync
+    results = IdpZeroEtlBindingViewSync.new.sync
 
     logger.info(
       {

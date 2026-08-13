@@ -17,7 +17,7 @@ namespace :db do
       next
     end
 
-    results = ZetlBindingViewSync.new.sync
+    results = IdpZeroEtlBindingViewSync.new.sync
 
     puts "idp_curated_views binding view sync completed successfully " \
          "(#{results[:created]} synced, #{results[:skipped]} skipped, " \

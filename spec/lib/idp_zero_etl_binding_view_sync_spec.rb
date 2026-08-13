@@ -1,7 +1,7 @@
 require 'rails_helper'
 require 'idp_zero_etl_binding_view_sync'
 
-RSpec.describe ZetlBindingViewSync do
+RSpec.describe IdpZeroEtlBindingViewSync do
   let(:exclusion_config_path) do
     Rails.root.join('spec', 'fixtures', 'idp_zero_etl_column_config.yaml')
   end
