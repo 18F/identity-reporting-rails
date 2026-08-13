@@ -129,7 +129,7 @@ else
         cron: cron_15m,
       },
       # Refresh idp_curated_views late-binding views from analytics_zetl
-      zetl_binding_view_sync_job: {
+      idp_zero_etl_sync_job: {
         class: 'ZetlBindingViewSyncJob',
         cron: cron_weekly_sunday_6am,
       },

@@ -3,34 +3,34 @@
 require 'rails_helper'
 
 RSpec.describe ZetlBindingViewSyncJob, type: :job do
-  let(:zetl_binding_view_sync) { instance_double(ZetlBindingViewSync) }
+  let(:idp_zero_etl_sync) { instance_double(ZetlBindingViewSync) }
   let(:logger) { instance_double(ActiveSupport::Logger) }
   let(:job_log_subscriber) { instance_double(IdentityJobLogSubscriber, logger: logger) }
 
   before do
-    allow(ZetlBindingViewSync).to receive(:new).and_return(zetl_binding_view_sync)
+    allow(ZetlBindingViewSync).to receive(:new).and_return(idp_zero_etl_sync)
     allow(IdentityJobLogSubscriber).to receive(:new).and_return(job_log_subscriber)
-    allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(true)
+    allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(true)
   end
 
   describe '#perform' do
-    context 'when zero_etl_enabled is false' do
+    context 'when idp_zero_etl_enabled is false' do
       before do
-        allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(false)
-        allow(zetl_binding_view_sync).to receive(:sync)
+        allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(false)
+        allow(idp_zero_etl_sync).to receive(:sync)
         allow(logger).to receive(:info)
       end
 
       it 'does not call ZetlBindingViewSync.sync' do
         subject.perform
-        expect(zetl_binding_view_sync).not_to have_received(:sync)
+        expect(idp_zero_etl_sync).not_to have_received(:sync)
       end
 
       it 'logs that it was skipped' do
         expect(logger).to receive(:info).with(
           {
             name: 'ZetlBindingViewSyncJob',
-            skipped: 'zero_etl_enabled is false',
+            skipped: 'idp_zero_etl_enabled is false',
           }.to_json,
         )
         subject.perform
@@ -41,13 +41,13 @@ RSpec.describe ZetlBindingViewSyncJob, type: :job do
       let(:results) { { created: 2, skipped: 1, failed: 0, stale: 0 } }
 
       before do
-        allow(zetl_binding_view_sync).to receive(:sync).and_return(results)
+        allow(idp_zero_etl_sync).to receive(:sync).and_return(results)
         allow(logger).to receive(:info)
       end
 
       it 'calls ZetlBindingViewSync.sync' do
         subject.perform
-        expect(zetl_binding_view_sync).to have_received(:sync)
+        expect(idp_zero_etl_sync).to have_received(:sync)
       end
 
       it 'logs success' do
@@ -68,7 +68,7 @@ RSpec.describe ZetlBindingViewSyncJob, type: :job do
       let(:error) { StandardError.new(error_message) }
 
       before do
-        allow(zetl_binding_view_sync).to receive(:sync).and_raise(error)
+        allow(idp_zero_etl_sync).to receive(:sync).and_raise(error)
       end
 
       it 'logs error' do

@@ -2,7 +2,7 @@
 
 # frozen_string_literal: true
 
-require 'zetl_binding_view_sync'
+require 'idp_zero_etl_sync'
 
 namespace :db do
   desc 'Refresh idp_curated_views late-binding views from analytics_zetl (minus excluded columns)'
@@ -12,8 +12,8 @@ namespace :db do
       exit 1
     end
 
-    unless IdentityConfig.store.zero_etl_enabled
-      puts 'Skipping: zero_etl_enabled is false'
+    unless IdentityConfig.store.idp_zero_etl_enabled
+      puts 'Skipping: idp_zero_etl_enabled is false'
       next
     end
 

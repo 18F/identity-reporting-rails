@@ -63,9 +63,9 @@ RSpec.describe RedshiftSync do
           ],
         },
         # Mirrors the real config: the zero-ETL replica is gated behind
-        # zero_etl_enabled, which is absent from terraform_config below (disabled).
+        # idp_zero_etl_enabled, which is absent from terraform_config below (disabled).
         'analytics_zetl' => {
-          'feature_flag' => 'zero_etl_enabled',
+          'feature_flag' => 'idp_zero_etl_enabled',
           'user_groups' => [],
           'lambda_users' => [],
           'system_users' => [
@@ -580,7 +580,7 @@ RSpec.describe RedshiftSync do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
 
       before do
-        allow(sync).to receive(:config_file).and_return("zero_etl_enabled = true\n")
+        allow(sync).to receive(:config_file).and_return("idp_zero_etl_enabled = true\n")
       end
 
       it 'runs the sync' do
@@ -665,8 +665,8 @@ RSpec.describe RedshiftSync do
       let(:new_users) { ['IAM:john.doe'] }
 
       before do
-        # Enable the zero_etl_enabled gate so the sync body actually runs.
-        allow(sync).to receive(:config_file).and_return("zero_etl_enabled = true\n")
+        # Enable the idp_zero_etl_enabled gate so the sync body actually runs.
+        allow(sync).to receive(:config_file).and_return("idp_zero_etl_enabled = true\n")
         allow(sync).to receive(:create_users).and_return(new_users)
       end
 

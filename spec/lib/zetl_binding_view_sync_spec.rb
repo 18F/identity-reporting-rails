@@ -1,5 +1,5 @@
 require 'rails_helper'
-require 'zetl_binding_view_sync'
+require 'idp_zero_etl_sync'
 
 RSpec.describe ZetlBindingViewSync do
   let(:exclusion_config_path) do

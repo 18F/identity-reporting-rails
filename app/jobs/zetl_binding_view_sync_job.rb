@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'zetl_binding_view_sync'
+require 'idp_zero_etl_sync'
 
 class ZetlBindingViewSyncJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
@@ -12,11 +12,11 @@ class ZetlBindingViewSyncJob < ApplicationJob
   )
 
   def perform
-    unless IdentityConfig.store.zero_etl_enabled
+    unless IdentityConfig.store.idp_zero_etl_enabled
       logger.info(
         {
           name: 'ZetlBindingViewSyncJob',
-          skipped: 'zero_etl_enabled is false',
+          skipped: 'idp_zero_etl_enabled is false',
         }.to_json,
       )
       return
