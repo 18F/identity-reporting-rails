@@ -2,7 +2,7 @@
 
 # frozen_string_literal: true
 
-require 'idp_zero_etl_sync'
+require 'idp_zero_etl_binding_view_sync'
 
 namespace :db do
   desc 'Refresh idp_curated_views late-binding views from analytics_zetl (minus excluded columns)'

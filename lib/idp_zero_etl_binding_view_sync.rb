@@ -6,7 +6,7 @@ require 'yaml'
 # `idp_curated_views` schema from the `public` schema of the read-only `analytics_zetl` database.
 class ZetlBindingViewSync
   DEFAULT_EXCLUSION_CONFIG_PATH =
-    Rails.root.join('config', 'zetl_column_config.yaml').freeze
+    Rails.root.join('config', 'idp_zero_etl_column_config.yaml').freeze
 
   TARGET_SCHEMA = 'idp_curated_views'
   SOURCE_DATABASE = 'analytics_zetl'

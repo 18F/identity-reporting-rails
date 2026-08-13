@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require 'idp_zero_etl_sync'
+require 'idp_zero_etl_binding_view_sync'
 
-class ZetlBindingViewSyncJob < ApplicationJob
+class IdpZeroEtlBindingViewSyncJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
   queue_as :admin # Requires privileges to CREATE SCHEMA / CREATE VIEW
@@ -15,7 +15,7 @@ class ZetlBindingViewSyncJob < ApplicationJob
     unless IdentityConfig.store.idp_zero_etl_enabled
       logger.info(
         {
-          name: 'ZetlBindingViewSyncJob',
+          name: 'IdpZeroEtlBindingViewSyncJob',
           skipped: 'idp_zero_etl_enabled is false',
         }.to_json,
       )
@@ -26,7 +26,7 @@ class ZetlBindingViewSyncJob < ApplicationJob
 
     logger.info(
       {
-        name: 'ZetlBindingViewSyncJob',
+        name: 'IdpZeroEtlBindingViewSyncJob',
         success: true,
         message: 'ZETL binding view sync completed successfully',
         results: results,
@@ -35,7 +35,7 @@ class ZetlBindingViewSyncJob < ApplicationJob
   rescue StandardError => e
     logger.error(
       {
-        name: 'ZetlBindingViewSyncJob',
+        name: 'IdpZeroEtlBindingViewSyncJob',
         error: e.message,
       }.to_json,
     )

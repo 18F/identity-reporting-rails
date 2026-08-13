@@ -1,9 +1,9 @@
 require 'rails_helper'
-require 'idp_zero_etl_sync'
+require 'idp_zero_etl_binding_view_sync'
 
 RSpec.describe ZetlBindingViewSync do
   let(:exclusion_config_path) do
-    Rails.root.join('spec', 'fixtures', 'zetl_column_config.yaml')
+    Rails.root.join('spec', 'fixtures', 'idp_zero_etl_column_config.yaml')
   end
   let(:connection) { instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter) }
   let(:source_rows) do

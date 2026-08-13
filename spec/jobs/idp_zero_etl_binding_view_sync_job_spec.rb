@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe ZetlBindingViewSyncJob, type: :job do
+RSpec.describe IdpZeroEtlBindingViewSyncJob, type: :job do
   let(:idp_zero_etl_sync) { instance_double(ZetlBindingViewSync) }
   let(:logger) { instance_double(ActiveSupport::Logger) }
   let(:job_log_subscriber) { instance_double(IdentityJobLogSubscriber, logger: logger) }
@@ -29,7 +29,7 @@ RSpec.describe ZetlBindingViewSyncJob, type: :job do
       it 'logs that it was skipped' do
         expect(logger).to receive(:info).with(
           {
-            name: 'ZetlBindingViewSyncJob',
+            name: 'IdpZeroEtlBindingViewSyncJob',
             skipped: 'idp_zero_etl_enabled is false',
           }.to_json,
         )
@@ -53,7 +53,7 @@ RSpec.describe ZetlBindingViewSyncJob, type: :job do
       it 'logs success' do
         expect(logger).to receive(:info).with(
           {
-            name: 'ZetlBindingViewSyncJob',
+            name: 'IdpZeroEtlBindingViewSyncJob',
             success: true,
             message: 'ZETL binding view sync completed successfully',
             results: results,
@@ -74,7 +74,7 @@ RSpec.describe ZetlBindingViewSyncJob, type: :job do
       it 'logs error' do
         expect(logger).to receive(:error).with(
           {
-            name: 'ZetlBindingViewSyncJob',
+            name: 'IdpZeroEtlBindingViewSyncJob',
             error: error_message,
           }.to_json,
         )
