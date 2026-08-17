@@ -1,6 +1,9 @@
+<!-- Remove any section or checklist item that does not apply — don't leave
+     placeholders or mark them N/A. -->
+
 ## :ticket: Ticket
 
-[issue-<issue-id>](https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/issues/<issue-id>)
+[issue-<issue_id>](https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/work_items/<issue_id>)
 
 ## :tools: Summary
 
