@@ -6,7 +6,7 @@ module FraudOps
     SCHEMA_NAME = 'fraudops'
     TARGET_TABLE = 'frd_email_addresses_zero_etl'
     STAGING_TABLE = 'frd_email_addresses_zero_etl_staging'
-    SOURCE_TABLE = 'analytics_zetl.public.email_addresses'
+    SOURCE_TABLE = "#{IdentityConfig.store.redshift_database_zetl_name}.public.email_addresses"
     MERGE_KEY = 'id'
     DEFAULT_LOOKBACK_MINUTES = 15
 

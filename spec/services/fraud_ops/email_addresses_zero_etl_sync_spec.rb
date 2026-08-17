@@ -91,8 +91,11 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
 
       # The three-part name is how Redshift reaches a table in the zero-ETL database, which
       # lives alongside the analytics one on the cluster. Only the read crosses databases.
-      it 'reads from the source table in the zero-ETL database' do
-        expect(staging_load_sql).to match(/FROM analytics_zetl\.public\.email_addresses AS source/)
+      # The database half comes from redshift_database_zetl_name, which is '' locally, so this
+      # pins the shape of the FROM clause rather than the deployed database name.
+      it 'reads from public.email_addresses in the configured zero-ETL database' do
+        expect(described_class::SOURCE_TABLE).to end_with('.public.email_addresses')
+        expect(staging_load_sql).to include("FROM #{described_class::SOURCE_TABLE} AS source")
       end
 
       it 'filters on the source table updated_at' do
