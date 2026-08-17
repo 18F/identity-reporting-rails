@@ -134,7 +134,7 @@ else
         class: 'IdpZeroEtlBindingViewSyncJob',
         cron: cron_1d_offset_430am,
       },
-      # Sync fraudops email addresses from the zero-ETL curated view
+      # Sync fraudops email addresses from public.email_addresses in the zero-ETL database
       fraud_ops_email_addresses_zero_etl_job: {
         class: 'FraudOpsEmailAddressesZeroEtlJob',
         cron: '5-59/15 * * * *',

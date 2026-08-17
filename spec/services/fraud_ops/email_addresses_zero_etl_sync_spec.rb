@@ -85,16 +85,26 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
 
       it 'decrypts the email through the decryption UDF' do
         expect(staging_load_sql).to match(
-          /fraudops\.decrypt_udf\(curated\.encrypted_email, curated\.id\)/,
+          /fraudops\.decrypt_udf\(source\.encrypted_email, source\.id\)/,
         )
       end
 
-      it 'reads from the curated view' do
-        expect(staging_load_sql).to match(/FROM idp_curated_views\.email_addresses curated/)
+      # The three-part name is how Redshift reaches a table in the zero-ETL database, which
+      # lives alongside the analytics one on the cluster. Only the read crosses databases.
+      it 'reads from the source table in the zero-ETL database' do
+        expect(staging_load_sql).to match(/FROM analytics_zetl\.public\.email_addresses AS source/)
       end
 
-      it 'filters on the curated view updated_at' do
-        expect(staging_load_sql).to match(/WHERE curated\.updated_at >= /)
+      it 'filters on the source table updated_at' do
+        expect(staging_load_sql).to match(/WHERE source\.updated_at >= /)
+      end
+
+      # The whole point of the three-part name: one connection, one transaction. Opening a
+      # second connection would put the staging load and the merge in separate transactions.
+      it 'never opens a connection to the zero-ETL database' do
+        expect(DataWarehouseApplicationRecordZetl).not_to receive(:connection)
+
+        service.sync
       end
 
       it 'drops the staging table after the merge' do

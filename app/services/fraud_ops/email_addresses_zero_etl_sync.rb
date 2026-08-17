@@ -6,7 +6,7 @@ module FraudOps
     SCHEMA_NAME = 'fraudops'
     TARGET_TABLE = 'frd_email_addresses_zero_etl'
     STAGING_TABLE = 'frd_email_addresses_zero_etl_staging'
-    CURATED_VIEW = 'idp_curated_views.email_addresses'
+    SOURCE_TABLE = 'analytics_zetl.public.email_addresses'
     MERGE_KEY = 'id'
     DEFAULT_LOOKBACK_MINUTES = 15
 
@@ -70,14 +70,14 @@ module FraudOps
         INSERT INTO %{staging_table}
           (id, encrypted_email, user_id, email, dw_created_at, dw_updated_at)
         SELECT
-          curated.id,
-          curated.encrypted_email,
-          curated.user_id,
-          %{schema_name}.decrypt_udf(curated.encrypted_email, curated.id),
+          source.id,
+          source.encrypted_email,
+          source.user_id,
+          %{schema_name}.decrypt_udf(source.encrypted_email, source.id),
           CURRENT_TIMESTAMP,
           CURRENT_TIMESTAMP
-        FROM %{curated_view} curated
-        WHERE curated.updated_at >= %{cutoff}
+        FROM %{source_table} AS source
+        WHERE source.updated_at >= %{cutoff}
       SQL
     end
 
@@ -110,7 +110,7 @@ module FraudOps
         schema_name: SCHEMA_NAME,
         target_table: qualified(TARGET_TABLE),
         staging_table: qualified(STAGING_TABLE),
-        curated_view: CURATED_VIEW,
+        source_table: SOURCE_TABLE,
         merge_key: MERGE_KEY,
       }
     end
