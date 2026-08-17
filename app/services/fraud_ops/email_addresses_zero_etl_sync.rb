@@ -2,10 +2,10 @@
 
 module FraudOps
   # Maintains a Zero-ETL-sourced twin of fraudops.frd_email_addresses.
-  class EmailAddressesZetlSync
+  class EmailAddressesZeroEtlSync
     SCHEMA_NAME = 'fraudops'
-    TARGET_TABLE = 'frd_email_addresses_zetl'
-    STAGING_TABLE = 'frd_email_addresses_zetl_staging'
+    TARGET_TABLE = 'frd_email_addresses_zero_etl'
+    STAGING_TABLE = 'frd_email_addresses_zero_etl_staging'
     CURATED_VIEW = 'idp_curated_views.email_addresses'
     MERGE_KEY = 'id'
     DEFAULT_LOOKBACK_MINUTES = 15
@@ -19,7 +19,7 @@ module FraudOps
         return { skipped: true }
       end
 
-      cutoff = merge_delta(lookback_minutes)
+      cutoff = merge_delta
 
       { skipped: false, cutoff: cutoff.iso8601, lookback_minutes: lookback_minutes }
     end
@@ -28,10 +28,11 @@ module FraudOps
 
     def lookback_minutes
       @lookback_minutes ||=
-        IdentityConfig.store.zero_etl_email_addresses_lookback_minutes || DEFAULT_LOOKBACK_MINUTES
+        IdentityConfig.store.idp_zero_etl_email_addresses_lookback_minutes ||
+        DEFAULT_LOOKBACK_MINUTES
     end
 
-    def merge_delta(lookback_minutes)
+    def merge_delta
       cutoff = lookback_minutes.minutes.ago.utc
 
       DataWarehouseApplicationRecord.transaction do

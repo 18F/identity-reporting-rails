@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 module FraudOps
-  class EmailAddressesZetlBootstrap
+  class EmailAddressesZeroEtlBootstrap
     SCHEMA_NAME = 'fraudops'
     SOURCE_TABLE = 'frd_email_addresses'
-    TARGET_TABLE = 'frd_email_addresses_zetl'
+    TARGET_TABLE = 'frd_email_addresses_zero_etl'
     MERGE_KEY = 'id'
 
     def bootstrap

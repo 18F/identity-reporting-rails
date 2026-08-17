@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# Keeps fraudops.frd_email_addresses_zetl in sync with the zero-ETL curated view.
-class FraudOpsEmailAddressesZetlJob < ApplicationJob
+# Keeps fraudops.frd_email_addresses_zero_etl in sync with the zero-ETL curated view.
+class FraudOpsEmailAddressesZeroEtlJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
   queue_as :admin
@@ -11,13 +11,13 @@ class FraudOpsEmailAddressesZetlJob < ApplicationJob
   )
 
   def perform
-    unless IdentityConfig.store.zero_etl_enabled
-      return log_message(:info, 'zero_etl_enabled is false, skipping job.', false)
+    unless IdentityConfig.store.idp_zero_etl_enabled
+      return log_message(:info, 'idp_zero_etl_enabled is false, skipping job.', false)
     end
 
     log_message(:info, 'Job started.', true)
 
-    result = FraudOps::EmailAddressesZetlSync.new.sync
+    result = FraudOps::EmailAddressesZeroEtlSync.new.sync
 
     log_message(:info, 'Job completed.', true, result)
   rescue => e

@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe FraudOps::EmailAddressesZetlSync do
+RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
   let(:service) { described_class.new }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
   let(:target_table_exists) { true }
@@ -33,7 +33,7 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
 
       it 'logs the skip and names the rake task that provisions the table' do
         expect(Rails.logger).to receive(:info).with(
-          a_string_matching(/fraudops\.frd_email_addresses_zetl does not exist/).
+          a_string_matching(/fraudops\.frd_email_addresses_zero_etl does not exist/).
             and(a_string_matching(/rake fraudops:bootstrap_email_addresses_zetl/)),
         )
 
@@ -47,8 +47,8 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
       it 'does not provision the table itself' do
         service.sync
 
-        expect(executed_sql).not_to include(a_string_matching(/CREATE TABLE .*_zetl \(LIKE/))
-        expect(executed_sql).not_to include(a_string_matching(/INSERT INTO .*_zetl SELECT \*/))
+        expect(executed_sql).not_to include(a_string_matching(/CREATE TABLE .*_zero_etl \(LIKE/))
+        expect(executed_sql).not_to include(a_string_matching(/INSERT INTO .*_zero_etl SELECT \*/))
       end
     end
 
@@ -58,7 +58,7 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
       it 'performs the merge' do
         service.sync
 
-        expect(executed_sql).to include(a_string_matching(/frd_email_addresses_zetl_staging/))
+        expect(executed_sql).to include(a_string_matching(/frd_email_addresses_zero_etl_staging/))
       end
 
       it 'reports that it did not skip' do
@@ -70,7 +70,7 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
       let(:staging_load_sql) do
         service.sync
         executed_sql.find do |sql|
-          sql.include?('INSERT INTO fraudops.frd_email_addresses_zetl_staging')
+          sql.include?('INSERT INTO fraudops.frd_email_addresses_zero_etl_staging')
         end
       end
 
@@ -112,14 +112,14 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
 
       it 'reads the window from config so each environment can override it' do
         allow(IdentityConfig.store).
-          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(60)
+          to receive(:idp_zero_etl_email_addresses_lookback_minutes).and_return(60)
 
         expect(staging_load_cutoff).to include(60.minutes.ago.utc.to_s)
       end
 
       it 'falls back to the default when config is unset' do
         allow(IdentityConfig.store).
-          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(nil)
+          to receive(:idp_zero_etl_email_addresses_lookback_minutes).and_return(nil)
 
         expect(described_class::DEFAULT_LOOKBACK_MINUTES).to eq(15)
         expect(staging_load_cutoff).to include(15.minutes.ago.utc.to_s)
@@ -127,7 +127,7 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
 
       it 'returns the cutoff and lookback it used' do
         allow(IdentityConfig.store).
-          to receive(:zero_etl_email_addresses_lookback_minutes).and_return(60)
+          to receive(:idp_zero_etl_email_addresses_lookback_minutes).and_return(60)
 
         expect(service.sync).to include(
           cutoff: 60.minutes.ago.utc.iso8601,
@@ -142,8 +142,8 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
 
         merge_sql = executed_sql.find { |sql| sql.include?('MERGE INTO') }
 
-        expect(merge_sql).to match(/MERGE INTO fraudops\.frd_email_addresses_zetl/)
-        expect(merge_sql).to match(/ON fraudops\.frd_email_addresses_zetl\.id = source\.id/)
+        expect(merge_sql).to match(/MERGE INTO fraudops\.frd_email_addresses_zero_etl/)
+        expect(merge_sql).to match(/ON fraudops\.frd_email_addresses_zero_etl\.id = source\.id/)
         expect(merge_sql).to match(/WHEN MATCHED THEN UPDATE SET/)
         expect(merge_sql).to match(/WHEN NOT MATCHED THEN INSERT/)
       end
@@ -174,8 +174,8 @@ RSpec.describe FraudOps::EmailAddressesZetlSync do
   # test database so the production statement is exercised, not just matched.
   describe 'the generated MERGE, executed against PostgreSQL' do
     let(:connection) { DataWarehouseApplicationRecord.connection }
-    let(:target) { 'fraudops.frd_email_addresses_zetl' }
-    let(:staging) { 'fraudops.frd_email_addresses_zetl_staging' }
+    let(:target) { 'fraudops.frd_email_addresses_zero_etl' }
+    let(:staging) { 'fraudops.frd_email_addresses_zero_etl_staging' }
 
     before do
       allow(DataWarehouseApplicationRecord).to receive(:connection).and_call_original

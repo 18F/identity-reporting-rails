@@ -1,27 +1,27 @@
 require 'rails_helper'
 
-RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
+RSpec.describe FraudOpsEmailAddressesZeroEtlJob, type: :job do
   let(:job) { described_class.new }
-  let(:sync) { instance_double(FraudOps::EmailAddressesZetlSync) }
+  let(:sync) { instance_double(FraudOps::EmailAddressesZeroEtlSync) }
   let(:sync_result) do
     { skipped: false, cutoff: '2026-08-10T00:00:00Z', lookback_minutes: 15 }
   end
 
   before do
-    allow(FraudOps::EmailAddressesZetlSync).to receive(:new).and_return(sync)
+    allow(FraudOps::EmailAddressesZeroEtlSync).to receive(:new).and_return(sync)
     allow(sync).to receive(:sync).and_return(sync_result)
-    allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(true)
+    allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(true)
     allow(Rails.logger).to receive(:info)
     allow(Rails.logger).to receive(:error)
   end
 
   describe '#perform' do
-    context 'when zero_etl_enabled is false' do
-      before { allow(IdentityConfig.store).to receive(:zero_etl_enabled).and_return(false) }
+    context 'when idp_zero_etl_enabled is false' do
+      before { allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(false) }
 
       it 'logs that it skipped and does not run the sync' do
         expect(Rails.logger).to receive(:info).with(
-          a_string_matching(/zero_etl_enabled is false/),
+          a_string_matching(/idp_zero_etl_enabled is false/),
         )
         expect(sync).not_to receive(:sync)
 
@@ -29,7 +29,7 @@ RSpec.describe FraudOpsEmailAddressesZetlJob, type: :job do
       end
     end
 
-    context 'when zero_etl_enabled is true' do
+    context 'when idp_zero_etl_enabled is true' do
       # The lookback window is config-driven and owned by the service, so the job
       # hands it nothing and reports back whatever the service says it used.
       it 'runs the sync with no arguments' do

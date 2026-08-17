@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe FraudOps::EmailAddressesZetlBootstrap do
+RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
   let(:service) { described_class.new }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
   let(:target_table_exists) { false }
@@ -23,7 +23,7 @@ RSpec.describe FraudOps::EmailAddressesZetlBootstrap do
 
       it 'logs and exits without touching the table' do
         expect(Rails.logger).to receive(:info).with(
-          a_string_matching(/fraudops\.frd_email_addresses_zetl already exists/),
+          a_string_matching(/fraudops\.frd_email_addresses_zero_etl already exists/),
         )
 
         expect(service.bootstrap).to be(false)
@@ -36,9 +36,8 @@ RSpec.describe FraudOps::EmailAddressesZetlBootstrap do
         service.bootstrap
 
         expect(executed_sql).to include(
-          a_string_matching(
-            /CREATE TABLE fraudops\.frd_email_addresses_zetl \(LIKE fraudops\.frd_email_addresses/,
-          ),
+          a_string_matching(/CREATE TABLE fraudops\.frd_email_addresses_zero_etl \(LIKE/).
+            and(a_string_matching(/\(LIKE fraudops\.frd_email_addresses INCLUDING/)),
         )
       end
 
@@ -47,7 +46,7 @@ RSpec.describe FraudOps::EmailAddressesZetlBootstrap do
 
         expect(executed_sql).to include(
           a_string_matching(
-            /ALTER TABLE fraudops\.frd_email_addresses_zetl ADD PRIMARY KEY \(id\)/,
+            /ALTER TABLE fraudops\.frd_email_addresses_zero_etl ADD PRIMARY KEY \(id\)/,
           ),
         )
       end
@@ -56,7 +55,7 @@ RSpec.describe FraudOps::EmailAddressesZetlBootstrap do
         service.bootstrap
 
         expect(executed_sql).to include(
-          a_string_matching(/INSERT INTO fraudops\.frd_email_addresses_zetl SELECT \*/).
+          a_string_matching(/INSERT INTO fraudops\.frd_email_addresses_zero_etl SELECT \*/).
             and(a_string_matching(/FROM fraudops\.frd_email_addresses\z/)),
         )
       end
@@ -64,15 +63,15 @@ RSpec.describe FraudOps::EmailAddressesZetlBootstrap do
       it 'creates the table before seeding it' do
         service.bootstrap
 
-        create_index = executed_sql.index { |sql| sql.match?(/CREATE TABLE .*_zetl \(LIKE/) }
-        seed_index = executed_sql.index { |sql| sql.match?(/INSERT INTO .*_zetl SELECT \*/) }
+        create_index = executed_sql.index { |sql| sql.match?(/CREATE TABLE .*_zero_etl \(LIKE/) }
+        seed_index = executed_sql.index { |sql| sql.match?(/INSERT INTO .*_zero_etl SELECT \*/) }
 
         expect(create_index).to be < seed_index
       end
 
       it 'logs what it created and reports that it bootstrapped' do
         expect(Rails.logger).to receive(:info).with(
-          'Created fraudops.frd_email_addresses_zetl from fraudops.frd_email_addresses',
+          'Created fraudops.frd_email_addresses_zero_etl from fraudops.frd_email_addresses',
         )
 
         expect(service.bootstrap).to be(true)
@@ -96,7 +95,7 @@ RSpec.describe FraudOps::EmailAddressesZetlBootstrap do
   describe 'executed against PostgreSQL' do
     let(:connection) { DataWarehouseApplicationRecord.connection }
     let(:source) { 'fraudops.frd_email_addresses' }
-    let(:target) { 'fraudops.frd_email_addresses_zetl' }
+    let(:target) { 'fraudops.frd_email_addresses_zero_etl' }
 
     def column_names(table)
       schema, name = table.split('.')
