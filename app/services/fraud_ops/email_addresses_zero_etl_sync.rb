@@ -14,7 +14,7 @@ module FraudOps
       unless target_table_exists?
         Rails.logger.info(
           "#{qualified(TARGET_TABLE)} does not exist, skipping sync. " \
-          "Run rake fraudops:bootstrap_email_addresses_zetl to create it.",
+          "Run rake fraudops:bootstrap_email_addresses_zero_etl to create it.",
         )
         return { skipped: true }
       end
