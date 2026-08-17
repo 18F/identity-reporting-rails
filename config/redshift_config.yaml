@@ -39,7 +39,7 @@ databases:
           - schema_name: idp
             schema_privileges: USAGE
             table_privileges: SELECT
-          - schema_name: idp_curated_views
+          - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: logs
@@ -66,7 +66,7 @@ databases:
           - schema_name: idp
             schema_privileges: USAGE
             table_privileges: SELECT
-          - schema_name: idp_curated_views
+          - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: logs
@@ -93,7 +93,7 @@ databases:
           - schema_name: idp
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
-          - schema_name: idp_curated_views
+          - schema_name: idp_core
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
           - schema_name: logs
@@ -288,7 +288,7 @@ databases:
           - schema_name: idp
             schema_privileges: USAGE
             table_privileges: SELECT
-          - schema_name: idp_curated_views
+          - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: system_tables
@@ -329,7 +329,7 @@ databases:
           - dw_fraudops_email_enabled
           - fraud_ops_tracker_enabled
         schemas:
-          - schema_name: idp_curated_views
+          - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: fraudops

@@ -37,7 +37,7 @@ RSpec.describe IdpZeroEtlBindingViewSync do
       sync.sync
 
       expect(connection).to have_received(:execute).with(
-        %(CREATE SCHEMA IF NOT EXISTS "idp_curated_views";),
+        %(CREATE SCHEMA IF NOT EXISTS "idp_core";),
       )
     end
 
@@ -45,7 +45,7 @@ RSpec.describe IdpZeroEtlBindingViewSync do
       sync.sync
 
       expect(connection).to have_received(:execute).with(
-        a_string_matching(/CREATE OR REPLACE VIEW "idp_curated_views"\."identities"/).
+        a_string_matching(/CREATE OR REPLACE VIEW "idp_core"\."identities"/).
           and(a_string_matching(/SELECT "id", "user_id"/)).
           and(a_string_matching(/FROM "analytics_zetl"\."public"\."identities"/)).
           and(a_string_matching(/WITH NO SCHEMA BINDING/)),
@@ -56,7 +56,7 @@ RSpec.describe IdpZeroEtlBindingViewSync do
       sync.sync
 
       expect(connection).to have_received(:execute).with(
-        a_string_matching(/VIEW "idp_curated_views"\."users"/).
+        a_string_matching(/VIEW "idp_core"\."users"/).
           and(a_string_matching(/SELECT "id", "uuid"\n/)),
       )
       expect(connection).not_to have_received(:execute).with(
@@ -68,7 +68,7 @@ RSpec.describe IdpZeroEtlBindingViewSync do
       result = sync.sync
 
       expect(connection).not_to have_received(:execute).with(
-        a_string_matching(/VIEW "idp_curated_views"\."secrets"/),
+        a_string_matching(/VIEW "idp_core"\."secrets"/),
       )
       expect(result).to eq(created: 2, skipped: 1, stale: 0, failed: 0)
     end
@@ -91,7 +91,7 @@ RSpec.describe IdpZeroEtlBindingViewSync do
         result = sync.sync
 
         expect(logger).to have_received(:warn).with(
-          a_string_matching(/Stale view idp_curated_views\.removed_table/),
+          a_string_matching(/Stale view idp_core\.removed_table/),
         )
         expect(connection).not_to have_received(:execute).with(
           a_string_matching(/DROP VIEW/i),

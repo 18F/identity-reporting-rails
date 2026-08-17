@@ -3,12 +3,12 @@
 require 'yaml'
 
 # Creates/refreshes late-binding views in the analytics warehouse's
-# `idp_curated_views` schema from the `public` schema of the read-only `analytics_zetl` database.
+# `idp_core` schema from the `public` schema of the read-only `analytics_zetl` database.
 class IdpZeroEtlBindingViewSync
   DEFAULT_EXCLUSION_CONFIG_PATH =
     Rails.root.join('config', 'idp_zero_etl_column_config.yaml').freeze
 
-  TARGET_SCHEMA = 'idp_curated_views'
+  TARGET_SCHEMA = 'idp_core'
   SOURCE_DATABASE = 'analytics_zetl'
   SOURCE_SCHEMA = 'public'
 
@@ -37,7 +37,7 @@ class IdpZeroEtlBindingViewSync
     tables = source_tables
 
     log_info(
-      "Starting idp_curated_views binding view sync " \
+      "Starting idp_core binding view sync " \
       "(#{tables.size} source tables from #{source_database}.#{source_schema})",
     )
     create_schema
@@ -65,7 +65,7 @@ class IdpZeroEtlBindingViewSync
     results[:stale] = warn_stale_views(intended_views).size
 
     log_info(
-      "Completed idp_curated_views binding view sync: " \
+      "Completed idp_core binding view sync: " \
       "#{results[:created]} synced, #{results[:skipped]} skipped, #{results[:stale]} stale",
     )
     results

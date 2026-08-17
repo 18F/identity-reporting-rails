@@ -128,7 +128,7 @@ else
         class: 'QuicksightSyncJob',
         cron: cron_15m,
       },
-      # Refresh idp_curated_views late-binding views from analytics_zetl
+      # Refresh idp_core late-binding views from analytics_zetl
       idp_zero_etl_sync_job: {
         class: 'IdpZeroEtlBindingViewSyncJob',
         cron: cron_weekly_sunday_6am,
