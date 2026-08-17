@@ -29,6 +29,8 @@ good_job_max_threads: 5
 data_freshness_threshold_hours: 31
 good_job_queues: 'default:5;low:1;*'
 good_job_queue_select_limit: 5_000
+idp_zero_etl_enabled: false
+idp_zero_etl_email_addresses_lookback_minutes: 15
 rack_mini_profiler: false
 rack_timeout_service_timeout_seconds: 15
 unload_line_count_threshold: 10000
@@ -40,8 +42,6 @@ fraud_ops_private_key: ''
 fraud_ops_tracker_enabled: false
 extractor_row_checker_enqueue_cron: '0 6 * * *'
 aws_region: 'us-west-2'
-idp_zero_etl_enabled: false
-idp_zero_etl_email_addresses_lookback_minutes: 15
 
 development:
   database_host: ''
