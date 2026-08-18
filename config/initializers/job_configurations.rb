@@ -137,7 +137,7 @@ else
       # Sync fraudops email addresses from public.email_addresses in the zero-ETL database
       fraud_ops_email_addresses_zero_etl_job: {
         class: 'FraudOpsEmailAddressesZeroEtlJob',
-        cron: '5-59/15 * * * *',
+        cron: cron_15m,
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'
