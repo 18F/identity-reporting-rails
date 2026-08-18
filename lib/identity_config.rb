@@ -56,6 +56,8 @@ class IdentityConfig
     config.add(:good_job_max_threads, type: :integer)
     config.add(:good_job_queue_select_limit, type: :integer)
     config.add(:good_job_queues, type: :string)
+    config.add(:idp_zero_etl_email_addresses_lookback_minutes, type: :integer, allow_nil: true)
+    config.add(:idp_zero_etl_enabled, type: :boolean)
     config.add(:quicksight_multi_account_allowlist, type: :json)
     config.add(:quicksight_sync_enabled, type: :boolean)
     config.add(:rack_mini_profiler, type: :boolean)
@@ -70,7 +72,6 @@ class IdentityConfig
     config.add(:s3_reports_enabled, type: :boolean)
     config.add(:s3_report_public_bucket_prefix, type: :string)
     config.add(:unload_line_count_threshold, type: :integer)
-    config.add(:idp_zero_etl_enabled, type: :boolean)
 
     # Allow override via environment variable for worker-specific credentials
     # Two-worker setup:
