@@ -40,7 +40,7 @@ fraud_ops_private_key: ''
 fraud_ops_tracker_enabled: false
 extractor_row_checker_enqueue_cron: '0 6 * * *'
 aws_region: 'us-west-2'
-zero_etl_enabled: false
+idp_zero_etl_enabled: false
 
 development:
   database_host: ''

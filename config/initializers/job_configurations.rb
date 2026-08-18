@@ -7,6 +7,7 @@ cron_5m = '0/5 * * * *'
 cron_1d = '0 6 * * *' # 6:00am UTC or 2:00am EST
 cron_1d_morning = '0 11 * * *' # 11:00am UTC or 6:00am EST
 cron_1d_offset_2am = '0 2 * * *' # 2:00am UTC
+cron_1d_offset_430am = '30 4 * * *' # 4:30am UTC, staggered from other daily jobs
 cron_24h = '0 0 * * *'
 cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever else runs at 0000 UTC
 cron_1st_of_month_6am = '0 6 1 * *' # 6 AM UTC on the 1st of each month
@@ -126,6 +127,12 @@ else
       quicksight_sync_job: {
         class: 'QuicksightSyncJob',
         cron: cron_15m,
+      },
+      # Refresh idp_core late-binding views from analytics_zetl - runs daily,
+      # staggered from other daily jobs
+      idp_zero_etl_sync_job: {
+        class: 'IdpZeroEtlBindingViewSyncJob',
+        cron: cron_1d_offset_430am,
       },
     }
     Rails.logger.info 'job_configurations: jobs scheduled with good_job.cron'

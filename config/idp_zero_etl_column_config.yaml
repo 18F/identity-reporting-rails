@@ -1,0 +1,53 @@
+---
+exclude_columns:
+  account_reset_requests:
+    - request_token
+    - granted_token
+  auth_app_configurations:
+    - encrypted_otp_secret_key
+    - name
+  backup_code_configurations:
+    - code_salt
+  email_addresses:
+    - confirmation_token
+    - encrypted_email
+  events:
+    - disavowal_token_fingerprint
+  identities:
+    - session_uuid
+    - nonce
+    - access_token
+    - code_challenge
+    - rails_session_id
+  phone_configurations:
+    - encrypted_phone
+  phone_number_opt_outs:
+    - encrypted_phone
+    - phone_fingerprint
+  piv_cac_configurations:
+    - name
+  profiles:
+    - encrypted_pii
+    - ssn_signature
+    - encrypted_pii_recovery
+    - name_zip_birth_year_signature
+    - encrypted_pii_multi_region
+    - encrypted_pii_recovery_multi_region
+  service_providers:
+    - block_encryption
+  user_proofing_events:
+    - encrypted_events
+    - cost
+    - salt
+  users:
+    - reset_password_token
+    - direct_otp
+    - encrypted_password_digest
+    - encrypted_recovery_code_digest
+    - encrypted_recovery_code_digest_generated_at
+    - encrypted_password_digest_multi_region
+    - encrypted_recovery_code_digest_multi_region
+  usps_confirmation_codes:
+    - otp_fingerprint
+  webauthn_configurations:
+    - name

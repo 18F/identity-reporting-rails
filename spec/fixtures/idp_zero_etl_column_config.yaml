@@ -1,0 +1,6 @@
+---
+exclude_columns:
+  users:
+    - encrypted_password_digest
+  secrets:
+    - token
