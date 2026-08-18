@@ -61,10 +61,20 @@ class GenerateReadme
 
   # @return [Array<Array(String, String)>] a list of (title, path) tuples
   def docs_and_titles
-    Dir.glob("#{docs_dir}/**/*.md").map do |path|
+    paths = Dir.glob("#{docs_dir}/**/*.md")
+    (paths - gitignored(paths)).map do |path|
       title = guess_title(File.read(path))
       [title, path]
     end.sort_by(&:first)
+  end
+
+  # @return [Array<String>] the subset of paths excluded by gitignore rules
+  def gitignored(paths)
+    IO.popen(['git', 'check-ignore', '--stdin'], 'r+') do |io|
+      io.puts(paths)
+      io.close_write
+      io.read.split("\n")
+    end
   end
 
   # Guesses title from the first markdown heading in a file
