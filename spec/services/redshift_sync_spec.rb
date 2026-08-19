@@ -198,6 +198,7 @@ RSpec.describe RedshiftSync do
 
     before do
       allow(sync).to receive(:get_existing_configured_schemas).and_return(%w[idp logs marts])
+      allow(sync).to receive(:get_existing_schemas).and_return(%w[idp logs marts])
       allow(mock_connection).to receive(:execute) do |sql|
         executed_sql << sql
         double(any?: true)
@@ -212,6 +213,18 @@ RSpec.describe RedshiftSync do
       expect(sql).not_to include('REVOKE ALL ON SCHEMA logs FROM GROUP lg_users')
       expect(sql).to include('REVOKE ALL ON SCHEMA marts FROM GROUP lg_users')
       expect(sql).to include('GRANT USAGE ON SCHEMA idp TO GROUP lg_users')
+    end
+
+    it 'does not grant on a configured schema that does not yet exist in the database' do
+      # logs is configured for the group but absent from the database; granting on it
+      # would raise PG::InvalidSchemaName, so it must be skipped entirely.
+      allow(sync).to receive(:get_existing_schemas).and_return(%w[idp marts])
+
+      sync.send(:create_schema_privileges_for_group, user_group)
+
+      sql = executed_sql.join("\n")
+      expect(sql).to include('GRANT USAGE ON SCHEMA idp TO GROUP lg_users')
+      expect(sql).not_to include('GRANT USAGE ON SCHEMA logs TO GROUP lg_users')
     end
   end
 
@@ -392,6 +405,7 @@ RSpec.describe RedshiftSync do
 
     context 'when the system user already exists' do
       before do
+        allow(sync).to receive(:get_existing_schemas).and_return(['system_tables'])
         allow(mock_connection).to receive(:execute).and_return(double(any?: false))
         allow(mock_connection).to receive(:execute).
           with(/SELECT usename FROM pg_user WHERE usename = 'pii_reader'/).
@@ -414,6 +428,7 @@ RSpec.describe RedshiftSync do
 
     context 'when the system user does not exist' do
       before do
+        allow(sync).to receive(:get_existing_schemas).and_return(['system_tables'])
         allow(mock_connection).to receive(:execute).and_return(double(any?: false))
         allow(secrets_manager_client).to receive(:get_secret_value).
           with(secret_id: secret_id).
@@ -436,6 +451,37 @@ RSpec.describe RedshiftSync do
           with(a_string_matching(/CREATE USER pii_reader WITH PASSWORD DISABLE/))
 
         sync.send(:create_system_user, 'pii_reader', schemas, nil, false)
+      end
+    end
+
+    context 'when a configured schema does not exist in the database' do
+      let(:schemas) do
+        [
+          { 'schema_name' => 'idp_core',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
+          { 'schema_name' => 'system_tables',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
+        ]
+      end
+      let(:executed_sql) { [] }
+
+      before do
+        # Only system_tables exists; idp_core is configured but absent from the DB.
+        allow(sync).to receive(:get_existing_schemas).and_return(['system_tables'])
+        allow(mock_connection).to receive(:execute) do |sql|
+          executed_sql << sql
+          double(any?: true)
+        end
+      end
+
+      it 'does not emit GRANT statements for the missing schema (PG::InvalidSchemaName)' do
+        sync.send(:create_system_user, 'security_audit', schemas, secret_id, false)
+
+        sql = executed_sql.join("\n")
+        expect(sql).not_to include('ON SCHEMA idp_core')
+        expect(sql).to include('GRANT USAGE ON SCHEMA system_tables TO security_audit')
       end
     end
   end

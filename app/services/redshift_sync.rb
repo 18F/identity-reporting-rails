@@ -350,7 +350,10 @@ class RedshiftSync
     result = execute_query("SELECT usename FROM pg_user WHERE usename = '#{user_name}'")
     user_exists = result.any?
 
-    active_schemas = schemas.select { |s| feature_enabled?(s['feature_flag']) }
+    existing_schemas = get_existing_schemas
+    active_schemas = schemas.select do |s|
+      feature_enabled?(s['feature_flag']) && existing_schemas.include?(s['schema_name'])
+    end
     schema_privileges = active_schemas.map do |schema|
       create_system_user_privileges(
         user_name,
@@ -455,8 +458,9 @@ class RedshiftSync
     )
     return if !result.any?
 
+    existing_schemas = get_existing_schemas
     active_schemas = user_group['schemas'].select do |s|
-      feature_enabled?(s.fetch('feature_flag', nil))
+      feature_enabled?(s.fetch('feature_flag', nil)) && existing_schemas.include?(s['schema_name'])
     end
 
     active_schema_names = active_schemas.map { |s| s['schema_name'] }
