@@ -78,7 +78,7 @@ The service specs stub `Aws::QuickSight::Client`, `Aws::STS::Client`, and
   `RedshiftMasking::UserResolver::IAM_ROLE_GROUPS` constant
   (`app/services/redshift_masking/user_resolver.rb`). These encode the same
   knowledge in two forms and can drift apart. A future change should drive
-   `UserResolver` from `redshift_config.yaml`'s `aws_role_map` (or a shared
+  `UserResolver` from `redshift_config.yaml`'s `aws_role_map` (or a shared
   loader) so there is a single source of truth. Verify all `UserResolver`
   consumers and the redshift masking specs when doing this.
 
