@@ -431,6 +431,10 @@ class RedshiftSync
       GRANT #{table_privileges} ON #{table_list} TO #{user_name};
     SQL
 
+    Rails.logger.info(
+      "All table privileges are granted to schema #{schema_name} for user #{user_name}",
+    )
+
     sql
   end
 
