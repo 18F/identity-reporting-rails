@@ -201,16 +201,28 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     end
   end
 
+  # Only real booleans render as TRUE/FALSE; anything else (e.g. the string
+  # "false") is NULL rather than a truthy-coerced TRUE.
   def redshift_bool(value)
-    return 'NULL' if value.nil?
-
-    value ? 'TRUE' : 'FALSE'
+    case value
+    when true then 'TRUE'
+    when false then 'FALSE'
+    else 'NULL'
+    end
   end
 
   # user_id is spliced as a bare literal, so anything non-integral renders as
   # NULL instead of raw SQL (message still preserves the original payload).
+  # Strings parse base-10 only (Integer() would read "0123" as octal), and
+  # values outside Redshift's BIGINT range are NULL, not a runtime overflow.
   def redshift_integer_literal(value)
-    Integer(value, exception: false)&.to_s || 'NULL'
+    int =
+      if value.is_a?(String)
+        Integer(value, 10, exception: false)
+      else
+        Integer(value, exception: false)
+      end
+    int&.between?(-(2 ** 63), 2 ** 63 - 1) ? int.to_s : 'NULL'
   end
 
   def dollar_quote(str)

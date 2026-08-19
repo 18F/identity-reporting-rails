@@ -493,6 +493,36 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
         job.send(:bulk_insert_decrypted_events, events)
       end
 
+      it 'parses string user_ids as base 10, not octal/hex' do
+        events = [decrypted_events.first.merge(user_id: '0123')]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/JSON_PARSE\(\$json\$.*\$json\$\), 123, '/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'renders a user_id outside BIGINT range as NULL instead of overflowing' do
+        events = [decrypted_events.first.merge(user_id: 10 ** 20)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/JSON_PARSE\(\$json\$.*\$json\$\), NULL, '/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'renders a non-boolean success value as NULL, not truthy-coerced TRUE' do
+        events = [decrypted_events.first.merge(success: 'false')]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).not_to match(/\bTRUE\b/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
       it 'uses dollar-quoted JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
                       \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,

@@ -21,9 +21,13 @@ namespace :frd_events do
     # = off, so the two escape backslashes differently.
     def sql_literal(connection, sql_type, value)
       if sql_type == :boolean
-        return 'NULL' if value.nil?
-
-        value ? 'TRUE' : 'FALSE'
+        # Only real booleans render as TRUE/FALSE (the string "false" is NULL,
+        # not a truthy-coerced TRUE) — mirrors the ingestion job's redshift_bool.
+        case value
+        when true then 'TRUE'
+        when false then 'FALSE'
+        else 'NULL'
+        end
       else
         connection.quote(value)
       end

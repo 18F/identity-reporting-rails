@@ -127,6 +127,21 @@ RSpec.describe 'frd_events:backfill_columns', type: :task do
     expect(device_id).to eq(%q(dev'quote\slash\\))
   end
 
+  it 'backfills a non-boolean success value as NULL, not truthy-coerced TRUE' do
+    malformed = message.deep_dup
+    malformed[:events].values.first[:success] = 'false'
+    connection.execute('DELETE FROM fraudops.frd_events')
+    insert_row('evt-badbool', malformed)
+
+    task.invoke
+
+    row = connection.exec_query(
+      "SELECT event_type, success FROM fraudops.frd_events WHERE event_key = 'evt-badbool'",
+    ).first
+    expect(row['event_type']).to eq('idv-phone-submitted')
+    expect(row['success']).to be_nil
+  end
+
   it 'aborts on a non-numeric batch_size instead of silently no-opping' do
     expect { task.invoke('abc') }.to raise_error(SystemExit)
     expect(
