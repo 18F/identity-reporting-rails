@@ -68,7 +68,7 @@ RSpec.describe 'frd_events:backfill_columns', type: :task do
     # These rows extract to event_type = nil, so the UPDATE leaves event_type NULL and
     # they keep matching `event_type IS NULL`. Without the monotonic event_key cursor,
     # a full batch of such rows would re-select forever. With batch_size = 2 and 3 such
-    # rows, the OLD code would never advance; the cursor makes each visited exactly once.
+    # rows, the cursor makes each row visited exactly once across two batches.
     connection.execute('DELETE FROM fraudops.frd_events')
     insert_row('no-evt-1', { foo: 'bar' })
     insert_row('no-evt-2', {})
@@ -84,8 +84,9 @@ RSpec.describe 'frd_events:backfill_columns', type: :task do
       expect { task.invoke(2) }.not_to raise_error
     end
 
-    # Each of the 3 rows is UPDATEd exactly once — never re-processed.
-    expect(update_count).to eq(3)
+    # One set-based UPDATE per batch: 3 rows at batch_size 2 = a full batch + a
+    # partial batch. A third UPDATE would mean a row was re-processed.
+    expect(update_count).to eq(2)
 
     null_count = connection.exec_query(
       'SELECT COUNT(*) AS c FROM fraudops.frd_events WHERE event_type IS NULL',
@@ -110,5 +111,32 @@ RSpec.describe 'frd_events:backfill_columns', type: :task do
       "SELECT COUNT(*) AS c FROM fraudops.frd_events WHERE event_type = 'idv-phone-submitted'",
     ).first['c']
     expect(count).to eq(3)
+  end
+
+  it 'round-trips values containing quotes and backslashes' do
+    tricky = message.deep_dup
+    tricky[:events].values.first[:device_id] = %q(dev'quote\slash\\)
+    connection.execute('DELETE FROM fraudops.frd_events')
+    insert_row('evt-tricky', tricky)
+
+    task.invoke
+
+    device_id = connection.exec_query(
+      "SELECT device_id FROM fraudops.frd_events WHERE event_key = 'evt-tricky'",
+    ).first['device_id']
+    expect(device_id).to eq(%q(dev'quote\slash\\))
+  end
+
+  it 'aborts on a non-numeric batch_size instead of silently no-opping' do
+    expect { task.invoke('abc') }.to raise_error(SystemExit)
+    expect(
+      connection.exec_query(
+        'SELECT COUNT(*) AS c FROM fraudops.frd_events WHERE event_type IS NOT NULL',
+      ).first['c'],
+    ).to eq(0)
+  end
+
+  it 'aborts on a zero batch_size' do
+    expect { task.invoke('0') }.to raise_error(SystemExit)
   end
 end

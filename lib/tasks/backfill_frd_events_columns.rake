@@ -5,6 +5,8 @@ namespace :frd_events do
   # text); normalize to a symbol-keyed Hash for the extractor. Never log its
   # contents (PII).
   module BackfillColumns
+    STAGING_TABLE = 'frd_events_backfill_stage'
+
     module_function
 
     def parse_message(message)
@@ -13,11 +15,28 @@ namespace :frd_events do
     rescue JSON::ParserError
       {}
     end
+
+    # Literals are built with the DW connection's quote (NOT ActiveRecord::Base's
+    # primary-Postgres quoting): Redshift defaults to standard_conforming_strings
+    # = off, so the two escape backslashes differently.
+    def sql_literal(connection, sql_type, value)
+      if sql_type == :boolean
+        return 'NULL' if value.nil?
+
+        value ? 'TRUE' : 'FALSE'
+      else
+        connection.quote(value)
+      end
+    end
   end
 
   desc 'Backfill flattened event columns on fraudops.frd_events from message (batched, idempotent)'
   task :backfill_columns, [:batch_size] => :environment do |_t, args|
-    batch_size = (args[:batch_size] || 1000).to_i
+    batch_size = Integer(args[:batch_size] || 1000, exception: false)
+    unless batch_size&.positive?
+      abort("batch_size must be a positive integer (got #{args[:batch_size].inspect})")
+    end
+
     connection = DataWarehouseApplicationRecord.connection
     total = 0
 
@@ -27,6 +46,23 @@ namespace :frd_events do
     end
 
     log.call('Backfill started', batch_size: batch_size)
+
+    # Each batch is applied as ONE set-based UPDATE joined to a temp staging table
+    # (Redshift runs per-row UPDATEs at ~450 rows/min; it does not accept VALUES in
+    # a FROM clause, hence staging). The staging schema, INSERT column list, and SET
+    # clause all derive from FraudOps::EventFieldExtractor::FIELDS, so adding or
+    # removing a flattened column (via FIELDS + a migration) needs no change here.
+    columns = FraudOps::EventFieldExtractor::COLUMNS
+    fields = FraudOps::EventFieldExtractor::FIELDS
+    staging = BackfillColumns::STAGING_TABLE
+    staging_ddl = columns.map do |column|
+      type = fields.fetch(column)[:sql_type] == :boolean ? 'BOOLEAN' : 'VARCHAR(256)'
+      "#{column} #{type}"
+    end.join(', ')
+    set_clause = columns.map { |column| "#{column} = s.#{column}" }.join(', ')
+
+    connection.execute("DROP TABLE IF EXISTS #{staging}")
+    connection.execute("CREATE TEMP TABLE #{staging} (event_key VARCHAR(256), #{staging_ddl})")
 
     # Monotonic cursor over event_key drives termination INDEPENDENTLY of what the
     # UPDATE writes. This is critical: the extractor returns event_type = nil for
@@ -44,7 +80,7 @@ namespace :frd_events do
 
     loop do
       rows = connection.exec_query(
-        ActiveRecord::Base.send(
+        DataWarehouseApplicationRecord.send(
           :sanitize_sql_array,
           ['SELECT event_key, message FROM fraudops.frd_events ' \
            'WHERE event_type IS NULL AND message IS NOT NULL AND event_key > ? ' \
@@ -53,27 +89,27 @@ namespace :frd_events do
       ).to_a
       break if rows.empty?
 
-      # NOTE: this single Postgres-style parameterized UPDATE is what actually runs
-      # in local/test (jsonb) and against Redshift in prod (SUPER). The Redshift path
-      # is verified-by-inspection only — it is not exercised by these specs, per the
-      # plan's Redshift caveat — but the statement shape is adapter-agnostic.
-      #
-      # The SET clause and its bound values are both derived from
-      # FraudOps::EventFieldExtractor::COLUMNS, so adding/removing a flattened column
-      # (via FIELDS + a migration) needs no change here.
-      columns = FraudOps::EventFieldExtractor::COLUMNS
-      set_clause = columns.map { |column| "#{column} = ?" }.join(', ')
-      update_sql = "UPDATE fraudops.frd_events SET #{set_clause} WHERE event_key = ?"
-
-      DataWarehouseApplicationRecord.transaction do
-        rows.each do |row|
-          decrypted = BackfillColumns.parse_message(row['message'])
-          fields = FraudOps::EventFieldExtractor.call(decrypted)
-          bindings = columns.map { |column| fields[column] } + [row['event_key']]
-          connection.execute(
-            ActiveRecord::Base.send(:sanitize_sql_array, [update_sql, *bindings]),
-          )
+      values = rows.map do |row|
+        decrypted = BackfillColumns.parse_message(row['message'])
+        extracted = FraudOps::EventFieldExtractor.call(decrypted)
+        literals = [connection.quote(row['event_key'])] + columns.map do |column|
+          sql_type = fields.fetch(column)[:sql_type]
+          BackfillColumns.sql_literal(connection, sql_type, extracted[column])
         end
+        "(#{literals.join(', ')})"
+      end
+
+      # DELETE (not TRUNCATE — Redshift TRUNCATE implicitly commits) keeps the
+      # stage/apply pair atomic per batch.
+      DataWarehouseApplicationRecord.transaction do
+        connection.execute("DELETE FROM #{staging}")
+        connection.execute(
+          "INSERT INTO #{staging} (event_key, #{columns.join(', ')}) VALUES #{values.join(', ')}",
+        )
+        connection.execute(
+          "UPDATE fraudops.frd_events SET #{set_clause} " \
+          "FROM #{staging} s WHERE fraudops.frd_events.event_key = s.event_key",
+        )
       end
 
       # Advance the cursor past the last processed key so the next batch strictly
