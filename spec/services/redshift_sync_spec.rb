@@ -228,6 +228,27 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe '#get_existing_schemas' do
+    let(:executed_sql) { [] }
+
+    before do
+      allow(mock_connection).to receive(:execute) do |sql|
+        executed_sql << sql
+        [{ 'schemaname' => 'idp' }, { 'schemaname' => 'idp_core' }]
+      end
+    end
+
+    it 'unions pg_tables and pg_views so view-only schemas like idp_core are seen' do
+      schemas = sync.send(:get_existing_schemas)
+
+      sql = executed_sql.join("\n")
+      expect(sql).to include('FROM pg_tables')
+      expect(sql).to include('FROM pg_views')
+      # idp_core exists only as views; it must still be reported as existing.
+      expect(schemas).to include('idp', 'idp_core')
+    end
+  end
+
   describe 'SQL generation for user groups' do
     it 'generates correct privilege SQL with restricted tables' do
       sql = sync.send(

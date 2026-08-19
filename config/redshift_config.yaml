@@ -42,6 +42,7 @@ databases:
           - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
+            feature_flag: idp_zero_etl_enabled
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -69,6 +70,7 @@ databases:
           - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
+            feature_flag: idp_zero_etl_enabled
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -96,6 +98,7 @@ databases:
           - schema_name: idp_core
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
+            feature_flag: idp_zero_etl_enabled
           - schema_name: logs
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
@@ -291,6 +294,7 @@ databases:
           - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
+            feature_flag: idp_zero_etl_enabled
           - schema_name: system_tables
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -332,6 +336,7 @@ databases:
           - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
+            feature_flag: idp_zero_etl_enabled
           - schema_name: fraudops
             schema_privileges: USAGE
             table_privileges: SELECT

@@ -239,9 +239,15 @@ class RedshiftSync
   end
 
   def get_existing_schemas
+    # Include schemas that only contain views (e.g. the late-binding idp_core),
+    # not just table-bearing ones. pg_tables lists tables only, so a view-only
+    # schema would look absent and its GRANTs would be silently skipped.
     result = execute_query(
       <<~SQL.squish,
-        SELECT DISTINCT schemaname FROM pg_tables
+        SELECT schemaname FROM pg_tables
+        WHERE schemaname NOT LIKE 'pg_%' AND schemaname != 'information_schema'
+        UNION
+        SELECT schemaname FROM pg_views
         WHERE schemaname NOT LIKE 'pg_%' AND schemaname != 'information_schema'
       SQL
     )
