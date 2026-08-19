@@ -103,9 +103,8 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     [decrypted_events, successful_ids]
   end
 
-  # Columns written on every insert, in order. The flattened event columns are
-  # sourced from FraudOps::EventFieldExtractor::COLUMNS so adding/removing a
-  # flattened column requires no change here — edit FIELDS in the extractor.
+  # Flattened columns come from FraudOps::EventFieldExtractor::COLUMNS —
+  # add or remove columns by editing FIELDS there, not here.
   FIXED_LEADING_COLUMNS = %i[
     event_key message user_id user_uuid event_timestamp
   ].freeze
@@ -143,8 +142,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     Rails.logger.info(log_format('Bulk insert completed', row_count: decrypted_events.size))
   end
 
-  # Postgres placeholder fragment (without the surrounding parens). message casts
-  # to jsonb; dw_created_at is a literal; every other column binds one `?`.
+  # Placeholder fragment without the surrounding parens.
   def postgres_value_fragment
     fragments = insert_columns.map do |column|
       case column
@@ -156,9 +154,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     fragments.join(', ')
   end
 
-  # Bound values for the Postgres path, in insert_columns order, skipping the
-  # literal dw_created_at (which is inlined in the fragment). Nil values are
-  # preserved as binds (they become SQL NULL) — only the literal column is dropped.
+  # Nil values stay as binds (SQL NULL); only the inlined dw_created_at is skipped.
   def postgres_insert_values(event)
     bound_insert_columns.map do |column|
       column == :message ? JSON.generate(event[:message]) : event[column]
@@ -176,8 +172,6 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     "(#{parts.join(', ')})"
   end
 
-  # Renders a single column's Redshift SQL literal. Fixed columns keep their
-  # bespoke handling; flattened columns are rendered by their configured sql_type.
   def redshift_column_literal(column, event)
     case column
     when :event_key then connection.quote(event[:event_key])
@@ -190,8 +184,6 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     end
   end
 
-  # Renders a flattened column per its FIELDS sql_type: booleans via redshift_bool
-  # (nil-safe), everything else quoted-or-NULL.
   def redshift_flattened_literal(column, value)
     config = FraudOps::EventFieldExtractor::FIELDS.fetch(column)
     if config[:sql_type] == :boolean

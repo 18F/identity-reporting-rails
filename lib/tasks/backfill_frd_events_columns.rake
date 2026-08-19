@@ -21,8 +21,7 @@ namespace :frd_events do
     # = off, so the two escape backslashes differently.
     def sql_literal(connection, sql_type, value)
       if sql_type == :boolean
-        # Only real booleans render as TRUE/FALSE (the string "false" is NULL,
-        # not a truthy-coerced TRUE) — mirrors the ingestion job's redshift_bool.
+        # Mirrors the job's redshift_bool: non-booleans render NULL, never truthy TRUE.
         case value
         when true then 'TRUE'
         when false then 'FALSE'
@@ -116,8 +115,6 @@ namespace :frd_events do
         )
       end
 
-      # Advance the cursor past the last processed key so the next batch strictly
-      # progresses, even for rows that were left with event_type = NULL.
       cursor = rows.last['event_key']
       total += rows.size
       log.call('Batch complete', batch_rows: rows.size, total_updated: total)

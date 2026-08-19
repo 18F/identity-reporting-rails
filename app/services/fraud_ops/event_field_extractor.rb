@@ -30,7 +30,6 @@ module FraudOps
       unique_session_id: { sql_type: :string },
     }.freeze
 
-    # Ordered list of flattened column names — the canonical column order.
     COLUMNS = FIELDS.keys.freeze
 
     # Marks a key that looks like an attempts-api event-type identifier (URL) —
@@ -80,9 +79,8 @@ module FraudOps
     private
 
     # Returns [event_type_key, event_object] for both payload shapes, or [nil, nil].
-    # Prod census (2026-08-19, 46.6M rows): 99.66% enveloped, 0 no-envelope URL-key
-    # rows (branch kept defensively), 0.34% with message corrupted to the masked
-    # sentinel string "XXXX" — so [nil, nil] never drops extractable data.
+    # A prod census (2026-08-19) found every readable payload enveloped; the
+    # no-envelope branch is kept defensively.
     def event_pair
       @event_pair ||= begin
         events = @decrypted[:events]
