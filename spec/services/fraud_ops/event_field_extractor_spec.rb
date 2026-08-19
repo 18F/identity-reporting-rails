@@ -67,6 +67,14 @@ RSpec.describe FraudOps::EventFieldExtractor do
         user_ip_address: nil, agency_uuid: nil, unique_session_id: nil
       )
     end
+
+    it 'returns all-nil when the enveloped event value is not a Hash' do
+      malformed = { events: { event_type_url.to_sym => 'oops' } }
+      expect(described_class.call(malformed)).to eq(
+        event_type: nil, success: nil, device_id: nil,
+        user_ip_address: nil, agency_uuid: nil, unique_session_id: nil
+      )
+    end
   end
 
   describe '.event_object' do
@@ -80,6 +88,11 @@ RSpec.describe FraudOps::EventFieldExtractor do
 
     it 'returns nil when there is no event object' do
       expect(described_class.event_object({ jti: 'x' })).to be_nil
+    end
+
+    it 'returns nil when the enveloped event value is not a Hash' do
+      expect(described_class.event_object({ events: { event_type_url.to_sym => 'oops' } })).
+        to be_nil
     end
   end
 end

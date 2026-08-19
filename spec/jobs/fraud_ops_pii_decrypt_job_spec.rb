@@ -472,6 +472,27 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
         end
       end
 
+      it 'renders a non-integral user_id as NULL instead of splicing it into the SQL' do
+        events = [decrypted_events.first.merge(user_id: '1); DROP TABLE fraudops.frd_events; --')]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).not_to include('DROP TABLE')
+          expect(sql).to match(/JSON_PARSE\(\$json\$.*\$json\$\), NULL, '/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'renders an integral-string user_id as a bare integer literal' do
+        events = [decrypted_events.first.merge(user_id: '123')]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/JSON_PARSE\(\$json\$.*\$json\$\), 123, '/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
       it 'uses dollar-quoted JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
                       \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,

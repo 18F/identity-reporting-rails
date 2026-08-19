@@ -86,8 +86,9 @@ class FraudOpsPiiDecryptJob < ApplicationJob
       decrypted = decrypt_data(row['message'], private_key, row['event_key'])
       next unless decrypted
 
-      event_object = FraudOps::EventFieldExtractor.event_object(decrypted) || {}
-      flattened = FraudOps::EventFieldExtractor.call(decrypted)
+      extractor = FraudOps::EventFieldExtractor.new(decrypted)
+      event_object = extractor.event_object || {}
+      flattened = extractor.call
 
       decrypted_events << {
         event_key: row['event_key'],
@@ -110,7 +111,8 @@ class FraudOpsPiiDecryptJob < ApplicationJob
   ].freeze
 
   def insert_columns
-    FIXED_LEADING_COLUMNS + FraudOps::EventFieldExtractor::COLUMNS + [:dw_created_at]
+    @insert_columns ||= FIXED_LEADING_COLUMNS + FraudOps::EventFieldExtractor::COLUMNS +
+                        [:dw_created_at]
   end
 
   def bulk_insert_decrypted_events(decrypted_events)
@@ -158,10 +160,13 @@ class FraudOpsPiiDecryptJob < ApplicationJob
   # literal dw_created_at (which is inlined in the fragment). Nil values are
   # preserved as binds (they become SQL NULL) — only the literal column is dropped.
   def postgres_insert_values(event)
-    bound_columns = insert_columns - [:dw_created_at]
-    bound_columns.map do |column|
+    bound_insert_columns.map do |column|
       column == :message ? JSON.generate(event[:message]) : event[column]
     end
+  end
+
+  def bound_insert_columns
+    @bound_insert_columns ||= insert_columns - [:dw_created_at]
   end
 
   def redshift_insert_values(event)
@@ -177,7 +182,7 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     case column
     when :event_key then connection.quote(event[:event_key])
     when :message then "JSON_PARSE(#{dollar_quote(JSON.generate(event[:message]))})"
-    when :user_id then event[:user_id] || 'NULL'
+    when :user_id then redshift_integer_literal(event[:user_id])
     when :user_uuid, :event_timestamp
       event[column] ? connection.quote(event[column]) : 'NULL'
     when :dw_created_at then 'CURRENT_TIMESTAMP'
@@ -200,6 +205,12 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     return 'NULL' if value.nil?
 
     value ? 'TRUE' : 'FALSE'
+  end
+
+  # user_id is spliced as a bare literal, so anything non-integral renders as
+  # NULL instead of raw SQL (message still preserves the original payload).
+  def redshift_integer_literal(value)
+    Integer(value, exception: false)&.to_s || 'NULL'
   end
 
   def dollar_quote(str)

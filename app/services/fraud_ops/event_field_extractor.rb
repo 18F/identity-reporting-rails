@@ -80,14 +80,20 @@ module FraudOps
     private
 
     # Returns [event_type_key, event_object] for both payload shapes, or [nil, nil].
+    # Prod census (2026-08-19, 46.6M rows): 99.66% enveloped, 0 no-envelope URL-key
+    # rows (branch kept defensively), 0.34% with message corrupted to the masked
+    # sentinel string "XXXX" — so [nil, nil] never drops extractable data.
     def event_pair
-      events = @decrypted[:events]
-      if events.is_a?(Hash) && events.any?
-        events.first # enveloped: { events: { "<url>" => {...} } }
-      else
-        # no-envelope: the event-type URL is a top-level key (~0.38% of prod rows)
-        pair = @decrypted.find { |k, v| v.is_a?(Hash) && k.to_s.match?(EVENT_TYPE_KEY) }
-        pair || [nil, nil]
+      @event_pair ||= begin
+        events = @decrypted[:events]
+        if events.is_a?(Hash) && events.any?
+          pair = events.first # enveloped: { events: { "<url>" => {...} } }
+          pair.last.is_a?(Hash) ? pair : [nil, nil]
+        else
+          # no-envelope: the event-type URL is a top-level key
+          pair = @decrypted.find { |k, v| v.is_a?(Hash) && k.to_s.match?(EVENT_TYPE_KEY) }
+          pair || [nil, nil]
+        end
       end
     end
   end
