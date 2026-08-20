@@ -379,6 +379,12 @@ class RedshiftSync
     sql = [*create_user_sql, schema_privileges]
 
     execute_query(sql.flatten.join("\n"))
+
+    active_schemas.each do |schema|
+      Rails.logger.info(
+        "Granted privileges on schema #{schema['schema_name']} to user #{user_name}",
+      )
+    end
   end
 
   def user_exists?(user_name)
@@ -429,7 +435,7 @@ class RedshiftSync
     SQL
 
     Rails.logger.info(
-      "All table privileges are granted to schema #{schema_name} for user #{user_name}",
+      "Granting table privileges on schema #{schema_name} for user #{user_name}",
     )
 
     sql
@@ -494,6 +500,12 @@ class RedshiftSync
     SQL
 
     execute_query(sql)
+
+    active_schemas.each do |schema|
+      Rails.logger.info(
+        "Granted privileges on schema #{schema['schema_name']} to group #{user_group['name']}",
+      )
+    end
   end
 
   def create_user_group_privileges(group_name, schema_name, schema_privileges, table_privileges,
@@ -519,7 +531,7 @@ class RedshiftSync
     end
 
     Rails.logger.info(
-      "All table privileges are granted to schema #{schema_name} for group #{group_name}",
+      "Granting table privileges on schema #{schema_name} for group #{group_name}",
     )
 
     sql
