@@ -73,7 +73,7 @@ class RedshiftSync
         :identity_devops,
         "terraform/data-warehouse/#{env_name}/main.tf",
       )
-      File.exist?(terraform_config_path) ? File.read(terraform_config_path) : ''
+      File.read(terraform_config_path)
     end
   end
 
@@ -101,7 +101,7 @@ class RedshiftSync
     flags_to_check = feature_flag.is_a?(Array) ? feature_flag : [feature_flag]
 
     flags_to_check.any? do |flag|
-      # Fall back to IdentityConfig.store for Rails-managed flags absent from Terraform
+      # Check both Terraform config and IdentityConfig.store; flag is enabled if either is true
       config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m) ||
         (IdentityConfig.store.respond_to?(flag) && IdentityConfig.store.public_send(flag) == true)
     end
