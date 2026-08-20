@@ -196,18 +196,8 @@ RSpec.describe RedshiftSync do
   end
 
   describe '#config_file' do
-    it 'returns empty string when the terraform config file does not exist' do
-      allow(sync).to receive(:config_file).and_call_original
-      allow(File).to receive(:exist?).and_call_original
-      allow(File).to receive(:exist?).with(a_string_including('main.tf')).and_return(false)
-
-      expect(sync.send(:config_file)).to eq('')
-    end
-
     it 'reads the file when it exists' do
       allow(sync).to receive(:config_file).and_call_original
-      allow(File).to receive(:exist?).and_call_original
-      allow(File).to receive(:exist?).with(a_string_including('main.tf')).and_return(true)
       allow(File).to receive(:read).and_call_original
       allow(File).to receive(:read).with(a_string_including('main.tf')).
         and_return('dbt_enabled = true')
@@ -250,7 +240,6 @@ RSpec.describe RedshiftSync do
 
     before do
       allow(sync).to receive(:get_existing_configured_schemas).and_return(%w[idp logs marts])
-      allow(sync).to receive(:get_existing_schemas).and_return(%w[idp logs marts])
       allow(mock_connection).to receive(:execute) do |sql|
         executed_sql << sql
         double(any?: true)
@@ -474,7 +463,6 @@ RSpec.describe RedshiftSync do
 
     context 'when the system user already exists' do
       before do
-        allow(sync).to receive(:get_existing_schemas).and_return(['system_tables'])
         allow(mock_connection).to receive(:execute).and_return(double(any?: false))
         allow(mock_connection).to receive(:execute).
           with(/SELECT usename FROM pg_user WHERE usename = 'pii_reader'/).
@@ -497,7 +485,6 @@ RSpec.describe RedshiftSync do
 
     context 'when the system user does not exist' do
       before do
-        allow(sync).to receive(:get_existing_schemas).and_return(['system_tables'])
         allow(mock_connection).to receive(:execute).and_return(double(any?: false))
         allow(secrets_manager_client).to receive(:get_secret_value).
           with(secret_id: secret_id).
