@@ -167,10 +167,10 @@ RSpec.describe RedshiftSync do
       ).to be false
     end
 
-    context 'when the terraform config file is absent' do
+    context 'when a flag is not enabled in the terraform config' do
       before { allow(sync).to receive(:config_file).and_return('') }
 
-      it 'falls back to IdentityConfig.store and returns true when the flag is enabled there' do
+      it 'returns true when the flag is enabled in IdentityConfig.store' do
         allow(IdentityConfig.store).to receive(:respond_to?).with('idp_zero_etl_enabled').
           and_return(true)
         allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(true)
@@ -178,7 +178,7 @@ RSpec.describe RedshiftSync do
         expect(sync.send(:feature_enabled?, 'idp_zero_etl_enabled')).to be true
       end
 
-      it 'returns false when the flag is also disabled in IdentityConfig.store' do
+      it 'returns false when the flag is disabled in IdentityConfig.store' do
         allow(IdentityConfig.store).to receive(:respond_to?).with('idp_zero_etl_enabled').
           and_return(true)
         allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(false)
@@ -186,7 +186,7 @@ RSpec.describe RedshiftSync do
         expect(sync.send(:feature_enabled?, 'idp_zero_etl_enabled')).to be false
       end
 
-      it 'returns false when the flag does not exist in IdentityConfig.store either' do
+      it 'returns false when the flag does not exist in IdentityConfig.store' do
         allow(IdentityConfig.store).to receive(:respond_to?).with('unknown_flag').
           and_return(false)
 
