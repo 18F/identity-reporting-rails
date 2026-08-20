@@ -215,16 +215,12 @@ RSpec.describe RedshiftSync do
       expect(sql).to include('GRANT USAGE ON SCHEMA idp TO GROUP lg_users')
     end
 
-    it 'does not grant on a configured schema that does not yet exist in the database' do
-      # logs is configured for the group but absent from the database; granting on it
-      # would raise PG::InvalidSchemaName, so it must be skipped entirely.
-      allow(sync).to receive(:get_existing_schemas).and_return(%w[idp marts])
-
+    it 'grants on every feature-enabled configured schema for the group' do
       sync.send(:create_schema_privileges_for_group, user_group)
 
       sql = executed_sql.join("\n")
       expect(sql).to include('GRANT USAGE ON SCHEMA idp TO GROUP lg_users')
-      expect(sql).not_to include('GRANT USAGE ON SCHEMA logs TO GROUP lg_users')
+      expect(sql).to include('GRANT USAGE ON SCHEMA logs TO GROUP lg_users')
     end
   end
 
@@ -475,7 +471,7 @@ RSpec.describe RedshiftSync do
       end
     end
 
-    context 'when a configured schema does not exist in the database' do
+    context 'with multiple feature-enabled configured schemas' do
       let(:schemas) do
         [
           { 'schema_name' => 'idp_core',
@@ -489,19 +485,17 @@ RSpec.describe RedshiftSync do
       let(:executed_sql) { [] }
 
       before do
-        # Only system_tables exists; idp_core is configured but absent from the DB.
-        allow(sync).to receive(:get_existing_schemas).and_return(['system_tables'])
         allow(mock_connection).to receive(:execute) do |sql|
           executed_sql << sql
           double(any?: true)
         end
       end
 
-      it 'does not emit GRANT statements for the missing schema (PG::InvalidSchemaName)' do
+      it 'emits GRANT statements for every configured schema' do
         sync.send(:create_system_user, 'security_audit', schemas, secret_id, false)
 
         sql = executed_sql.join("\n")
-        expect(sql).not_to include('ON SCHEMA idp_core')
+        expect(sql).to include('GRANT USAGE ON SCHEMA idp_core TO security_audit')
         expect(sql).to include('GRANT USAGE ON SCHEMA system_tables TO security_audit')
       end
     end
