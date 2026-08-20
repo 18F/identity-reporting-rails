@@ -4,7 +4,7 @@ module FraudOps
   class EmailAddressesZeroEtlBootstrap
     SCHEMA_NAME = 'fraudops'
     SOURCE_TABLE = 'frd_email_addresses'
-    TARGET_TABLE = 'frd_email_addresses_zero_etl'
+    TARGET_TABLE = 'frd_email_addresses_zetl'
     MERGE_KEY = 'id'
 
     def bootstrap

@@ -128,8 +128,7 @@ else
         class: 'QuicksightSyncJob',
         cron: cron_15m,
       },
-      # Refresh idp_core late-binding views from analytics_zetl - runs daily,
-      # staggered from other daily jobs
+      # Refresh idp_core late-binding views from analytics_zetl db - runs daily,
       idp_zero_etl_sync_job: {
         class: 'IdpZeroEtlBindingViewSyncJob',
         cron: cron_1d_offset_430am,

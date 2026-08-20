@@ -417,9 +417,9 @@ RSpec.describe RedshiftSync do
     context 'when syncing the analytics_zetl database' do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
 
-      it 'uses DataWarehouseApplicationRecordZetl' do
+      it 'uses DataWarehouseApplicationRecordZeroEtl' do
         allow(sync).to receive(:connection).and_call_original
-        expect(DataWarehouseApplicationRecordZetl).to receive(:connection).
+        expect(DataWarehouseApplicationRecordZeroEtl).to receive(:connection).
           and_return(mock_connection)
 
         sync.send(:connection)

@@ -28,7 +28,7 @@ class IdpZeroEtlBindingViewSyncJob < ApplicationJob
       {
         name: 'IdpZeroEtlBindingViewSyncJob',
         success: true,
-        message: 'ZETL binding view sync completed successfully',
+        message: 'Zero-ETL binding view sync completed successfully',
         results: results,
       }.to_json,
     )

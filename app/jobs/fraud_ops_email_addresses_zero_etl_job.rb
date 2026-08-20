@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Keeps fraudops.frd_email_addresses_zero_etl in sync with public.email_addresses in the
+# Keeps fraudops.frd_email_addresses_zetl in sync with public.email_addresses in the
 # zero-ETL database.
 class FraudOpsEmailAddressesZeroEtlJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
