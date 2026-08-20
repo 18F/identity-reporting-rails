@@ -73,7 +73,7 @@ class RedshiftSync
         :identity_devops,
         "terraform/data-warehouse/#{env_name}/main.tf",
       )
-      File.read(terraform_config_path)
+      File.exist?(terraform_config_path) ? File.read(terraform_config_path) : ''
     end
   end
 
@@ -101,7 +101,9 @@ class RedshiftSync
     flags_to_check = feature_flag.is_a?(Array) ? feature_flag : [feature_flag]
 
     flags_to_check.any? do |flag|
-      config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m)
+      # Fall back to IdentityConfig.store for Rails-managed flags absent from Terraform
+      config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m) ||
+        (IdentityConfig.store.respond_to?(flag) && IdentityConfig.store.public_send(flag) == true)
     end
   end
 
@@ -517,6 +519,10 @@ class RedshiftSync
         REVOKE ALL PRIVILEGES ON TABLE #{schema_name}.#{table} FROM GROUP #{group_name};
       SQL
     end
+
+    Rails.logger.info(
+      "All table privileges are granted to schema #{schema_name} for group #{group_name}",
+    )
 
     sql
   end

@@ -117,6 +117,10 @@ RSpec.describe RedshiftSync do
     allow(mock_connection).to receive(:current_database).and_return('analytics')
     allow(Rails.logger).to receive(:info)
     allow(Rails.logger).to receive(:error)
+    # Prevent local application.yml values from leaking into feature_enabled? fallback checks
+    allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(false)
+    allow(IdentityConfig.store).to receive(:dw_fraudops_email_enabled).and_return(false)
+    allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(false)
   end
 
   describe 'environment detection' do
@@ -161,6 +165,54 @@ RSpec.describe RedshiftSync do
           %w[redshift_quicksight_connector_enabled fraud_ops_tracker_enabled],
         ),
       ).to be false
+    end
+
+    context 'when the terraform config file is absent' do
+      before { allow(sync).to receive(:config_file).and_return('') }
+
+      it 'falls back to IdentityConfig.store and returns true when the flag is enabled there' do
+        allow(IdentityConfig.store).to receive(:respond_to?).with('idp_zero_etl_enabled').
+          and_return(true)
+        allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(true)
+
+        expect(sync.send(:feature_enabled?, 'idp_zero_etl_enabled')).to be true
+      end
+
+      it 'returns false when the flag is also disabled in IdentityConfig.store' do
+        allow(IdentityConfig.store).to receive(:respond_to?).with('idp_zero_etl_enabled').
+          and_return(true)
+        allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(false)
+
+        expect(sync.send(:feature_enabled?, 'idp_zero_etl_enabled')).to be false
+      end
+
+      it 'returns false when the flag does not exist in IdentityConfig.store either' do
+        allow(IdentityConfig.store).to receive(:respond_to?).with('unknown_flag').
+          and_return(false)
+
+        expect(sync.send(:feature_enabled?, 'unknown_flag')).to be false
+      end
+    end
+  end
+
+  describe '#config_file' do
+    it 'returns empty string when the terraform config file does not exist' do
+      allow(sync).to receive(:config_file).and_call_original
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(a_string_including('main.tf')).and_return(false)
+
+      expect(sync.send(:config_file)).to eq('')
+    end
+
+    it 'reads the file when it exists' do
+      allow(sync).to receive(:config_file).and_call_original
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(a_string_including('main.tf')).and_return(true)
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with(a_string_including('main.tf')).
+        and_return('dbt_enabled = true')
+
+      expect(sync.send(:config_file)).to eq('dbt_enabled = true')
     end
   end
 
