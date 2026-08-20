@@ -244,10 +244,10 @@ class RedshiftSync
     # schema would look absent and its GRANTs would be silently skipped.
     result = execute_query(
       <<~SQL.squish,
-        SELECT schemaname FROM pg_tables
+        SELECT DISTINCT schemaname FROM pg_tables
         WHERE schemaname NOT LIKE 'pg_%' AND schemaname != 'information_schema'
         UNION
-        SELECT schemaname FROM pg_views
+        SELECT DISTINCT schemaname FROM pg_views
         WHERE schemaname NOT LIKE 'pg_%' AND schemaname != 'information_schema'
       SQL
     )
