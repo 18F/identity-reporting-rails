@@ -434,10 +434,6 @@ class RedshiftSync
       GRANT #{table_privileges} ON #{table_list} TO #{user_name};
     SQL
 
-    Rails.logger.info(
-      "Granting table privileges on schema #{schema_name} for user #{user_name}",
-    )
-
     sql
   end
 
@@ -529,10 +525,6 @@ class RedshiftSync
         REVOKE ALL PRIVILEGES ON TABLE #{schema_name}.#{table} FROM GROUP #{group_name};
       SQL
     end
-
-    Rails.logger.info(
-      "Granting table privileges on schema #{schema_name} for group #{group_name}",
-    )
 
     sql
   end
