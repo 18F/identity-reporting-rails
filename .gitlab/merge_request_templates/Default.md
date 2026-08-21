@@ -3,7 +3,8 @@
 
 ## 🎫 Ticket
 
-[issue-<issue_id>-<title>](https://gitlab.login.gov/lg-teams/Team-Data/PROJECT/-/work_items/<issue_id>)
+<!-- edit NUMBER, TITLE, and PROJECT (in the url) -->
+[NUMBER-TITLE](https://gitlab.login.gov/lg-teams/Team-Data/PROJECT/-/work_items/NUMBER)
 
 <!--
 Add ticket(s) corresponding to the work
@@ -27,6 +28,7 @@ https://gitlab.login.gov/lg-teams/Team-Data/data-warehouse-ag/-/work_items/NUMBE
 <!-- 
 How this was verified, e.g. "Tested locally", "Verified in `<env>`", relevant test commands, or before/after screenshots. -->
 
+<!-- 
 Provide a checklist of steps to confirm the changes. Acceptance test should be documented in original ticket
 
 - [ ] Step 1
@@ -51,4 +53,4 @@ If relevant, include a screenshot or screen capture of the changes.
 -->
 
 <-- self assign -->
-/assign @me
+/assign me
