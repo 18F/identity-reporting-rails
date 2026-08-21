@@ -101,7 +101,9 @@ class RedshiftSync
     flags_to_check = feature_flag.is_a?(Array) ? feature_flag : [feature_flag]
 
     flags_to_check.any? do |flag|
-      config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m)
+      # Check both Terraform config and IdentityConfig.store; flag is enabled if either is true
+      config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m) ||
+        (IdentityConfig.store.respond_to?(flag) && IdentityConfig.store.public_send(flag) == true)
     end
   end
 
@@ -239,9 +241,13 @@ class RedshiftSync
   end
 
   def get_existing_schemas
+    # schema finds with tables and views to ensure view-only schemas are included.
     result = execute_query(
       <<~SQL.squish,
         SELECT DISTINCT schemaname FROM pg_tables
+        WHERE schemaname NOT LIKE 'pg_%' AND schemaname != 'information_schema'
+        UNION
+        SELECT DISTINCT schemaname FROM pg_views
         WHERE schemaname NOT LIKE 'pg_%' AND schemaname != 'information_schema'
       SQL
     )
@@ -373,6 +379,12 @@ class RedshiftSync
     sql = [*create_user_sql, schema_privileges]
 
     execute_query(sql.flatten.join("\n"))
+
+    active_schemas.each do |schema|
+      Rails.logger.info(
+        "Granted privileges on schema #{schema['schema_name']} to user #{user_name}",
+      )
+    end
   end
 
   def user_exists?(user_name)
@@ -484,6 +496,12 @@ class RedshiftSync
     SQL
 
     execute_query(sql)
+
+    active_schemas.each do |schema|
+      Rails.logger.info(
+        "Granted privileges on schema #{schema['schema_name']} to group #{user_group['name']}",
+      )
+    end
   end
 
   def create_user_group_privileges(group_name, schema_name, schema_privileges, table_privileges,

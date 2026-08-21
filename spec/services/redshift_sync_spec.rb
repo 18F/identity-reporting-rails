@@ -117,6 +117,10 @@ RSpec.describe RedshiftSync do
     allow(mock_connection).to receive(:current_database).and_return('analytics')
     allow(Rails.logger).to receive(:info)
     allow(Rails.logger).to receive(:error)
+    # Prevent local application.yml values from leaking into feature_enabled? fallback checks
+    allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(false)
+    allow(IdentityConfig.store).to receive(:dw_fraudops_email_enabled).and_return(false)
+    allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(false)
   end
 
   describe 'environment detection' do
@@ -161,6 +165,44 @@ RSpec.describe RedshiftSync do
           %w[redshift_quicksight_connector_enabled fraud_ops_tracker_enabled],
         ),
       ).to be false
+    end
+
+    context 'when a flag is not enabled in the terraform config' do
+      before { allow(sync).to receive(:config_file).and_return('') }
+
+      it 'returns true when the flag is enabled in IdentityConfig.store' do
+        allow(IdentityConfig.store).to receive(:respond_to?).with('idp_zero_etl_enabled').
+          and_return(true)
+        allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(true)
+
+        expect(sync.send(:feature_enabled?, 'idp_zero_etl_enabled')).to be true
+      end
+
+      it 'returns false when the flag is disabled in IdentityConfig.store' do
+        allow(IdentityConfig.store).to receive(:respond_to?).with('idp_zero_etl_enabled').
+          and_return(true)
+        allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(false)
+
+        expect(sync.send(:feature_enabled?, 'idp_zero_etl_enabled')).to be false
+      end
+
+      it 'returns false when the flag does not exist in IdentityConfig.store' do
+        allow(IdentityConfig.store).to receive(:respond_to?).with('unknown_flag').
+          and_return(false)
+
+        expect(sync.send(:feature_enabled?, 'unknown_flag')).to be false
+      end
+    end
+  end
+
+  describe '#config_file' do
+    it 'reads the file when it exists' do
+      allow(sync).to receive(:config_file).and_call_original
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with(a_string_including('main.tf')).
+        and_return('dbt_enabled = true')
+
+      expect(sync.send(:config_file)).to eq('dbt_enabled = true')
     end
   end
 
@@ -212,6 +254,35 @@ RSpec.describe RedshiftSync do
       expect(sql).not_to include('REVOKE ALL ON SCHEMA logs FROM GROUP lg_users')
       expect(sql).to include('REVOKE ALL ON SCHEMA marts FROM GROUP lg_users')
       expect(sql).to include('GRANT USAGE ON SCHEMA idp TO GROUP lg_users')
+    end
+
+    it 'grants on every feature-enabled configured schema for the group' do
+      sync.send(:create_schema_privileges_for_group, user_group)
+
+      sql = executed_sql.join("\n")
+      expect(sql).to include('GRANT USAGE ON SCHEMA idp TO GROUP lg_users')
+      expect(sql).to include('GRANT USAGE ON SCHEMA logs TO GROUP lg_users')
+    end
+  end
+
+  describe '#get_existing_schemas' do
+    let(:executed_sql) { [] }
+
+    before do
+      allow(mock_connection).to receive(:execute) do |sql|
+        executed_sql << sql
+        [{ 'schemaname' => 'idp' }, { 'schemaname' => 'idp_core' }]
+      end
+    end
+
+    it 'unions pg_tables and pg_views so view-only schemas like idp_core are seen' do
+      schemas = sync.send(:get_existing_schemas)
+
+      sql = executed_sql.join("\n")
+      expect(sql).to include('FROM pg_tables')
+      expect(sql).to include('FROM pg_views')
+      # idp_core exists only as views; it must still be reported as existing.
+      expect(schemas).to include('idp', 'idp_core')
     end
   end
 
@@ -436,6 +507,35 @@ RSpec.describe RedshiftSync do
           with(a_string_matching(/CREATE USER pii_reader WITH PASSWORD DISABLE/))
 
         sync.send(:create_system_user, 'pii_reader', schemas, nil, false)
+      end
+    end
+
+    context 'with multiple feature-enabled configured schemas' do
+      let(:schemas) do
+        [
+          { 'schema_name' => 'idp_core',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
+          { 'schema_name' => 'system_tables',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
+        ]
+      end
+      let(:executed_sql) { [] }
+
+      before do
+        allow(mock_connection).to receive(:execute) do |sql|
+          executed_sql << sql
+          double(any?: true)
+        end
+      end
+
+      it 'emits GRANT statements for every configured schema' do
+        sync.send(:create_system_user, 'security_audit', schemas, secret_id, false)
+
+        sql = executed_sql.join("\n")
+        expect(sql).to include('GRANT USAGE ON SCHEMA idp_core TO security_audit')
+        expect(sql).to include('GRANT USAGE ON SCHEMA system_tables TO security_audit')
       end
     end
   end
