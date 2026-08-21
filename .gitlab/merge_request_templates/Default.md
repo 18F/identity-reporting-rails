@@ -49,3 +49,6 @@ If relevant, include a screenshot or screen capture of the changes.
 
 </details>
 -->
+
+<-- self assign -->
+/assign @me
