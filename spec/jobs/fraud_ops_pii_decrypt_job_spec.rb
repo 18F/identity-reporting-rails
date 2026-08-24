@@ -14,6 +14,10 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
       user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
       user_id: 1,
       success: true,
+      device_id: 'dev-xyz',
+      user_ip_address: '104.56.43.23',
+      agency_uuid: 'agency-bbb',
+      unique_session_id: 'sess-ccc',
     }
   end
   let(:sample_event_data) do
@@ -181,6 +185,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
           user_id: 1,
           user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
+          event_type: 'login-email-and-password-auth',
+          success: true,
+          device_id: 'dev-xyz',
+          user_ip_address: '104.56.43.23',
+          agency_uuid: 'agency-bbb',
+          unique_session_id: 'sess-ccc',
         },
         {
           event_key: 'event_2',
@@ -188,6 +198,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
           user_id: 1,
           user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
+          event_type: 'login-email-and-password-auth',
+          success: true,
+          device_id: 'dev-xyz',
+          user_ip_address: '104.56.43.23',
+          agency_uuid: 'agency-bbb',
+          unique_session_id: 'sess-ccc',
         },
       ]
     end
@@ -282,6 +298,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
               user_id: 1,
               user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
+              event_type: 'login-email-and-password-auth',
+              success: true,
+              device_id: 'dev-xyz',
+              user_ip_address: '104.56.43.23',
+              agency_uuid: 'agency-bbb',
+              unique_session_id: 'sess-ccc',
             },
             {
               event_key: 'event_2',
@@ -289,6 +311,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
               user_id: 1,
               user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
+              event_type: 'login-email-and-password-auth',
+              success: true,
+              device_id: 'dev-xyz',
+              user_ip_address: '104.56.43.23',
+              agency_uuid: 'agency-bbb',
+              unique_session_id: 'sess-ccc',
             },
           ],
         )
@@ -312,11 +340,30 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
               user_id: 1,
               user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
               event_timestamp: sample_event_timestamp,
+              event_type: 'login-email-and-password-auth',
+              success: true,
+              device_id: 'dev-xyz',
+              user_ip_address: '104.56.43.23',
+              agency_uuid: 'agency-bbb',
+              unique_session_id: 'sess-ccc',
             },
           ],
         )
         expect(ids).to eq(['event_1'])
       end
+    end
+
+    it 'includes the flattened event fields in the decrypted event hash' do
+      allow(job).to receive(:decrypt_data).and_return(sample_event_data)
+      decrypted, = job.send(:decrypt_events, encrypted_events)
+      expect(decrypted.first).to include(
+        event_type: 'login-email-and-password-auth',
+        success: true,
+        device_id: 'dev-xyz',
+        user_ip_address: '104.56.43.23',
+        agency_uuid: 'agency-bbb',
+        unique_session_id: 'sess-ccc',
+      )
     end
   end
 
@@ -329,6 +376,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
           user_id: 1,
           user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
+          event_type: 'login-email-and-password-auth',
+          success: true,
+          device_id: 'dev-xyz',
+          user_ip_address: '104.56.43.23',
+          agency_uuid: 'agency-bbb',
+          unique_session_id: 'sess-ccc',
         },
         {
           event_key: 'event_2',
@@ -336,6 +389,12 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
           user_id: 1,
           user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
           event_timestamp: sample_event_timestamp,
+          event_type: 'login-email-and-password-auth',
+          success: true,
+          device_id: 'dev-xyz',
+          user_ip_address: '104.56.43.23',
+          agency_uuid: 'agency-bbb',
+          unique_session_id: 'sess-ccc',
         },
       ]
     end
@@ -354,8 +413,9 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
       it 'uses jsonb cast in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ user_id,\ user_uuid,
-                      \s*event_timestamp,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,
+                      \s*event_type,\ success,\ device_id,\ user_ip_address,
+                      \s*agency_uuid,\ unique_session_id,\ dw_created_at\)
                       \s*VALUES.*::jsonb}x
 
         expect(mock_connection).to receive(:execute).
@@ -368,6 +428,39 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
         expect(Rails.logger).to receive(:info).with(a_string_matching(/row_count.*2/))
         job.send(:bulk_insert_decrypted_events, decrypted_events)
       end
+
+      it 'binds success: false as a real value (SQL FALSE, not NULL)' do
+        events = [decrypted_events.first.merge(success: false)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          # sanitize_sql_array renders a bound Ruby false as SQL FALSE.
+          expect(sql).to match(/\bFALSE\b/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'binds success: nil (not false) so it becomes SQL NULL' do
+        events = [decrypted_events.first.merge(success: nil)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/\bNULL\b/)
+          # A nil that was wrongly coerced to false would render FALSE here.
+          expect(sql).not_to match(/\bFALSE\b/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'binds an absent flattened field (device_id nil) so it becomes SQL NULL' do
+        events = [decrypted_events.first.merge(device_id: nil)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/\bNULL\b/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
     end
 
     context 'when using Redshift adapter' do
@@ -379,10 +472,62 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
         end
       end
 
+      it 'renders a non-integral user_id as NULL instead of splicing it into the SQL' do
+        events = [decrypted_events.first.merge(user_id: '1); DROP TABLE fraudops.frd_events; --')]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).not_to include('DROP TABLE')
+          expect(sql).to match(/JSON_PARSE\(\$json\$.*\$json\$\), NULL, '/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'renders an integral-string user_id as a bare integer literal' do
+        events = [decrypted_events.first.merge(user_id: '123')]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/JSON_PARSE\(\$json\$.*\$json\$\), 123, '/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'parses string user_ids as base 10, not octal/hex' do
+        events = [decrypted_events.first.merge(user_id: '0123')]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/JSON_PARSE\(\$json\$.*\$json\$\), 123, '/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'renders a user_id outside BIGINT range as NULL instead of overflowing' do
+        events = [decrypted_events.first.merge(user_id: 10 ** 20)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to match(/JSON_PARSE\(\$json\$.*\$json\$\), NULL, '/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'renders a non-boolean success value as NULL, not truthy-coerced TRUE' do
+        events = [decrypted_events.first.merge(success: 'false')]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).not_to match(/\bTRUE\b/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
       it 'uses dollar-quoted JSON_PARSE in insert statement' do
         expected_pattern = %r{INSERT\ INTO\ fraudops\.frd_events
-                      \s*\(event_key,\ message,\ user_id,\ user_uuid,
-                      \s*event_timestamp,\ dw_created_at\)
+                      \s*\(event_key,\ message,\ user_id,\ user_uuid,\ event_timestamp,
+                      \s*event_type,\ success,\ device_id,\ user_ip_address,
+                      \s*agency_uuid,\ unique_session_id,\ dw_created_at\)
                       \s*VALUES.*JSON_PARSE\(\$json\$}x
 
         expect(mock_connection).to receive(:execute).
@@ -406,12 +551,59 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
             user_id: 1,
             user_uuid: '66c1bc79-43f8-43d7-bfd7-4fd90023d572',
             event_timestamp: sample_event_timestamp,
+            event_type: 'login-email-and-password-auth',
+            success: true,
+            device_id: 'dev-xyz',
+            user_ip_address: '104.56.43.23',
+            agency_uuid: 'agency-bbb',
+            unique_session_id: 'sess-ccc',
           },
         ]
 
         expect(mock_connection).to receive(:execute) do |sql|
           expect(sql).to include('JSON_PARSE($json$')
           expect(sql).not_to match(/JSON_PARSE\('/)
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'emits SQL FALSE (not NULL) when success is false' do
+        events = [decrypted_events.first.merge(success: false)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('FALSE')
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'emits SQL NULL (not FALSE) when success is nil' do
+        events = [decrypted_events.first.merge(success: nil)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('NULL')
+          expect(sql).not_to include('FALSE')
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'emits SQL TRUE when success is true' do
+        events = [decrypted_events.first.merge(success: true)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('TRUE')
+        end
+
+        job.send(:bulk_insert_decrypted_events, events)
+      end
+
+      it 'emits SQL NULL for an absent flattened field (device_id nil)' do
+        events = [decrypted_events.first.merge(device_id: nil)]
+
+        expect(mock_connection).to receive(:execute) do |sql|
+          expect(sql).to include('NULL')
         end
 
         job.send(:bulk_insert_decrypted_events, events)
@@ -424,6 +616,20 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
         job.send(:bulk_insert_decrypted_events, [])
       end
+    end
+  end
+
+  describe '#redshift_bool' do
+    it "returns 'NULL' for nil" do
+      expect(job.send(:redshift_bool, nil)).to eq('NULL')
+    end
+
+    it "returns 'FALSE' for false" do
+      expect(job.send(:redshift_bool, false)).to eq('FALSE')
+    end
+
+    it "returns 'TRUE' for true" do
+      expect(job.send(:redshift_bool, true)).to eq('TRUE')
     end
   end
 
@@ -461,17 +667,6 @@ RSpec.describe FraudOpsPiiDecryptJob, type: :job do
 
         job.send(:bulk_update_processed_timestamp, [])
       end
-    end
-  end
-
-  describe '#event_payload' do
-    it 'extracts fields from the nested events hash' do
-      expect(job.send(:event_payload, sample_event_data)).to eq(sample_event_payload)
-    end
-
-    it 'falls back to the top-level payload when events is missing' do
-      flat_payload = { user_uuid: 'flat-uuid', occurred_at: 1_780_602_749.0 }
-      expect(job.send(:event_payload, flat_payload)).to eq(flat_payload)
     end
   end
 

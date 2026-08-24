@@ -86,46 +86,53 @@ class FraudOpsPiiDecryptJob < ApplicationJob
       decrypted = decrypt_data(row['message'], private_key, row['event_key'])
       next unless decrypted
 
-      event_data = event_payload(decrypted)
+      extractor = FraudOps::EventFieldExtractor.new(decrypted)
+      event_object = extractor.event_object || {}
+      flattened = extractor.call
 
       decrypted_events << {
         event_key: row['event_key'],
         message: decrypted,
-        user_id: event_data[:user_id],
-        user_uuid: event_data[:user_uuid],
-        event_timestamp: event_data[:occurred_at] && Time.zone.at(event_data[:occurred_at]),
-      }
+        user_id: event_object[:user_id],
+        user_uuid: event_object[:user_uuid],
+        event_timestamp: event_object[:occurred_at] && Time.zone.at(event_object[:occurred_at]),
+      }.merge(flattened)
       successful_ids << row['event_key']
     end
 
     [decrypted_events, successful_ids]
   end
 
+  # Flattened columns come from FraudOps::EventFieldExtractor::COLUMNS —
+  # add or remove columns by editing FIELDS there, not here.
+  FIXED_LEADING_COLUMNS = %i[
+    event_key message user_id user_uuid event_timestamp
+  ].freeze
+
+  def insert_columns
+    @insert_columns ||= FIXED_LEADING_COLUMNS + FraudOps::EventFieldExtractor::COLUMNS +
+                        [:dw_created_at]
+  end
+
   def bulk_insert_decrypted_events(decrypted_events)
     return if decrypted_events.empty?
+
+    column_list = insert_columns.join(', ')
 
     if using_redshift_adapter?
       values_sql = decrypted_events.map { |event| redshift_insert_values(event) }.join(', ')
       connection.execute(<<~SQL.squish)
         INSERT INTO fraudops.frd_events
-          (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)
+          (#{column_list})
         VALUES #{values_sql}
       SQL
     else
-      value_fragment = '(?, ?::jsonb, ?, ?, ?, CURRENT_TIMESTAMP)'
+      value_fragment = "(#{postgres_value_fragment})"
       placeholders = Array.new(decrypted_events.size, value_fragment).join(', ')
-      values = decrypted_events.flat_map do |event|
-        [
-          event[:event_key],
-          JSON.generate(event[:message]),
-          event[:user_id],
-          event[:user_uuid],
-          event[:event_timestamp],
-        ]
-      end
+      values = decrypted_events.flat_map { |event| postgres_insert_values(event) }
       insert_sql = <<~SQL.squish
         INSERT INTO fraudops.frd_events
-          (event_key, message, user_id, user_uuid, event_timestamp, dw_created_at)
+          (#{column_list})
         VALUES #{placeholders}
       SQL
       sanitized = ActiveRecord::Base.send(:sanitize_sql_array, [insert_sql, *values])
@@ -135,16 +142,79 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     Rails.logger.info(log_format('Bulk insert completed', row_count: decrypted_events.size))
   end
 
+  # Placeholder fragment without the surrounding parens.
+  def postgres_value_fragment
+    fragments = insert_columns.map do |column|
+      case column
+      when :message then '?::jsonb'
+      when :dw_created_at then 'CURRENT_TIMESTAMP'
+      else '?'
+      end
+    end
+    fragments.join(', ')
+  end
+
+  # Nil values stay as binds (SQL NULL); only the inlined dw_created_at is skipped.
+  def postgres_insert_values(event)
+    bound_insert_columns.map do |column|
+      column == :message ? JSON.generate(event[:message]) : event[column]
+    end
+  end
+
+  def bound_insert_columns
+    @bound_insert_columns ||= insert_columns - [:dw_created_at]
+  end
+
   def redshift_insert_values(event)
-    json_literal = dollar_quote(JSON.generate(event[:message]))
-    [
-      connection.quote(event[:event_key]),
-      "JSON_PARSE(#{json_literal})",
-      event[:user_id] || 'NULL',
-      event[:user_uuid] ? connection.quote(event[:user_uuid]) : 'NULL',
-      event[:event_timestamp] ? connection.quote(event[:event_timestamp]) : 'NULL',
-      'CURRENT_TIMESTAMP',
-    ].then { |parts| "(#{parts.join(', ')})" }
+    parts = insert_columns.map do |column|
+      redshift_column_literal(column, event)
+    end
+    "(#{parts.join(', ')})"
+  end
+
+  def redshift_column_literal(column, event)
+    case column
+    when :event_key then connection.quote(event[:event_key])
+    when :message then "JSON_PARSE(#{dollar_quote(JSON.generate(event[:message]))})"
+    when :user_id then redshift_integer_literal(event[:user_id])
+    when :user_uuid, :event_timestamp
+      event[column] ? connection.quote(event[column]) : 'NULL'
+    when :dw_created_at then 'CURRENT_TIMESTAMP'
+    else redshift_flattened_literal(column, event[column])
+    end
+  end
+
+  def redshift_flattened_literal(column, value)
+    config = FraudOps::EventFieldExtractor::FIELDS.fetch(column)
+    if config[:sql_type] == :boolean
+      redshift_bool(value)
+    else
+      value ? connection.quote(value) : 'NULL'
+    end
+  end
+
+  # Only real booleans render as TRUE/FALSE; anything else (e.g. the string
+  # "false") is NULL rather than a truthy-coerced TRUE.
+  def redshift_bool(value)
+    case value
+    when true then 'TRUE'
+    when false then 'FALSE'
+    else 'NULL'
+    end
+  end
+
+  # user_id is spliced as a bare literal, so anything non-integral renders as
+  # NULL instead of raw SQL (message still preserves the original payload).
+  # Strings parse base-10 only (Integer() would read "0123" as octal), and
+  # values outside Redshift's BIGINT range are NULL, not a runtime overflow.
+  def redshift_integer_literal(value)
+    int =
+      if value.is_a?(String)
+        Integer(value, 10, exception: false)
+      else
+        Integer(value, exception: false)
+      end
+    int&.between?(-(2 ** 63), 2 ** 63 - 1) ? int.to_s : 'NULL'
   end
 
   def dollar_quote(str)
@@ -167,13 +237,6 @@ class FraudOpsPiiDecryptJob < ApplicationJob
     connection.execute(sanitized)
 
     Rails.logger.info(log_format('Bulk update completed', updated_count: event_ids.size))
-  end
-
-  def event_payload(decrypted)
-    events = decrypted[:events]
-    return decrypted unless events.is_a?(Hash) && events.any?
-
-    events.values.first
   end
 
   def decrypt_data(encrypted_data, key, event_key)
