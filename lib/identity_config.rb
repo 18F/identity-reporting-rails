@@ -64,7 +64,7 @@ class IdentityConfig
     config.add(:redis_pool_size, type: :integer)
     config.add(:redis_url, type: :string)
     config.add(:redshift_database_name, type: :string)
-    config.add(:redshift_database_zetl_name, type: :string)
+    config.add(:redshift_database_zero_etl_name, type: :string)
     config.add(:redshift_host, type: :string)
     config.add(:redshift_sia_v3_enabled, type: :boolean)
     config.add(:report_timeout, type: :integer)

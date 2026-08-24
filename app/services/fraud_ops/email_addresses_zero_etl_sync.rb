@@ -4,9 +4,9 @@ module FraudOps
   # Maintains a Zero-ETL-sourced twin of fraudops.frd_email_addresses.
   class EmailAddressesZeroEtlSync
     SCHEMA_NAME = 'fraudops'
-    TARGET_TABLE = 'frd_email_addresses_zero_etl'
-    STAGING_TABLE = 'frd_email_addresses_zero_etl_staging'
-    SOURCE_TABLE = "#{IdentityConfig.store.redshift_database_zetl_name}.public.email_addresses"
+    TARGET_TABLE = 'frd_email_addresses_zetl'
+    STAGING_TABLE = 'frd_email_addresses_zetl_staging'
+    SOURCE_TABLE = "#{IdentityConfig.store.redshift_database_zero_etl_name}.public.email_addresses"
     MERGE_KEY = 'id'
     DEFAULT_LOOKBACK_MINUTES = 15
 

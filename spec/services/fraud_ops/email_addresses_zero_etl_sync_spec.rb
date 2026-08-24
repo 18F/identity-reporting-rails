@@ -33,7 +33,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
 
       it 'logs the skip and names the rake task that provisions the table' do
         expect(Rails.logger).to receive(:info).with(
-          a_string_matching(/fraudops\.frd_email_addresses_zero_etl does not exist/).
+          a_string_matching(/fraudops\.frd_email_addresses_zetl does not exist/).
             and(a_string_matching(/rake fraudops:bootstrap_email_addresses_zero_etl/)),
         )
 
@@ -47,8 +47,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
       it 'does not provision the table itself' do
         service.sync
 
-        expect(executed_sql).not_to include(a_string_matching(/CREATE TABLE .*_zero_etl \(LIKE/))
-        expect(executed_sql).not_to include(a_string_matching(/INSERT INTO .*_zero_etl SELECT \*/))
+        expect(executed_sql).not_to include(a_string_matching(/CREATE TABLE .*_zetl \(LIKE/))
+        expect(executed_sql).not_to include(a_string_matching(/INSERT INTO .*_zetl SELECT \*/))
       end
     end
 
@@ -58,7 +58,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
       it 'performs the merge' do
         service.sync
 
-        expect(executed_sql).to include(a_string_matching(/frd_email_addresses_zero_etl_staging/))
+        expect(executed_sql).to include(a_string_matching(/frd_email_addresses_zetl_staging/))
       end
 
       it 'reports that it did not skip' do
@@ -70,7 +70,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
       let(:staging_load_sql) do
         service.sync
         executed_sql.find do |sql|
-          sql.include?('INSERT INTO fraudops.frd_email_addresses_zero_etl_staging')
+          sql.include?('INSERT INTO fraudops.frd_email_addresses_zetl_staging')
         end
       end
 
@@ -91,7 +91,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
 
       # The three-part name is how Redshift reaches a table in the zero-ETL database, which
       # lives alongside the analytics one on the cluster. Only the read crosses databases.
-      # The database half comes from redshift_database_zetl_name, which is '' locally, so this
+      # The database half comes from redshift_database_zero_etl_name, which is '' locally, so this
       # pins the shape of the FROM clause rather than the deployed database name.
       it 'reads from public.email_addresses in the configured zero-ETL database' do
         expect(described_class::SOURCE_TABLE).to end_with('.public.email_addresses')
@@ -105,7 +105,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
       # The whole point of the three-part name: one connection, one transaction. Opening a
       # second connection would put the staging load and the merge in separate transactions.
       it 'never opens a connection to the zero-ETL database' do
-        expect(DataWarehouseApplicationRecordZetl).not_to receive(:connection)
+        expect(DataWarehouseApplicationRecordZeroEtl).not_to receive(:connection)
 
         service.sync
       end
@@ -155,8 +155,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
 
         merge_sql = executed_sql.find { |sql| sql.include?('MERGE INTO') }
 
-        expect(merge_sql).to match(/MERGE INTO fraudops\.frd_email_addresses_zero_etl/)
-        expect(merge_sql).to match(/ON fraudops\.frd_email_addresses_zero_etl\.id = source\.id/)
+        expect(merge_sql).to match(/MERGE INTO fraudops\.frd_email_addresses_zetl/)
+        expect(merge_sql).to match(/ON fraudops\.frd_email_addresses_zetl\.id = source\.id/)
         expect(merge_sql).to match(/WHEN MATCHED THEN UPDATE SET/)
         expect(merge_sql).to match(/WHEN NOT MATCHED THEN INSERT/)
       end
@@ -187,8 +187,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
   # test database so the production statement is exercised, not just matched.
   describe 'the generated MERGE, executed against PostgreSQL' do
     let(:connection) { DataWarehouseApplicationRecord.connection }
-    let(:target) { 'fraudops.frd_email_addresses_zero_etl' }
-    let(:staging) { 'fraudops.frd_email_addresses_zero_etl_staging' }
+    let(:target) { 'fraudops.frd_email_addresses_zetl' }
+    let(:staging) { 'fraudops.frd_email_addresses_zetl_staging' }
 
     before do
       allow(DataWarehouseApplicationRecord).to receive(:connection).and_call_original

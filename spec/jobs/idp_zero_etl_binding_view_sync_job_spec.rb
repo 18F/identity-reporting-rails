@@ -55,7 +55,7 @@ RSpec.describe IdpZeroEtlBindingViewSyncJob, type: :job do
           {
             name: 'IdpZeroEtlBindingViewSyncJob',
             success: true,
-            message: 'ZETL binding view sync completed successfully',
+            message: 'Zero-ETL binding view sync completed successfully',
             results: results,
           }.to_json,
         )

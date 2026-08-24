@@ -23,7 +23,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
 
       it 'logs and exits without touching the table' do
         expect(Rails.logger).to receive(:info).with(
-          a_string_matching(/fraudops\.frd_email_addresses_zero_etl already exists/),
+          a_string_matching(/fraudops\.frd_email_addresses_zetl already exists/),
         )
 
         expect(service.bootstrap).to be(false)
@@ -36,7 +36,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
         service.bootstrap
 
         expect(executed_sql).to include(
-          a_string_matching(/CREATE TABLE fraudops\.frd_email_addresses_zero_etl \(LIKE/).
+          a_string_matching(/CREATE TABLE fraudops\.frd_email_addresses_zetl \(LIKE/).
             and(a_string_matching(/\(LIKE fraudops\.frd_email_addresses INCLUDING/)),
         )
       end
@@ -46,7 +46,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
 
         expect(executed_sql).to include(
           a_string_matching(
-            /ALTER TABLE fraudops\.frd_email_addresses_zero_etl ADD PRIMARY KEY \(id\)/,
+            /ALTER TABLE fraudops\.frd_email_addresses_zetl ADD PRIMARY KEY \(id\)/,
           ),
         )
       end
@@ -55,7 +55,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
         service.bootstrap
 
         expect(executed_sql).to include(
-          a_string_matching(/INSERT INTO fraudops\.frd_email_addresses_zero_etl SELECT \*/).
+          a_string_matching(/INSERT INTO fraudops\.frd_email_addresses_zetl SELECT \*/).
             and(a_string_matching(/FROM fraudops\.frd_email_addresses\z/)),
         )
       end
@@ -63,15 +63,15 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
       it 'creates the table before seeding it' do
         service.bootstrap
 
-        create_index = executed_sql.index { |sql| sql.match?(/CREATE TABLE .*_zero_etl \(LIKE/) }
-        seed_index = executed_sql.index { |sql| sql.match?(/INSERT INTO .*_zero_etl SELECT \*/) }
+        create_index = executed_sql.index { |sql| sql.match?(/CREATE TABLE .*_zetl \(LIKE/) }
+        seed_index = executed_sql.index { |sql| sql.match?(/INSERT INTO .*_zetl SELECT \*/) }
 
         expect(create_index).to be < seed_index
       end
 
       it 'logs what it created and reports that it bootstrapped' do
         expect(Rails.logger).to receive(:info).with(
-          'Created fraudops.frd_email_addresses_zero_etl from fraudops.frd_email_addresses',
+          'Created fraudops.frd_email_addresses_zetl from fraudops.frd_email_addresses',
         )
 
         expect(service.bootstrap).to be(true)
@@ -95,7 +95,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
   describe 'executed against PostgreSQL' do
     let(:connection) { DataWarehouseApplicationRecord.connection }
     let(:source) { 'fraudops.frd_email_addresses' }
-    let(:target) { 'fraudops.frd_email_addresses_zero_etl' }
+    let(:target) { 'fraudops.frd_email_addresses_zetl' }
 
     def column_names(table)
       schema, name = table.split('.')

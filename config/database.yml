@@ -38,7 +38,7 @@ development:
     database: identity_reporting_rails_data_warehouse_<%= Rails.env %>
     schema_search_path: 'logs,public,idp,system_tables,fraudops,marts,qa_marts,fcms'
     migrations_paths: db/data_warehouse_migrate
-  data_warehouse_zetl:
+  data_warehouse_zero_etl:
     <<: *dev_data_warehouse
     database_tasks: false
     migrations_paths: []
@@ -69,7 +69,7 @@ test:
     migrations_paths:
       - db/data_warehouse_migrate
       - db/data_warehouse_test_migrate
-  data_warehouse_zetl:
+  data_warehouse_zero_etl:
     <<: *test_data_warehouse
     database_tasks: false
     migrations_paths: []
@@ -143,8 +143,8 @@ production:
     encoding: utf8
     migrations_paths: db/data_warehouse_migrate
     schema_dump: false
-  data_warehouse_zetl:
+  data_warehouse_zero_etl:
     <<: *data_warehouse
-    database: "<%= Identity::Hostdata.config.redshift_database_zetl_name %>"
+    database: "<%= Identity::Hostdata.config.redshift_database_zero_etl_name %>"
     database_tasks: false
     migrations_paths: []

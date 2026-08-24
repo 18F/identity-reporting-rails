@@ -114,7 +114,7 @@ class RedshiftSync
   def connection_class
     case database
     when 'analytics' then DataWarehouseApplicationRecord
-    when 'analytics_zetl' then DataWarehouseApplicationRecordZetl
+    when 'analytics_zetl' then DataWarehouseApplicationRecordZeroEtl
     else raise ArgumentError, "unknown database #{database.inspect}"
     end
   end
