@@ -543,7 +543,7 @@ RSpec.describe Reports::PartnerReportDefault do
       }
     end
 
-    it 'uploads to correct S3 path structure including report version' do
+    it 'uploads v2 reports to the versioned v2 path' do
       expected_path = 'v2/123/monthly/2026-04-01.json'
       expect(job).to receive(:upload_file_to_s3_bucket).with(
         path: expected_path,
@@ -576,17 +576,10 @@ RSpec.describe Reports::PartnerReportDefault do
           and_return('')
       end
 
-      it 'uploads to both the legacy path and the versioned v1 path' do
+      it 'uploads only to the versioned v1 path' do
         body = JSON.pretty_generate(sample_json_data)
 
-        expect(v1_job).to receive(:upload_file_to_s3_bucket).with(
-          path: '123/monthly/2026-04-01.json',
-          body: body,
-          content_type: 'application/json',
-          bucket: bucket_name,
-        )
-
-        expect(v1_job).to receive(:upload_file_to_s3_bucket).with(
+        expect(v1_job).to receive(:upload_file_to_s3_bucket).once.with(
           path: 'v1/123/monthly/2026-04-01.json',
           body: body,
           content_type: 'application/json',

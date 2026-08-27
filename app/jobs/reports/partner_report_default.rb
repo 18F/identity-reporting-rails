@@ -149,39 +149,27 @@ module Reports
     end
 
     # S3 path structure:
-    # v1: env/service_provider_id/REPORT_CADENCE/2025-01-01.json for original implementation
-    # v1: env/v1/service_provider_id/REPORT_CADENCE/2025-01-01.json for original, organized
-    # v2: env/v2/service_provider_id/REPORT_CADENCE/2025-01-01.json for v2 implementation
+    # v1: env/v1/service_provider_id/REPORT_CADENCE/2025-01-01.json
+    # v2: env/v2/service_provider_id/REPORT_CADENCE/2025-01-01.json
     def upload_to_s3(json_data, service_provider_id:, period_date:)
       base_path = generate_base_s3_path(directory: 'portal')
 
-      paths = case @report_version
-              when 'v1'
-                [
-                  # Legacy path for backwards compatibility
-                  "#{base_path}#{service_provider_id}/#{REPORT_CADENCE}/#{period_date}.json",
-
-                  # Versioned path for consistency with v2
-                  "#{base_path}v1/#{service_provider_id}/#{REPORT_CADENCE}/#{period_date}.json",
-                ]
-              when 'v2'
-                [
-                  "#{base_path}v2/#{service_provider_id}/#{REPORT_CADENCE}/#{period_date}.json",
-                ]
-              else
-                raise ArgumentError, "Unsupported report_version: #{@report_version}"
-              end
+      path = case @report_version
+             when 'v1', 'v2'
+               "#{base_path}#{@report_version}/#{service_provider_id}"\
+                 "/#{REPORT_CADENCE}/#{period_date}.json"
+             else
+               raise ArgumentError, "Unsupported report_version: #{@report_version}"
+             end
 
       return unless bucket_name.present?
 
-      paths.each do |path|
-        upload_file_to_s3_bucket(
-          path: path,
-          body: json_file(json_data),
-          content_type: 'application/json',
-          bucket: bucket_name,
-        )
-      end
+      upload_file_to_s3_bucket(
+        path: path,
+        body: json_file(json_data),
+        content_type: 'application/json',
+        bucket: bucket_name,
+      )
     end
 
     def normalize_issuer_list(issuers)
