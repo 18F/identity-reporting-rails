@@ -181,7 +181,6 @@ module Reports
           content_type: 'application/json',
           bucket: bucket_name,
         )
-        Rails.logger.info "Uploaded partner report to S3: #{path}"
       end
     end
 

@@ -554,13 +554,6 @@ RSpec.describe Reports::PartnerReportDefault do
       job.send(:upload_to_s3, sample_json_data, service_provider_id: 123, period_date: period_date)
     end
 
-    it 'logs successful upload' do
-      expect(Rails.logger).to receive(:info).with(
-        'Uploaded partner report to S3: v2/123/monthly/2026-04-01.json',
-      )
-      job.send(:upload_to_s3, sample_json_data, service_provider_id: 123, period_date: period_date)
-    end
-
     context 'when bucket_name is not present' do
       before do
         allow(job).to receive(:bucket_name).and_return(nil)
@@ -598,25 +591,6 @@ RSpec.describe Reports::PartnerReportDefault do
           body: body,
           content_type: 'application/json',
           bucket: bucket_name,
-        )
-
-        v1_job.send(
-          :upload_to_s3,
-          sample_json_data,
-          service_provider_id: 123,
-          period_date: period_date,
-        )
-      end
-
-      it 'logs both v1 upload paths' do
-        allow(v1_job).to receive(:upload_file_to_s3_bucket).and_return(true)
-
-        expect(Rails.logger).to receive(:info).with(
-          'Uploaded partner report to S3: 123/monthly/2026-04-01.json',
-        )
-
-        expect(Rails.logger).to receive(:info).with(
-          'Uploaded partner report to S3: v1/123/monthly/2026-04-01.json',
         )
 
         v1_job.send(
