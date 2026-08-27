@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'rails_helper'
+require 'reporting/partner_report_default'
 require 'reporting/partner_report_default_v2'
 
 RSpec.describe Reports::PartnerReportDefault do
@@ -87,74 +88,77 @@ RSpec.describe Reports::PartnerReportDefault do
     allow_any_instance_of(described_class).to receive(:sleep)
   end
 
-  describe '#initialize' do
-    it 'sets report_date when provided' do
-      job_with_date = described_class.new(report_date)
-      expect(job_with_date.report_date).to eq(report_date)
+  describe 'argument handling in #perform' do
+    before do
+      allow(job).to receive(:period_date).and_return(period_date)
+      allow(job).to receive(:generate_and_upload_reports)
     end
 
-    it 'allows report_date to be nil' do
-      expect(job.report_date).to be_nil
-    end
-
-    context 'with report_version' do
+    context 'report_version' do
       it 'defaults to v2' do
         expect(described_class::DEFAULT_VERSION).to eq('v2')
       end
 
       it 'accepts v1' do
-        expect { described_class.new(nil, report_version: 'v1') }.not_to raise_error
+        expect(job.perform(nil, 'v1')).to eq(true)
+        expect(job.report_version).to eq('v1')
       end
 
       it 'accepts v2' do
-        expect { described_class.new(nil, report_version: 'v2') }.not_to raise_error
+        expect(job.perform(nil, 'v2')).to eq(true)
+        expect(job.report_version).to eq('v2')
       end
     end
 
-    context 'with issuer filtering' do
+    context 'issuer filtering' do
       it 'accepts included_issuers as a single string' do
-        job = described_class.new(nil, included_issuers: issuer1)
+        job.perform(nil, 'v2', { included_issuers: issuer1 })
         expect(job.included_issuers).to eq([issuer1])
       end
 
       it 'accepts included_issuers as an array' do
-        job = described_class.new(nil, included_issuers: [issuer1, issuer2])
+        job.perform(nil, 'v2', { included_issuers: [issuer1, issuer2] })
         expect(job.included_issuers).to eq([issuer1, issuer2])
       end
 
       it 'accepts excluded_issuers as a single string' do
-        job = described_class.new(nil, excluded_issuers: issuer3)
+        job.perform(nil, 'v2', { excluded_issuers: issuer3 })
         expect(job.excluded_issuers).to eq([issuer3])
       end
 
       it 'accepts excluded_issuers as an array' do
-        job = described_class.new(nil, excluded_issuers: [issuer2, issuer3])
+        job.perform(nil, 'v2', { excluded_issuers: [issuer2, issuer3] })
         expect(job.excluded_issuers).to eq([issuer2, issuer3])
       end
 
-      it 'raises error when both included and excluded issuers are provided' do
-        expect do
-          described_class.new(nil, included_issuers: [issuer1], excluded_issuers: [issuer2])
-        end.to raise_error(
-          ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
-        )
-      end
-
       it 'normalizes empty arrays to nil' do
-        job = described_class.new(nil, included_issuers: [], excluded_issuers: [])
+        job.perform(nil, 'v2', { included_issuers: [], excluded_issuers: [] })
         expect(job.included_issuers).to be_nil
         expect(job.excluded_issuers).to be_nil
       end
 
       it 'removes nil and empty string values from arrays' do
-        job = described_class.new(nil, included_issuers: [issuer1, nil, '', issuer2])
+        job.perform(nil, 'v2', { included_issuers: [issuer1, nil, '', issuer2] })
         expect(job.included_issuers).to eq([issuer1, issuer2])
       end
 
-      it 'raises error for non-string/array issuer values' do
-        expect do
-          described_class.new(nil, included_issuers: { invalid: 'hash' })
-        end.to raise_error(ArgumentError, /Issuers must be a string or array of strings, got Hash/)
+      it 'returns false and logs when both included and excluded issuers are provided' do
+        expect(Rails.logger).to receive(:error).with(
+          'Failed to generate partner reports: '\
+          'Cannot specify both included_issuers and excluded_issuers',
+        )
+        expect(Rails.logger).to receive(:error).with(a_string_starting_with('Backtrace:'))
+        expect(
+          job.perform(nil, 'v2', { included_issuers: [issuer1], excluded_issuers: [issuer2] }),
+        ).to eq(false)
+      end
+
+      it 'returns false and logs for non-string/array issuer values' do
+        expect(Rails.logger).to receive(:error).with(
+          a_string_matching(/Issuers must be a string or array of strings, got Hash/),
+        )
+        expect(Rails.logger).to receive(:error).with(a_string_starting_with('Backtrace:'))
+        expect(job.perform(nil, 'v2', { included_issuers: { invalid: 'hash' } })).to eq(false)
       end
     end
   end
@@ -185,17 +189,13 @@ RSpec.describe Reports::PartnerReportDefault do
     end
 
     context 'with an invalid report_version' do
-      subject(:job) { described_class.new(nil, report_version: 'v3') }
-
       it 'logs error and returns false' do
         expect(Rails.logger).to receive(:error).with(
           'Failed to generate partner reports: Invalid report_version: v3. '\
           'Must be one of: v1, v2',
         )
-        expect(Rails.logger).to receive(:error).with(
-          a_string_starting_with('Backtrace:'),
-        )
-        expect(job.perform(report_date)).to eq(false)
+        expect(Rails.logger).to receive(:error).with(a_string_starting_with('Backtrace:'))
+        expect(job.perform(report_date, 'v3')).to eq(false)
       end
     end
 
@@ -240,12 +240,6 @@ RSpec.describe Reports::PartnerReportDefault do
         end
       end
 
-      it 'uses constructor date when no parameter provided' do
-        job_with_constructor_date = described_class.new(report_date)
-        allow(job_with_constructor_date).to receive(:period_date).and_return(period_date)
-        job_with_constructor_date.perform # No parameter
-        expect(job_with_constructor_date.report_date).to eq(report_date)
-      end
       it 'creates PartnerReportDefaultV2 with correct parameters' do
         expect(Reporting::PartnerReportDefaultV2).to receive(:new).with(
           report_date: report_date,
@@ -318,8 +312,6 @@ RSpec.describe Reports::PartnerReportDefault do
     end
 
     context 'with report_version v1' do
-      subject(:job) { described_class.new(nil, report_version: 'v1') }
-
       let(:mock_v1_report) { instance_double(Reporting::PartnerReportDefault) }
 
       before do
@@ -339,7 +331,7 @@ RSpec.describe Reports::PartnerReportDefault do
           excluded_issuers: nil,
         ).and_return(mock_v1_report)
 
-        job.perform(report_date)
+        job.perform(report_date, 'v1')
       end
     end
 
@@ -443,14 +435,9 @@ RSpec.describe Reports::PartnerReportDefault do
     end
 
     context 'with issuer filtering' do
-      let(:job_with_included) { described_class.new(nil, included_issuers: [issuer1, issuer2]) }
-      let(:job_with_excluded) { described_class.new(nil, excluded_issuers: [issuer3]) }
-
       before do
-        allow(job_with_included).to receive(:period_date).and_return(period_date)
-        allow(job_with_excluded).to receive(:period_date).and_return(period_date)
-        allow(job_with_included).to receive(:upload_file_to_s3_bucket).and_return(true)
-        allow(job_with_excluded).to receive(:upload_file_to_s3_bucket).and_return(true)
+        allow(job).to receive(:period_date).and_return(period_date)
+        allow(job).to receive(:upload_file_to_s3_bucket).and_return(true)
       end
 
       it 'passes included_issuers to PartnerReportDefaultV2' do
@@ -461,7 +448,7 @@ RSpec.describe Reports::PartnerReportDefault do
           excluded_issuers: nil,
         ).and_return(mock_partner_report)
 
-        job_with_included.perform(report_date)
+        job.perform(report_date, 'v2', { included_issuers: [issuer1, issuer2] })
       end
 
       it 'passes excluded_issuers to PartnerReportDefaultV2' do
@@ -472,7 +459,7 @@ RSpec.describe Reports::PartnerReportDefault do
           excluded_issuers: [issuer3],
         ).and_return(mock_partner_report)
 
-        job_with_excluded.perform(report_date)
+        job.perform(report_date, 'v2', { excluded_issuers: [issuer3] })
       end
 
       it 'logs included issuers when provided' do
@@ -480,8 +467,7 @@ RSpec.describe Reports::PartnerReportDefault do
         expect(Rails.logger).to receive(:info).with(
           "Filtering to include only issuers: #{issuer1}, #{issuer2}",
         )
-
-        job_with_included.perform(report_date)
+        job.perform(report_date, 'v2', { included_issuers: [issuer1, issuer2] })
       end
 
       it 'logs excluded issuers when provided' do
@@ -489,8 +475,7 @@ RSpec.describe Reports::PartnerReportDefault do
         expect(Rails.logger).to receive(:info).with(
           "Filtering to exclude issuers: #{issuer3}",
         )
-
-        job_with_excluded.perform(report_date)
+        job.perform(report_date, 'v2', { excluded_issuers: [issuer3] })
       end
     end
   end
@@ -510,6 +495,7 @@ RSpec.describe Reports::PartnerReportDefault do
     context 'when period_date can be retrieved' do
       before do
         job.instance_variable_set(:@report_date, report_date)
+        job.instance_variable_set(:@report_version, 'v2')
       end
 
       it 'returns the period date string from marts.calendar' do
@@ -520,6 +506,7 @@ RSpec.describe Reports::PartnerReportDefault do
     context 'when period_date cannot be retrieved' do
       before do
         job.instance_variable_set(:@report_date, report_date)
+        job.instance_variable_set(:@report_version, 'v2')
         allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
           with(report_date: report_date, cadence: 'monthly').
           and_raise(StandardError, 'No calendar entry found')
@@ -542,6 +529,8 @@ RSpec.describe Reports::PartnerReportDefault do
         data: { count_active_users: 1000 },
       }
     end
+
+    before { job.instance_variable_set(:@report_version, 'v2') }
 
     it 'uploads v2 reports to the versioned v2 path' do
       expected_path = 'v2/123/monthly/2026-04-01.json'
@@ -568,9 +557,10 @@ RSpec.describe Reports::PartnerReportDefault do
       end
     end
     context 'with report_version v1' do
-      let(:v1_job) { described_class.new(nil, report_version: 'v1') }
+      let(:v1_job) { described_class.new }
 
       before do
+        v1_job.instance_variable_set(:@report_version, 'v1')
         allow(v1_job).to receive(:generate_base_s3_path).
           with(directory: 'portal').
           and_return('')
@@ -728,6 +718,7 @@ RSpec.describe Reports::PartnerReportDefault do
 
     it 'calls get_period_date_from_report_date with correct parameters' do
       job.instance_variable_set(:@report_date, report_date)
+      job.instance_variable_set(:@report_version, 'v2')
 
       expect(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).with(
         report_date: report_date,

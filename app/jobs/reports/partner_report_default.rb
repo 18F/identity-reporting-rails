@@ -7,14 +7,20 @@ module Reports
   class PartnerReportDefault < BaseReport
     REPORT_CADENCE = 'monthly' # Eventually this will be a parameter, hardcoding monthly for now
     DEFAULT_VERSION = 'v2'
+    VALID_VERSIONS = %w[v1 v2].freeze
 
     # A single job that wraps two versions of partner report (will eventually delete v1)
     # Runs v2 by default
 
     # Usage:
-    #  reporter = Reports::PartnerReportDefault.new(Date.parse('2026-03-15'),
-    #  included_issuers: ['issuer1', 'issuer2'], report_version: 'v1') # run legacy report
-    #  reporter.perform()
+    #   # CRON JOB
+    #   Reports::PartnerReportDefault.perform_now(Date.parse('2026-03-15'), 'v2')
+    #
+    #   # MANUAL RUN
+    #   Reports::PartnerReportDefault.perform_now(
+    #     Date.parse('2026-03-15'), 'v1',
+    #     { included_issuers: ['issuer1', 'issuer2'] },
+    #   )
 
     # Default report date is 4 days ago
     # This is because event data is ingested into the warehouse 1x/day and transforms
@@ -24,26 +30,20 @@ module Reports
 
     attr_reader :report_date, :included_issuers, :excluded_issuers, :report_version
 
-    def initialize(report_date = nil, *args, included_issuers: nil, excluded_issuers: nil,
-                   report_version: DEFAULT_VERSION, **rest)
-      @report_date = report_date
-      @included_issuers = normalize_issuer_list(included_issuers)
-      @excluded_issuers = normalize_issuer_list(excluded_issuers)
-      @report_version = report_version
+    def perform(report_date = nil, report_version = nil, options = {})
+      options ||= {}
 
-      # Validate that both aren't provided
-      if @included_issuers&.any? && @excluded_issuers&.any?
-        raise ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
+      @report_version = report_version || DEFAULT_VERSION
+      unless VALID_VERSIONS.include?(@report_version)
+        raise ArgumentError,
+              "Invalid report_version: #{@report_version}. "\
+              "Must be one of: #{VALID_VERSIONS.join(', ')}"
       end
 
-      super(report_date, *args, **rest)
-    end
-
-    def perform(report_date = nil, report_version = nil)
-      @report_version = report_version || @report_version || DEFAULT_VERSION
-
-      unless ['v1', 'v2'].include?(@report_version)
-        raise ArgumentError, "Invalid report_version: #{@report_version}. Must be one of: v1, v2"
+      @included_issuers = normalize_issuer_list(options[:included_issuers])
+      @excluded_issuers = normalize_issuer_list(options[:excluded_issuers])
+      if @included_issuers&.any? && @excluded_issuers&.any?
+        raise ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
       end
 
       unless IdentityConfig.store.redshift_sia_v3_enabled
@@ -55,12 +55,11 @@ module Reports
         return false
       end
 
-      # Use provided report_date, or constructor date, or default
-      @report_date = report_date || @report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
+      @report_date = report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
 
-      Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports (#{@report_version}"\
-                      " version) for report date: #{@report_date} (#{REPORT_CADENCE} "\
-                      "report period starting on #{period_date})"
+      Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports (#{@report_version} "\
+                        "version) for report date: #{@report_date} (#{REPORT_CADENCE} "\
+                        "report period starting on #{period_date})"
 
       # Wait 10 seconds to allow user to cancel job if they realize they ran it with the wrong date
       # This hopefully prevents accidental population of reports manually for wrong dates
@@ -72,6 +71,7 @@ module Reports
       elsif @excluded_issuers&.any?
         Rails.logger.info "Filtering to exclude issuers: #{@excluded_issuers.join(', ')}"
       end
+
       generate_and_upload_reports(@report_date)
       Rails.logger.info "Completed partner default #{REPORT_CADENCE} report"
 
@@ -79,7 +79,7 @@ module Reports
     rescue StandardError => e
       Rails.logger.error "Failed to generate partner reports: #{e.message}"
       Rails.logger.error "Backtrace: #{e.backtrace.join("\n")}"
-      return false
+      false
     end
 
     private
@@ -189,10 +189,10 @@ module Reports
       issuer_reports.each do |issuer, json_data|
         next if json_data.nil?
 
-        service_provider_id = json_data[:provider_information][:service_provider_id]
+        service_provider_id = json_data.dig(:provider_information, :service_provider_id)
         next if service_provider_id.nil?
 
-        unless mapping_ids.include?(service_provider_id)
+        unless mapping_ids.include?(Integer(service_provider_id, exception: false))
           Rails.logger.warn "Service provider ID #{service_provider_id} for issuer "\
                             "'#{issuer}' not found in issuer mapping"
         end
@@ -220,10 +220,18 @@ module Reports
 
     def period_date
       raise ArgumentError, 'report_date must be set before calling period_date' if @report_date.nil?
-      Reporting::PartnerReportDefaultV2.get_period_date_from_report_date(
+      reporter_class_for(@report_version).get_period_date_from_report_date(
         report_date: @report_date,
         cadence: REPORT_CADENCE,
       )
+    end
+
+    def reporter_class_for(version)
+      case version
+      when 'v1' then Reporting::PartnerReportDefault
+      when 'v2' then Reporting::PartnerReportDefaultV2
+      else raise ArgumentError, "Unsupported report_version: #{version}"
+      end
     end
   end
 end
