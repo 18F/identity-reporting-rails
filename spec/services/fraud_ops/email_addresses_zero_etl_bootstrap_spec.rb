@@ -42,21 +42,32 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
     context 'when the target table exists' do
       let(:target_table_exists) { true }
 
-      it 'seeds the target from the legacy table' do
+      it 'seeds the target with an insert-only MERGE keyed on id' do
         service.bootstrap
 
-        expect(executed_sql).to include(
-          a_string_matching(/INSERT INTO fraudops\.frd_email_addresses_zetl SELECT \*/).
-            and(a_string_matching(/FROM fraudops\.frd_email_addresses WHERE /)),
-        )
+        merge = executed_sql.find { |sql| sql.include?('MERGE INTO') }
+
+        expect(merge).to match(/MERGE INTO fraudops\.frd_email_addresses_zetl/)
+        expect(merge).to match(/FROM fraudops\.frd_email_addresses WHERE /)
+        expect(merge).to match(/ON fraudops\.frd_email_addresses_zetl\.id = source\.id/)
+        expect(merge).to match(/WHEN NOT MATCHED THEN INSERT/)
       end
 
-      it 'seeds only rows created before the cutoff' do
+      it 'does not update rows that already exist in the target' do
         service.bootstrap
 
-        seed = executed_sql.find { |sql| sql.include?('INSERT INTO') }
+        merge = executed_sql.find { |sql| sql.include?('MERGE INTO') }
 
-        expect(seed).to include("WHERE dw_created_at < '#{cutoff}'")
+        expect(merge).not_to match(/WHEN MATCHED/)
+        expect(merge).not_to match(/UPDATE SET/)
+      end
+
+      it 'merges only rows created before the cutoff' do
+        service.bootstrap
+
+        merge = executed_sql.find { |sql| sql.include?('MERGE INTO') }
+
+        expect(merge).to include("WHERE dw_created_at < '#{cutoff}'")
       end
 
       it 'never creates the table' do
@@ -70,18 +81,18 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
 
         index_of = ->(needle) { executed_sql.index { |sql| sql.include?(needle) } }
         set_index = index_of.call('SET SESSION AUTHORIZATION pii_reader')
-        insert_index = executed_sql.index { |sql| sql.match?(/INSERT INTO .*_zetl SELECT \*/) }
+        merge_index = index_of.call('MERGE INTO')
         reset_index = index_of.call('RESET SESSION AUTHORIZATION')
 
-        expect([set_index, insert_index, reset_index]).to all(be_present)
-        expect(set_index).to be < insert_index
-        expect(insert_index).to be < reset_index
+        expect([set_index, merge_index, reset_index]).to all(be_present)
+        expect(set_index).to be < merge_index
+        expect(merge_index).to be < reset_index
       end
 
       it 'restores the session user even when the seed fails' do
         allow(mock_connection).to receive(:execute) do |sql|
           executed_sql << sql
-          raise ActiveRecord::StatementInvalid, 'boom' if sql.include?('INSERT INTO')
+          raise ActiveRecord::StatementInvalid, 'boom' if sql.include?('MERGE INTO')
         end
 
         expect { service.bootstrap }.to raise_error(ActiveRecord::StatementInvalid)
@@ -152,7 +163,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
       end
       connection.execute("GRANT USAGE ON SCHEMA fraudops TO #{seed_user}")
       connection.execute("GRANT SELECT ON #{source} TO #{seed_user}")
-      connection.execute("GRANT INSERT ON #{target} TO #{seed_user}")
+      # MERGE reads the target to find matches, then inserts unmatched rows.
+      connection.execute("GRANT SELECT, INSERT ON #{target} TO #{seed_user}")
     end
 
     after do
@@ -197,6 +209,24 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
       expect(service.bootstrap).to be(true)
 
       expect(connection.select_values("SELECT id FROM #{target} ORDER BY id")).to eq([1, 2, 99])
+    end
+
+    it 'inserts new rows but leaves already-present ids untouched' do
+      connection.execute(<<~SQL)
+        INSERT INTO #{target} (id, encrypted_email, user_id, email, dw_created_at)
+        VALUES (1, 'existing', 111, 'existing-email', '2019-01-01')
+      SQL
+
+      expect(service.bootstrap).to be(true)
+
+      rows = connection.select_all("SELECT id, user_id, email FROM #{target} ORDER BY id").to_a
+
+      expect(rows).to eq(
+        [
+          { 'id' => 1, 'user_id' => 111, 'email' => 'existing-email' },
+          { 'id' => 2, 'user_id' => 22, 'email' => 'two' },
+        ],
+      )
     end
 
     it 'does nothing when the target does not exist' do
