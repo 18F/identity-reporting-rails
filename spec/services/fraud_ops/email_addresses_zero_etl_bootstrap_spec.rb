@@ -42,32 +42,32 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
     context 'when the target table exists' do
       let(:target_table_exists) { true }
 
-      it 'seeds the target with an insert-only MERGE keyed on id' do
+      it 'seeds the target with an insert-only anti-join keyed on id' do
         service.bootstrap
 
-        merge = executed_sql.find { |sql| sql.include?('MERGE INTO') }
+        insert = executed_sql.find { |sql| sql.include?('INSERT INTO') }
 
-        expect(merge).to match(/MERGE INTO fraudops\.frd_email_addresses_zetl/)
-        expect(merge).to match(/FROM fraudops\.frd_email_addresses WHERE /)
-        expect(merge).to match(/ON fraudops\.frd_email_addresses_zetl\.id = source\.id/)
-        expect(merge).to match(/WHEN NOT MATCHED THEN INSERT/)
+        expect(insert).to match(/INSERT INTO fraudops\.frd_email_addresses_zetl \(id, /)
+        expect(insert).to match(/FROM fraudops\.frd_email_addresses AS source WHERE /)
+        expect(insert).to match(/NOT EXISTS \( SELECT 1 FROM fraudops\.frd_email_addresses_zetl/)
+        expect(insert).to match(/AS target WHERE target\.id = source\.id \)/)
       end
 
       it 'does not update rows that already exist in the target' do
         service.bootstrap
 
-        merge = executed_sql.find { |sql| sql.include?('MERGE INTO') }
+        insert = executed_sql.find { |sql| sql.include?('INSERT INTO') }
 
-        expect(merge).not_to match(/WHEN MATCHED/)
-        expect(merge).not_to match(/UPDATE SET/)
+        expect(insert).not_to match(/MERGE/)
+        expect(insert).not_to match(/UPDATE/)
       end
 
-      it 'merges only rows created before the cutoff' do
+      it 'inserts only rows created before the cutoff' do
         service.bootstrap
 
-        merge = executed_sql.find { |sql| sql.include?('MERGE INTO') }
+        insert = executed_sql.find { |sql| sql.include?('INSERT INTO') }
 
-        expect(merge).to include("WHERE dw_created_at < '#{cutoff}'")
+        expect(insert).to include("WHERE source.dw_created_at < '#{cutoff}'")
       end
 
       it 'never creates the table' do
@@ -81,18 +81,18 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
 
         index_of = ->(needle) { executed_sql.index { |sql| sql.include?(needle) } }
         set_index = index_of.call('SET SESSION AUTHORIZATION pii_reader')
-        merge_index = index_of.call('MERGE INTO')
+        insert_index = index_of.call('INSERT INTO')
         reset_index = index_of.call('RESET SESSION AUTHORIZATION')
 
-        expect([set_index, merge_index, reset_index]).to all(be_present)
-        expect(set_index).to be < merge_index
-        expect(merge_index).to be < reset_index
+        expect([set_index, insert_index, reset_index]).to all(be_present)
+        expect(set_index).to be < insert_index
+        expect(insert_index).to be < reset_index
       end
 
       it 'restores the session user even when the seed fails' do
         allow(mock_connection).to receive(:execute) do |sql|
           executed_sql << sql
-          raise ActiveRecord::StatementInvalid, 'boom' if sql.include?('MERGE INTO')
+          raise ActiveRecord::StatementInvalid, 'boom' if sql.include?('INSERT INTO')
         end
 
         expect { service.bootstrap }.to raise_error(ActiveRecord::StatementInvalid)
@@ -163,7 +163,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
       end
       connection.execute("GRANT USAGE ON SCHEMA fraudops TO #{seed_user}")
       connection.execute("GRANT SELECT ON #{source} TO #{seed_user}")
-      # MERGE reads the target to find matches, then inserts unmatched rows.
+      # The anti-join reads the target to find existing ids, then inserts the rest.
       connection.execute("GRANT SELECT, INSERT ON #{target} TO #{seed_user}")
     end
 

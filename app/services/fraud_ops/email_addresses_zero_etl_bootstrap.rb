@@ -5,7 +5,7 @@ module FraudOps
     SCHEMA_NAME = 'fraudops'
     SOURCE_TABLE = 'frd_email_addresses'
     TARGET_TABLE = 'frd_email_addresses_zetl'
-    MERGE_KEY = 'id'
+    MATCH_KEY = 'id'
     INSERT_DB_USER = 'pii_reader'
 
     def initialize(zetl_cutoff_datetime:)
@@ -38,27 +38,29 @@ module FraudOps
 
       begin
         DataWarehouseApplicationRecord.transaction do
-          connection.execute(merge_target_table_query)
+          connection.execute(insert_target_table_query)
         end
       ensure
         connection.execute(reset_session_authorization_query)
       end
     end
 
-    def merge_target_table_query
+    def insert_target_table_query
       format(<<~SQL.squish, build_params)
-        MERGE INTO %{target_table}
-        USING (SELECT * FROM %{source_table} WHERE dw_created_at < %{cutoff}) AS source
-          ON %{target_table}.%{merge_key} = source.%{merge_key}
-        WHEN NOT MATCHED THEN
-          INSERT (id, encrypted_email, user_id, email, dw_created_at, dw_updated_at)
-          VALUES (
-            source.id,
-            source.encrypted_email,
-            source.user_id,
-            source.email,
-            source.dw_created_at,
-            source.dw_updated_at
+        INSERT INTO %{target_table} (id, encrypted_email, user_id, email, dw_created_at, dw_updated_at)
+        SELECT
+          source.id,
+          source.encrypted_email,
+          source.user_id,
+          source.email,
+          source.dw_created_at,
+          source.dw_updated_at
+        FROM %{source_table} AS source
+        WHERE source.dw_created_at < %{cutoff}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM %{target_table} AS target
+            WHERE target.%{match_key} = source.%{match_key}
           )
       SQL
     end
@@ -75,7 +77,7 @@ module FraudOps
       {
         source_table: qualified(SOURCE_TABLE),
         target_table: qualified(TARGET_TABLE),
-        merge_key: MERGE_KEY,
+        match_key: MATCH_KEY,
         insert_db_user: INSERT_DB_USER,
         cutoff: connection.quote(zetl_cutoff_datetime),
       }
