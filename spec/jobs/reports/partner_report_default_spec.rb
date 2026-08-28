@@ -477,6 +477,16 @@ RSpec.describe Reports::PartnerReportDefault do
         )
         job.perform(report_date, 'v2', { excluded_issuers: [issuer3] })
       end
+      it 'warns about requested issuers not found in report data' do
+        allow(Rails.logger).to receive(:warn)
+        allow(mock_partner_report).to receive(:generate_reports).and_return(
+          { issuer1 => sample_report_data[issuer1] },
+        )
+        expect(Rails.logger).to receive(:warn).with(
+          "Requested issuers not found in report data: #{issuer2}",
+        )
+        job.perform(report_date, 'v2', { included_issuers: [issuer1, issuer2] })
+      end
     end
   end
 

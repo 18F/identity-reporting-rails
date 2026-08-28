@@ -104,6 +104,14 @@ module Reports
       issuer_mapping = reporter.generate_issuer_mapping
       issuer_reports = reporter.generate_reports
 
+      # If included issuers specified, check they were in SQL results
+      if @included_issuers&.any?
+        missing = @included_issuers - issuer_reports.keys
+        if missing.any?
+          Rails.logger.warn "Requested issuers not found in report data: #{missing.join(', ')}"
+        end
+      end
+
       # Check that all service_provider_ids exist in mapping (just in case, warn if any missing)
       validate_service_provider_ids(issuer_reports, issuer_mapping)
 
