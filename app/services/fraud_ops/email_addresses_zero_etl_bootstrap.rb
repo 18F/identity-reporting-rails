@@ -7,6 +7,10 @@ module FraudOps
     TARGET_TABLE = 'frd_email_addresses_zetl'
     INSERT_DB_USER = 'pii_reader'
 
+    def initialize(zetl_cutoff_datetime:)
+      @zetl_cutoff_datetime = zetl_cutoff_datetime
+    end
+
     def bootstrap
       unless target_table_exists?
         Rails.logger.info("#{qualified(TARGET_TABLE)} does not exist, nothing to do")
@@ -26,6 +30,8 @@ module FraudOps
     end
 
     private
+
+    attr_reader :zetl_cutoff_datetime
 
     def target_table_exists?
       connection.table_exists?(qualified(TARGET_TABLE))
@@ -55,7 +61,7 @@ module FraudOps
 
     def seed_target_table_query
       format(<<~SQL.squish, build_params)
-        INSERT INTO %{target_table} SELECT * FROM %{source_table}
+        INSERT INTO %{target_table} SELECT * FROM %{source_table} WHERE dw_created_at < %{cutoff}
       SQL
     end
 
@@ -72,6 +78,7 @@ module FraudOps
         source_table: qualified(SOURCE_TABLE),
         target_table: qualified(TARGET_TABLE),
         insert_db_user: INSERT_DB_USER,
+        cutoff: connection.quote(zetl_cutoff_datetime),
       }
     end
 

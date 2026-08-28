@@ -1,7 +1,8 @@
 require 'rails_helper'
 
 RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
-  let(:service) { described_class.new }
+  let(:service) { described_class.new(zetl_cutoff_datetime: cutoff) }
+  let(:cutoff) { '2026-01-01T00:00:00Z' }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
   let(:target_table_exists) { true }
   let(:target_has_rows) { false }
@@ -15,6 +16,7 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
 
     allow(mock_connection).to receive(:table_exists?).and_return(target_table_exists)
     allow(mock_connection).to receive(:select_value).and_return(target_has_rows ? 1 : nil)
+    allow(mock_connection).to receive(:quote) { |value| "'#{value}'" }
     allow(mock_connection).to receive(:execute) { |sql| executed_sql << sql }
     allow(Rails.logger).to receive(:info)
   end
@@ -62,8 +64,16 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
 
         expect(executed_sql).to include(
           a_string_matching(/INSERT INTO fraudops\.frd_email_addresses_zetl SELECT \*/).
-            and(a_string_matching(/FROM fraudops\.frd_email_addresses\z/)),
+            and(a_string_matching(/FROM fraudops\.frd_email_addresses WHERE /)),
         )
+      end
+
+      it 'seeds only rows created before the cutoff' do
+        service.bootstrap
+
+        seed = executed_sql.find { |sql| sql.include?('INSERT INTO') }
+
+        expect(seed).to include("WHERE dw_created_at < '#{cutoff}'")
       end
 
       it 'never creates the table' do
@@ -144,9 +154,11 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
       [target, source].each { |table| connection.execute("DROP TABLE IF EXISTS #{table} CASCADE") }
       connection.execute("CREATE TABLE #{source} (#{columns_sql})")
       connection.execute("CREATE TABLE #{target} (#{columns_sql})")
+      # Both rows predate the cutoff so they are copied; a later test adds a
+      # post-cutoff row to prove the filter excludes it.
       connection.execute(<<~SQL)
-        INSERT INTO #{source} (id, encrypted_email, user_id, email)
-        VALUES (1, 'enc1', 11, 'one'), (2, 'enc2', 22, 'two')
+        INSERT INTO #{source} (id, encrypted_email, user_id, email, dw_created_at)
+        VALUES (1, 'enc1', 11, 'one', '2020-01-01'), (2, 'enc2', 22, 'two', '2020-02-01')
       SQL
 
       # The seed runs `SET SESSION AUTHORIZATION pii_reader`, so the role must
@@ -175,6 +187,17 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
           { 'id' => 2, 'user_id' => 22, 'email' => 'two' },
         ],
       )
+    end
+
+    it 'copies only rows created before the cutoff' do
+      connection.execute(<<~SQL)
+        INSERT INTO #{source} (id, encrypted_email, user_id, email, dw_created_at)
+        VALUES (3, 'enc3', 33, 'future', '2030-01-01')
+      SQL
+
+      expect(service.bootstrap).to be(true)
+
+      expect(connection.select_values("SELECT id FROM #{target} ORDER BY id")).to eq([1, 2])
     end
 
     it 'restores the connection to its original user after seeding' do
