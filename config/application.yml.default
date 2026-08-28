@@ -83,8 +83,8 @@ production:
   redshift_database_zero_etl_name: ''
   redshift_host: ''
   report_timeout: 1_000_000
-  s3_reports_enabled: false
-  redshift_sia_v3_enabled: false
+  s3_reports_enabled: true
+  redshift_sia_v3_enabled: true
 
 test:
   database_host: ''
