@@ -4,7 +4,7 @@ module Reporting
   # Generates partner reports for all relevant/active service providers for single reporting period
   # Uses marts.calendar table to determine reporting period start date given report_date and cadence
   # Usage:
-  #   reporter = PartnerReportDefaultMonthly.new(
+  #   reporter = PartnerReportDefault.new(
   #     report_date: '2026-03-15',
   #     report_cadence: 'monthly'
   #   )
@@ -14,6 +14,7 @@ module Reporting
   class PartnerReportDefault
     # Marts table mappings for different report cadences
     CADENCE_TABLES = {
+
       'monthly' => {
         usage: 'marts.sp_usage_metrics_monthly',
         idv: 'marts.sp_idv_outcomes_monthly',
@@ -40,34 +41,33 @@ module Reporting
       report_date:,
       report_cadence: 'monthly',
       included_issuers: nil,
-      excluded_issuers: []
+      excluded_issuers: nil
     )
-      unless ['monthly', 'weekly', 'daily'].include?(report_cadence)
-        raise ArgumentError, "Invalid report_cadence: #{report_cadence}. "\
-                             "Must be one of: monthly, weekly, daily"
-      end
-      if included_issuers&.any? && excluded_issuers.any?
-        raise ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
-      end
-      @report_date = report_date.to_s # Ensure report date is a string
+      @report_date = report_date.to_s
       @report_cadence = report_cadence
       @included_issuers = included_issuers
       @excluded_issuers = excluded_issuers
+
+      unless ['monthly', 'weekly', 'daily'].include?(@report_cadence)
+        raise ArgumentError, "Invalid report_cadence: #{@report_cadence}. "\
+                             "Must be one of: monthly, weekly, daily"
+      end
+      if @included_issuers&.any? && @excluded_issuers&.any?
+        raise ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
+      end
     end
 
     def self.get_period_date_from_report_date(report_date:, cadence: 'monthly')
       # Given a date, retrieves the corresponding date for the start of its month/week/day
-      # Returns string in format 'YYYY-MM-DD' or nil on failure
+      # Returns string in format 'YYYY-MM-DD', raises on failure
       unless ['monthly', 'weekly', 'daily'].include?(cadence)
-        Rails.logger.error "Invalid cadence: #{cadence}. Must be one of: monthly, weekly, daily"
-        return nil
+        raise ArgumentError, "Invalid cadence: #{cadence}"
       end
 
       begin
         Date.parse(report_date.to_s)
       rescue ArgumentError => e
-        Rails.logger.error "Invalid date format for report_date: #{report_date} - #{e.message}"
-        return nil
+        raise ArgumentError, "Invalid date format for report_date: #{report_date} - #{e.message}"
       end
 
       query = <<~SQL
@@ -88,20 +88,15 @@ module Reporting
       ).first
 
       if result.nil?
-        Rails.logger.error "No calendar entry found for report_date: #{report_date}"
-        return nil
+        raise StandardError, "No calendar entry found for report_date: #{report_date}"
       end
 
       period_date = result['period_date_actual']
       if period_date.nil?
-        Rails.logger.error "No period_date_actual found for report_date: #{report_date}"
-        return nil
+        raise StandardError, "No period_date_actual found for report_date: #{report_date}"
       end
 
       period_date
-    rescue StandardError => e
-      Rails.logger.error "Failed to get period_date for #{report_date}, #{cadence}: #{e.message}"
-      nil
     end
 
     def generate_issuer_mapping
@@ -120,9 +115,6 @@ module Reporting
 
     def fetch_issuer_mapping_data
       DataWarehouseApplicationRecord.connection.execute(issuer_mapping_query).to_a
-    rescue StandardError => e
-      Rails.logger.error "Failed to fetch service provider issuer map data: #{e.message}"
-      raise e
     end
 
     def issuer_mapping_query
@@ -200,7 +192,7 @@ module Reporting
       missing_fields = required_fields.select { |field| row[field].nil? }
 
       if missing_fields.any?
-        raise "Missing required fields: #{missing_fields.join(', ')}"
+        raise StandardError, "Missing required fields: #{missing_fields.join(', ')}"
       end
 
       {
@@ -214,6 +206,7 @@ module Reporting
           period_start_date: row['period_date_actual'],
           period_calendar_id: row['period_date_id'],
           report_cadence: report_cadence,
+          report_generated_at: Time.zone.now,
         },
         data: build_data_section(row),
       }
@@ -277,16 +270,14 @@ module Reporting
     def build_data_section(row)
       INTEGER_DATA_FIELDS.each_with_object({}) do |field, hash|
         value = row[field]
-
         if value.nil? || value.to_s.strip.empty?
           hash[field.to_sym] = nil
         else
           begin
             hash[field.to_sym] = Integer(value)
           rescue ArgumentError, TypeError => e
-            # This shouldn't happen with marts tables, but log and handle gracefully
-            Rails.logger.error "Failed to convert '#{value}' "\
-                               "to integer for field #{field}: #{e.message}"
+            Rails.logger.error "Failed to convert '#{value}' " \
+                              "to integer for field #{field}: #{e.message}"
             hash[field.to_sym] = nil
           end
         end
@@ -295,9 +286,13 @@ module Reporting
 
     def fetch_bulk_data
       DataWarehouseApplicationRecord.connection.execute(bulk_query).to_a
-    rescue StandardError => e
-      Rails.logger.error "Failed to fetch #{report_cadence} partner report data: #{e.message}"
-      raise e
+    end
+
+    def period_date
+      self.class.get_period_date_from_report_date(
+        report_date: @report_date,
+        cadence: @report_cadence,
+      )
     end
 
     def bulk_query
@@ -315,7 +310,6 @@ module Reporting
                           when 'weekly' then 'week_start_date_actual'
                           when 'daily' then 'date_actual'
                           end
-
       <<~SQL
         WITH date_param AS (
             SELECT
@@ -423,7 +417,8 @@ module Reporting
         
             -- Identity Verification: Channels
             idv_data.count_pass_online_finalization,
-            idv_data.count_pass_ipp_online_portion,
+            --idv_data.count_pass_ipp_online_portion: incorrectly was in v1 report, should have been count_pass_ipp
+            idv_data.count_pass_ipp AS count_pass_ipp_online_portion,  -- renamed to count_pass_ipp in v2 report
             idv_data.count_pass_via_letter,
         
             -- Identity Verification: UX Friction
@@ -498,11 +493,11 @@ module Reporting
     end
 
     def issuer_filter_clause
-      if included_issuers&.any?
-        sanitized = included_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
+      if @included_issuers&.any?
+        sanitized = @included_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
         "AND sp.issuer IN (#{sanitized.join(', ')})"
-      elsif excluded_issuers.any?
-        sanitized = excluded_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
+      elsif @excluded_issuers&.any?
+        sanitized = @excluded_issuers.map { |i| ActiveRecord::Base.connection.quote(i) }
         "AND sp.issuer NOT IN (#{sanitized.join(', ')})"
       else
         ''
