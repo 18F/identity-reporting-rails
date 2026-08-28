@@ -17,11 +17,6 @@ module FraudOps
         return false
       end
 
-      if target_table_populated?
-        Rails.logger.info("#{qualified(TARGET_TABLE)} already has rows, nothing to do")
-        return false
-      end
-
       seed_target_table
 
       Rails.logger.info("Seeded #{qualified(TARGET_TABLE)} from #{qualified(SOURCE_TABLE)}")
@@ -37,10 +32,6 @@ module FraudOps
       connection.table_exists?(qualified(TARGET_TABLE))
     end
 
-    def target_table_populated?
-      connection.select_value(row_exists_query).present?
-    end
-
     def seed_target_table
       connection.execute(set_session_authorization_query)
 
@@ -51,12 +42,6 @@ module FraudOps
       ensure
         connection.execute(reset_session_authorization_query)
       end
-    end
-
-    def row_exists_query
-      format(<<~SQL.squish, build_params)
-        SELECT 1 FROM %{target_table} LIMIT 1
-      SQL
     end
 
     def seed_target_table_query

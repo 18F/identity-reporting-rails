@@ -5,7 +5,6 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
   let(:cutoff) { '2026-01-01T00:00:00Z' }
   let(:mock_connection) { instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter) }
   let(:target_table_exists) { true }
-  let(:target_has_rows) { false }
 
   # Every SQL string handed to the connection's #execute, in order.
   let(:executed_sql) { [] }
@@ -15,7 +14,6 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
     allow(DataWarehouseApplicationRecord).to receive(:transaction).and_yield
 
     allow(mock_connection).to receive(:table_exists?).and_return(target_table_exists)
-    allow(mock_connection).to receive(:select_value).and_return(target_has_rows ? 1 : nil)
     allow(mock_connection).to receive(:quote) { |value| "'#{value}'" }
     allow(mock_connection).to receive(:execute) { |sql| executed_sql << sql }
     allow(Rails.logger).to receive(:info)
@@ -41,23 +39,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
       end
     end
 
-    context 'when the target table already has rows' do
+    context 'when the target table exists' do
       let(:target_table_exists) { true }
-      let(:target_has_rows) { true }
-
-      it 'logs the skip and does not seed' do
-        expect(Rails.logger).to receive(:info).with(
-          a_string_matching(/fraudops\.frd_email_addresses_zetl already has rows/),
-        )
-
-        expect(service.bootstrap).to be(false)
-        expect(executed_sql).not_to include(a_string_matching(/INSERT INTO/i))
-      end
-    end
-
-    context 'when the target table exists and is empty' do
-      let(:target_table_exists) { true }
-      let(:target_has_rows) { false }
 
       it 'seeds the target from the legacy table' do
         service.bootstrap
@@ -208,13 +191,12 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBootstrap do
       expect(connection.select_value('SELECT current_user')).to eq(original_user)
     end
 
-    it 'does nothing when the target already has rows' do
+    it 'still seeds when the target already has rows' do
       connection.execute("INSERT INTO #{target} (id, user_id, email) VALUES (99, 999, 'kept')")
 
-      expect(service.bootstrap).to be(false)
+      expect(service.bootstrap).to be(true)
 
-      rows = connection.select_all("SELECT id, user_id, email FROM #{target} ORDER BY id").to_a
-      expect(rows).to eq([{ 'id' => 99, 'user_id' => 999, 'email' => 'kept' }])
+      expect(connection.select_values("SELECT id FROM #{target} ORDER BY id")).to eq([1, 2, 99])
     end
 
     it 'does nothing when the target does not exist' do
