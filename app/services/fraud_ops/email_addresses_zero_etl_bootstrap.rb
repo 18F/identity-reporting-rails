@@ -5,21 +5,22 @@ module FraudOps
     SCHEMA_NAME = 'fraudops'
     SOURCE_TABLE = 'frd_email_addresses'
     TARGET_TABLE = 'frd_email_addresses_zetl'
-    MERGE_KEY = 'id'
+    INSERT_DB_USER = 'pii_reader'
 
     def bootstrap
-      if target_table_exists?
-        Rails.logger.info("#{qualified(TARGET_TABLE)} already exists, nothing to do")
+      unless target_table_exists?
+        Rails.logger.info("#{qualified(TARGET_TABLE)} does not exist, nothing to do")
         return false
       end
 
-      DataWarehouseApplicationRecord.transaction do
-        connection.execute(create_target_table_query)
-        connection.execute(add_primary_key_query)
-        connection.execute(seed_target_table_query)
+      if target_table_populated?
+        Rails.logger.info("#{qualified(TARGET_TABLE)} already has rows, nothing to do")
+        return false
       end
 
-      Rails.logger.info("Created #{qualified(TARGET_TABLE)} from #{qualified(SOURCE_TABLE)}")
+      seed_target_table
+
+      Rails.logger.info("Seeded #{qualified(TARGET_TABLE)} from #{qualified(SOURCE_TABLE)}")
 
       true
     end
@@ -30,15 +31,25 @@ module FraudOps
       connection.table_exists?(qualified(TARGET_TABLE))
     end
 
-    def create_target_table_query
-      format(<<~SQL.squish, build_params)
-        CREATE TABLE %{target_table} (LIKE %{source_table} INCLUDING DEFAULTS)
-      SQL
+    def target_table_populated?
+      connection.select_value(row_exists_query).present?
     end
 
-    def add_primary_key_query
+    def seed_target_table
+      connection.execute(set_session_authorization_query)
+
+      begin
+        DataWarehouseApplicationRecord.transaction do
+          connection.execute(seed_target_table_query)
+        end
+      ensure
+        connection.execute(reset_session_authorization_query)
+      end
+    end
+
+    def row_exists_query
       format(<<~SQL.squish, build_params)
-        ALTER TABLE %{target_table} ADD PRIMARY KEY (%{merge_key})
+        SELECT 1 FROM %{target_table} LIMIT 1
       SQL
     end
 
@@ -48,11 +59,19 @@ module FraudOps
       SQL
     end
 
+    def set_session_authorization_query
+      format('SET SESSION AUTHORIZATION %{insert_db_user}', build_params)
+    end
+
+    def reset_session_authorization_query
+      'RESET SESSION AUTHORIZATION'
+    end
+
     def build_params
       {
         source_table: qualified(SOURCE_TABLE),
         target_table: qualified(TARGET_TABLE),
-        merge_key: MERGE_KEY,
+        insert_db_user: INSERT_DB_USER,
       }
     end
 
