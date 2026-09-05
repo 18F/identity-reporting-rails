@@ -202,6 +202,7 @@ class RedshiftSync
   def current_users
     excluded_users = [
       'superuser',
+      'rails_superuser',
       'rdsdb',
       *lambda_users.map { |lambda_user| lambda_user['user_name'] },
       *system_users.map { |system_user| system_user['user_name'] },

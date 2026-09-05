@@ -25,6 +25,7 @@ RSpec.describe RedshiftUserLoginDetectionJob, type: :job do
         ('IAM:steph.curry', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '5 MINUTES', 'Redshift JDBC Driver 2.1.0.34'),
         ('pii_reader', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '2 MINUTES', 'Redshift JDBC Driver 2.2.5'),
         ('superuser', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '1 MINUTE', 'Redshift JDBC Driver 2.1.0.30'),
+        ('rails_superuser', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '1 MINUTE', 'Redshift JDBC Driver 2.1.0.30'),
         ('old_user', 'authenticated', CURRENT_TIMESTAMP - INTERVAL '20 MINUTES', 'Redshift JDBC Driver 2.2.5');
       SQL
       DataWarehouseApplicationRecord.connection.execute(query)
@@ -59,6 +60,19 @@ RSpec.describe RedshiftUserLoginDetectionJob, type: :job do
           )
           rails_job.perform
         end
+      end
+    end
+
+    context 'when users_to_check uses the default admin identities' do
+      it 'then logs the rails_superuser login detected' do
+        allow(log_entry).to receive(:info)
+        expect(log_entry).to receive(:info).with(
+          {
+            name: 'RedshiftUserLoginDetectionJob',
+            detected_user: 'rails_superuser',
+          }.to_json,
+        )
+        rails_job.perform
       end
     end
 

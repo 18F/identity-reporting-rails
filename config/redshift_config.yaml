@@ -144,11 +144,6 @@ databases:
       - user_name: security_audit
         secret_id: "redshift/%{env_name}-analytics-security-audit"
         schemas:
-          - schema_name: pg_catalog
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            tables:
-              - pg_user
           - schema_name: system_tables
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -283,11 +278,6 @@ databases:
         syslog_access: true
         secret_id: "redshift/%{env_name}-analytics-rails-worker"
         schemas:
-          - schema_name: pg_catalog
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            tables:
-              - pg_user
           - schema_name: idp
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -354,6 +344,7 @@ databases:
         users:
           - rails_worker
           - superuser
+          - rails_superuser
           - "IAMR:%{env_name}_db_consumption"
           - "IAMR:%{env_name}_log_consumption"
           - "IAMR:%{env_name}_stale_data_check"

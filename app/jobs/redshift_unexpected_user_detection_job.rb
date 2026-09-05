@@ -14,6 +14,7 @@ class RedshiftUnexpectedUserDetectionJob < ApplicationJob
     'rdsdb',
     'rdsadmin',
     'superuser',
+    'rails_superuser',
     'postgres',
     'security_audit',
     'quicksight_connector',

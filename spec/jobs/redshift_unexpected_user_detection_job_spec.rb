@@ -55,6 +55,7 @@ RSpec.describe RedshiftUnexpectedUserDetectionJob, type: :job do
           CREATE USER "IAMR:testenv_db_consumption";
           CREATE USER "IAMR:testenv_stale_data_check";
           CREATE USER "superuser";
+          CREATE USER "rails_superuser";
           CREATE USER "rdsadmin";
           CREATE USER "rdsdb";
           CREATE USER "postgres";

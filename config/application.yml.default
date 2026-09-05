@@ -60,7 +60,7 @@ development:
   redshift_database_name: ''
   redshift_database_zero_etl_name: ''
   redshift_host: ''
-  redshift/local-analytics-superuser: '{"username":"","password":""}'
+  redshift/local-analytics-rails-superuser: '{"username":"","password":""}'
   s3_report_public_bucket_prefix: ''
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true
@@ -103,7 +103,7 @@ test:
   redshift_database_name: ''
   redshift_database_zero_etl_name: ''
   redshift_host: ''
-  redshift/local-analytics-superuser: '{"username":"","password":""}'
+  redshift/local-analytics-rails-superuser: '{"username":"","password":""}'
   s3_report_public_bucket_prefix: ''
   s3_report_bucket_prefix: ''
   redshift_sia_v3_enabled: true

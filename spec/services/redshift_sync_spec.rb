@@ -1104,7 +1104,7 @@ RSpec.describe RedshiftSync do
 
     it 'references only users defined in lambda_users, system_users, or known exceptions, ' \
        'for every database' do
-      exceptions = ['superuser']
+      exceptions = ['superuser', 'rails_superuser']
       invalid_references = []
 
       real_config['databases'].each do |db_name, db_config|
@@ -1131,7 +1131,7 @@ RSpec.describe RedshiftSync do
         invalid_references.join("\n"),
         '',
         'Users in user_roles must be defined in lambda_users, system_users, ' \
-          'or be a known exception (superuser), within the same database.',
+          'or be a known exception (superuser, rails_superuser), within the same database.',
       ].join("\n")
 
       expect(invalid_references).to be_empty, error_message

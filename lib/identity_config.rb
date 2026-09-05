@@ -75,9 +75,10 @@ class IdentityConfig
 
     # Allow override via environment variable for worker-specific credentials
     # Two-worker setup:
-    #   - Admin worker: 'superuser'
+    #   - Admin worker: 'rails-superuser' (least-privilege replacement for the
+    #     Redshift superuser; see db/redshift_roles/rails_superuser.sql)
     #   - Data worker: 'rails-worker'
-    redshift_secret_suffix = ENV['REDSHIFT_SECRET_SUFFIX'] || 'superuser'
+    redshift_secret_suffix = ENV['REDSHIFT_SECRET_SUFFIX'] || 'rails-superuser'
     redshift_secrets_manager_key = "redshift/#{Identity::Hostdata.env || 'local'}" \
       "-analytics-#{redshift_secret_suffix}"
     redshift_secrets_manager_key.then do |key|
