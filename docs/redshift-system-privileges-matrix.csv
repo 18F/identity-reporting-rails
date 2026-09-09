@@ -1,0 +1,62 @@
+privilege,description,superuser,sys:operator,sys:monitor,sys:dba,sys:secadmin,sys:superuser,grantable_to_role,source,notes
+# LEGEND: X = direct grant observed in SVV_SYSTEM_PRIVILEGES. i = effective via the sys:dba -> sys:operator edge (no direct row). ? = not observable so needs a functional test. empty = not held.,,,,,,,,,,
+# superuser column is CONFIRMED: pg_user_info.usesuper = true for `superuser` in the analytics database (verified 2026-09-09 UTC). Only rdsdb also has usesuper = true.,,,,,,,,,,
+# SECTION A - the 42 privileges SVV_SYSTEM_PRIVILEGES actually reports for sys: roles. Use these exact strings in GRANT statements; several differ from the doc headings.,,,,,,,,,,
+ACCESS CATALOG,Unrestricted read of pg_catalog catalog tables (pg_user / pg_group / pg_table_def),X,,,,,X,Yes,live,DIVERGENCE: docs say sys:monitor and sys:operator can 'access catalog or system tables' but neither holds this. Among sys: roles only sys:superuser does.
+ACCESS SYSTEM TABLE,Read STL_ / STV_ / SVV_ / SVL_ / SYS_ system views,X,X,X,i,,X,Yes,live,sys:dba has no direct row; it is effective through the sys:dba -> sys:operator edge. NOT held by sys:secadmin.
+ALTER DATASHARE,Alter a datashare,X,,,,,X,Yes,live,
+ALTER DEFAULT PRIVILEGES,Change default access privileges for future objects,X,,,,,X,Yes,live,No sys: role except sys:superuser. RedshiftSync uses ALTER DEFAULT PRIVILEGES FOR USER per DBT schema.
+ALTER MATERIALIZED VIEW ROW LEVEL SECURITY,Turn RLS on or off for a materialized view,X,,,,X,,Yes,live,sys:secadmin only. NOT held by sys:superuser.
+ALTER TABLE,Alter a table definition,X,,,X,,X,Yes,live,RESOLVED (was ?): sys:dba does hold it despite being omitted from the sys:dba doc description.
+ALTER TABLE ENABLE ROW LEVEL SECURITY,Turn RLS on or off for a table,X,,,,X,,Yes,live,sys:secadmin only. NOT held by sys:superuser.
+ALTER USER,Alter a database user,X,,,,X,X,Yes,live,Grantees cannot promote or demote superusers. Several ALTER USER options stay superuser-only - see Section B.
+ANALYZE,Collect table statistics,X,X,,i,,X,Yes,live,sys:dba effective via the sys:operator edge.
+ATTACH RLS POLICY,Attach a row-level security policy to a relation,X,,,,X,,Yes,live,sys:secadmin only. NOT held by sys:superuser.
+CANCEL,Cancel another user's running query,X,X,,i,,X,Yes,live,Any user may cancel their own query without this. sys:dba effective via the sys:operator edge.
+CREATE DATASHARE,Create a datashare,X,,,,,X,Yes,live,
+CREATE LIBRARY,Create a Python library,X,,,,,X,Yes,live,Python UDF support ends after 2026-06-30 per the AWS deprecation notice.
+CREATE OR REPLACE EXTERNAL FUNCTION,Create or replace an external (Lambda) function,X,,,,,X,Yes,live,
+CREATE OR REPLACE FUNCTION,Create or replace a UDF,X,,,X,,X,Yes,live,
+CREATE OR REPLACE STORED PROCEDURES,Create or replace a stored procedure,X,,,X,,X,Yes,live,NAME DIFFERS from the doc heading 'CREATE OR REPLACE PROCEDURE'. Use the live plural form in GRANT.
+CREATE OR REPLACE VIEW,Create or replace a view,X,,,X,,X,Yes,live,
+CREATE RLS POLICY,Create a row-level security policy,X,,,,X,,Yes,live,sys:secadmin only. NOT held by sys:superuser.
+CREATE ROLE,Create a role,X,,,,X,X,Yes,live,
+CREATE SCHEMA,Create a new schema,X,,,X,,X,Yes,live,Needed by RedshiftSyncJob and IdpZeroEtlBindingViewSyncJob.
+CREATE TABLE,Create a table,X,,,X,,X,Yes,live,Also satisfied by CREATE permission on the schema.
+CREATE USER,Create a database user,X,,,,X,X,Yes,live,Grantees explicitly cannot create superusers - escalation is blocked by design.
+DETACH RLS POLICY,Detach a row-level security policy from a relation,X,,,,X,,Yes,live,sys:secadmin only. NOT held by sys:superuser.
+DROP DATASHARE,Drop a datashare,X,,,,,X,Yes,live,
+DROP FUNCTION,Drop a UDF,X,,,X,,X,Yes,live,RESOLVED (was ?): sys:dba does hold it despite the doc description listing only 'drop procedures'.
+DROP LIBRARY,Drop a Python library,X,,,,,X,Yes,live,
+DROP MODEL,Drop an ML model,X,,,,,X,Yes,live,
+DROP PROCEDURE,Drop a stored procedure,X,,,X,,X,Yes,live,
+DROP RLS POLICY,Drop a row-level security policy,X,,,,X,,Yes,live,sys:secadmin only. NOT held by sys:superuser.
+DROP ROLE,Drop a role,X,,,,X,X,Yes,live,"DIVERGENCE: the docs grantee list omits 'users with the DROP ROLE permission', but it is a real grantable privilege held by both sys:secadmin and sys:superuser."
+DROP SCHEMA,Drop a schema,X,,,X,,X,Yes,live,Schema owner can also drop without the system permission.
+DROP TABLE,Drop a table,X,,,X,,X,Yes,live,Table owner with USAGE on the schema can also drop.
+DROP USER,Drop a database user,X,,,,X,X,Yes,live,
+DROP VIEW,Drop a view,X,,,X,,X,Yes,live,
+EXPLAIN MASKING,See masking expressions in EXPLAIN output,X,,,,X,,Yes,live,DIVERGENCE: sys:superuser does NOT hold this. sys:secadmin only.
+EXPLAIN RLS,See RLS predicates in EXPLAIN output,X,,,,X,X,Yes,live,
+GRANT ROLE,Grant or revoke a role to or from a user or role,X,,,,X,X,Yes,live,RESOLVED: this IS a real grantable system privilege and not only an ownership rule. Needed by RedshiftSyncJob for the dw_ingestion role.
+IGNORE RLS,Bypass row-level security policies,X,,,,X,X,Yes,live,
+SYSTEM CREATE MODEL,Create an ML model,X,,,,,X,Yes,live,NAME DIFFERS from the doc heading 'CREATE MODEL'. Use the live form in GRANT.
+TRUNCATE TABLE,Truncate a table,X,,,X,,X,Yes,live,Table owner can also truncate.
+UNKNOWN,Unnamed privilege that SVV_SYSTEM_PRIVILEGES cannot resolve,?,,,,X,,?,live,Held only by sys:secadmin. Prime suspect for the DDM masking-policy privilege the docs attribute to secadmin but the view cannot name. Test functionally.
+VACUUM,Reclaim space and re-sort rows,X,X,,i,,X,Yes,live,sys:dba effective via the sys:operator edge.
+# SECTION B - capabilities NOT present in SVV_SYSTEM_PRIVILEGES for any sys: role. These cannot be reached by granting a role.,,,,,,,,,,
+CREATE / DROP / ALTER / ATTACH / DETACH MASKING POLICY,Manage dynamic data masking policies,X,,,,?,,?,r_roles-default,"Docs say sys:secadmin manages DDM policies (CREATE, DROP, ATTACH, DETACH, ALTER) but no such privilege appears in the view - unlike the RLS equivalents, which all do. Either the UNKNOWN row above, or unreachable via roles. Blocks RedshiftMaskingJob until tested."
+SET SESSION AUTHORIZATION,Impersonate another database user for the session,X,,,,,,No,r_roles-system-privileges + live,CONFIRMED superuser-only: absent from both the docs table and the view. Blocks fully retiring the superuser account - see the 'NOT granted' header note in db/redshift_roles/rails_superuser.sql.
+CREATE USER ... CREATEUSER,Create a new superuser,X,,,,,,No,r_roles-system-privileges,CREATE USER grantees explicitly cannot create superusers.
+ALTER USER ... CREATEUSER / NOCREATEUSER,Promote or demote a user to or from superuser,X,,,,,,No,r_roles-system-privileges,ALTER USER grantees explicitly cannot change users to or from superuser.
+ALTER USER ... PASSWORD DISABLE / enable,Disable or enable a user's password,X,,,,?,,No,r_ALTER_USER,'Only a superuser can enable or disable passwords.' A superuser's own password cannot be disabled.
+ALTER USER ... VALID UNTIL,Set a password expiration date,X,,,,,,No,r_ALTER_USER,'Only superusers can use this parameter.'
+ALTER USER ... RESET SESSION TIMEOUT,Reset a user's idle-session timeout to the cluster default,X,,,,,,No,r_ALTER_USER,'You must be a database superuser to run this command.'
+ALTER USER ... SYSLOG ACCESS,Set RESTRICTED or UNRESTRICTED system-table row visibility for a user,X,,,,?,,No,r_ALTER_USER,Docs do not explicitly restrict this option to superusers so an ALTER USER holder may be able to set it. RedshiftSync sets it via syslog_access in redshift_config.yaml.
+SELECT on superuser-visible system tables,Read system tables in the superuser-visible class,X,,,,,,No,c_visibility-of-data,'Only superusers can see superuser-visible tables.' SYSLOG ACCESS UNRESTRICTED does NOT cross this boundary. Workaround is a per-table GRANT SELECT.
+See other users' rows in user-visible system tables,Read rows generated by other users in the user-visible class,X,,,,,,No (user attribute),c_visibility-of-data,Controlled by the SYSLOG ACCESS UNRESTRICTED user attribute rather than any role privilege. Does not apply to metadata views.
+CREATE / ALTER / DROP GROUP,Manage database groups,X,,,,,,No,r_roles-system-privileges + live,"CONFIRMED absent from both the docs table and the view. The GRANT CREATE/ALTER/DROP GROUP statements were REMOVED from db/redshift_roles/rails_superuser.sql on 2026-09-09 - do not reintroduce them."
+ALTER ROLE,Alter a role,X,,,,,,No,r_roles-system-privileges + live,"CONFIRMED absent from both the docs table and the view (only CREATE ROLE, DROP ROLE, GRANT ROLE exist). The GRANT ALTER ROLE statement was REMOVED from db/redshift_roles/rails_superuser.sql on 2026-09-09 - do not reintroduce it."
+ALTER SCHEMA ... OWNER TO,Reassign schema ownership,X,,,,,,No,r_ALTER_SCHEMA,Superuser or the current owner. `superuser` owns all eight app schemas including the four DBT schemas.
+GRANT / REVOKE on objects not owned,Grant or revoke object privileges without owning the object,X,,,,,,No,r_GRANT,A non-superuser needs ownership or WITH GRANT OPTION. This is the structural reason RedshiftSyncJob has needed a superuser.
+ALTER USER rdsdb,Alter the internal Redshift service account,,,,,,,No,r_ALTER_USER,'You can't alter the user named rdsdb.' The one operation even a true superuser cannot perform.
