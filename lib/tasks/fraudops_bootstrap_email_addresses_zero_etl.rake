@@ -12,8 +12,8 @@ namespace :fraudops do
             'rake "fraudops:bootstrap_email_addresses_zero_etl[2026-08-27T00:00:00Z]"'
     end
 
-    FraudOps::EmailAddressesZeroEtlBootstrap.new(
+    FraudOps::EmailAddressesZeroEtlBackfill.new(
       zetl_cutoff_datetime: zetl_cutoff_datetime,
-    ).bootstrap
+    ).backfill
   end
 end
