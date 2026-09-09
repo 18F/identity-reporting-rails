@@ -12,9 +12,7 @@ module FraudOps
 
     def sync
       unless target_table_exists?
-        Rails.logger.info(
-          "#{qualified(TARGET_TABLE)} does not exist, skipping sync. "
-        )
+        Rails.logger.info("#{qualified(TARGET_TABLE)} does not exist, skipping sync")
         return { skipped: true }
       end
 

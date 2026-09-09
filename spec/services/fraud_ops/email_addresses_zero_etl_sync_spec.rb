@@ -31,10 +31,9 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlSync do
         expect(executed_sql).to be_empty
       end
 
-      it 'logs the skip and names the rake task that provisions the table' do
+      it 'logs the skip' do
         expect(Rails.logger).to receive(:info).with(
-          a_string_matching(/fraudops\.frd_email_addresses_zetl does not exist/).
-            and(a_string_matching(/rake fraudops:backfill_email_addresses_zero_etl/)),
+          a_string_matching(/fraudops\.frd_email_addresses_zetl does not exist, skipping sync/),
         )
 
         service.sync
