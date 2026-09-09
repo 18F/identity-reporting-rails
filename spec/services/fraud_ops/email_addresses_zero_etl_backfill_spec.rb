@@ -64,9 +64,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBackfill do
         expect(insert).to match(/fraudops\.decrypt_udf\(source\.encrypted_email, source\.id\)/)
       end
 
-      # Regression: the placeholder was once %{SCHEMA_NAME} while build_params supplied
-      # :schema_name, so #format raised KeyError on every call. Any unresolved or
-      # misnamed placeholder shows up as a literal %{...} or blows up before this runs.
+      # Every %{...} placeholder needs a matching build_params key, or #format raises
+      # KeyError; anything it cannot resolve survives as a literal %{...}.
       it 'resolves every format placeholder in the statement' do
         expect(insert).not_to include('%{')
       end
@@ -83,8 +82,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBackfill do
         expect(executed_sql).not_to include(a_string_matching(/CREATE TABLE/i))
       end
 
-      # The seed now runs as the connection's own user rather than switching to
-      # pii_reader, so that user needs INSERT on the target and EXECUTE on the UDF.
+      # The seed runs as the connection's own user, which therefore needs INSERT on
+      # the target and EXECUTE on the decryption UDF.
       it 'does not switch the session user' do
         service.backfill
 
@@ -110,9 +109,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBackfill do
       end
     end
 
-    # The source moved from the warehouse table fraudops.frd_email_addresses to the
-    # Zero-ETL replica of the IdP table, which is reached by a three-part name and
-    # carries the IdP's own columns. These examples pin both halves of that contract.
+    # The source is the Zero-ETL replica of the IdP email_addresses table, reached by a
+    # three-part name and carrying the IdP's own columns. These examples pin both halves.
     describe 'the Zero-ETL source' do
       let(:insert) do
         service.backfill
@@ -127,15 +125,14 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBackfill do
         expect(insert).to include("FROM #{described_class::SOURCE_TABLE} AS source")
       end
 
-      # Regression: the three-part name was passed through #qualified, producing
+      # Passing the three-part name through #qualified yields
       # fraudops.<db>.public.email_addresses, which no database will parse.
       it 'does not prefix the already-qualified source with the fraudops schema' do
         expect(insert).not_to include("fraudops.#{described_class::SOURCE_TABLE}")
       end
 
-      # Regression: dw_created_at/dw_updated_at exist only on the target table. The
-      # replica has the IdP's created_at/updated_at, so reading dw_* from the source
-      # is a missing-column error.
+      # dw_created_at and dw_updated_at exist only on the target; the replica carries the
+      # IdP's created_at/updated_at, so reading dw_* from the source is a missing column.
       it 'never reads dw_ audit columns from the source' do
         expect(insert).not_to match(/source\.dw_/)
       end
@@ -158,15 +155,9 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBackfill do
     end
   end
 
-  # The examples above assert on generated SQL strings, which cannot show that the
-  # statement is executable or that it actually copies rows. This block runs the real
-  # code path against the test database.
-  #
-  # SOURCE_TABLE is stubbed to a local two-part name because PostgreSQL has no
-  # cross-database references and the database half of the name is '' in test. The
-  # three-part shape is covered above; what runs here is the insert-only anti-join,
-  # the cutoff filter and the UDF call, against a source table deliberately built
-  # with the replica's columns (no dw_*) so a regression fails as a missing column.
+  # Runs the real code path against the test database, which the string assertions above
+  # cannot show is executable. SOURCE_TABLE is stubbed to a local two-part name because
+  # PostgreSQL has no cross-database references and the database half is '' in test.
   describe 'executed against PostgreSQL' do
     let(:connection) { DataWarehouseApplicationRecord.connection }
     let(:source) { 'fraudops.email_addresses' }
@@ -181,7 +172,8 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBackfill do
       connection.execute('CREATE SCHEMA IF NOT EXISTS fraudops')
       [target, source].each { |table| connection.execute("DROP TABLE IF EXISTS #{table} CASCADE") }
 
-      # Mirrors the Zero-ETL replica of the IdP table: no dw_ columns.
+      # Mirrors the Zero-ETL replica of the IdP table, so a source-side dw_ reference
+      # fails here as a missing column rather than passing a string match.
       connection.execute(<<~SQL)
         CREATE TABLE #{source} (
           id bigint NOT NULL PRIMARY KEY,
@@ -210,11 +202,9 @@ RSpec.describe FraudOps::EmailAddressesZeroEtlBackfill do
                (2, 'enc2', 22, '2020-02-01', '2020-02-01')
       SQL
 
-      # On Redshift this is a Lambda-backed EXTERNAL FUNCTION, which the data
-      # warehouse migrations skip on PostgreSQL. Stand in a SQL function with the
-      # deployed two-argument signature so the call arity is exercised, not faked.
-      # Dropped rather than replaced first: CREATE OR REPLACE cannot rename input
-      # parameters, so a leftover definition would make this fail.
+      # On Redshift this is a Lambda-backed EXTERNAL FUNCTION the migrations skip on
+      # PostgreSQL, so stand it in with the deployed two-argument signature. Dropping
+      # first is required because CREATE OR REPLACE cannot rename input parameters.
       connection.execute(drop_udf_sql)
       connection.execute(<<~SQL)
         CREATE FUNCTION fraudops.decrypt_udf(encrypted_value varchar, id bigint)
