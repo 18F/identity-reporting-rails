@@ -18,54 +18,87 @@ class RedshiftSync
     @database = database
   end
 
+  # Redshift users, groups, and roles are cluster-global,schema/table grants are database-scoped
   def sync
-    return DATABASES.each { |name| self.class.new(database: name).sync } if database.nil?
+    return sync_all if database.nil?
 
-    unless feature_enabled?(database_config['feature_flag'])
-      Rails.logger.info(
-        "Skipping Redshift user sync for database=#{database}: feature flag disabled",
-      )
-      return
-    end
+    sync_cluster
+    sync_database_grants
+  end
 
-    Rails.logger.info("Starting Redshift user sync for database=#{database}")
+  # create identities, groups, and roles, and sync memberships.
+  def sync_cluster
+    Rails.logger.info('Starting Redshift cluster-level user sync')
 
     lambda_users.each do |lambda_user|
-      create_lambda_user(lambda_user['user_name'], lambda_user['schemas'])
+      create_lambda_user_identity(lambda_user['user_name'])
     end
 
     system_users.each do |system_user|
-      if feature_enabled?(system_user['feature_flag'])
-        create_system_user(
-          system_user['user_name'],
-          system_user['schemas'],
-          system_user['secret_id'],
-          system_user['syslog_access'],
-        )
-      end
+      next unless feature_enabled?(system_user['feature_flag'])
+
+      create_system_user_identity(
+        system_user['user_name'],
+        system_user['secret_id'],
+        system_user['syslog_access'],
+      )
     end
 
-    user_groups.each do |user_group|
-      create_user_group(user_group)
-    end
+    groups.each { |group| create_group(group['name']) }
 
     drop_users
     new_users = create_users
 
-    user_groups.each do |user_group|
-      sync_user_group(user_group)
-    end
+    groups.each { |group| sync_user_group(group) }
 
     apply_masking_for_new_users(new_users) if new_users.any? && analytics_database?
 
-    user_roles.each do |user_role|
-      create_user_role(user_role) if feature_enabled?(user_role['feature_flag'])
+    roles.each do |role|
+      create_user_role(role) if feature_enabled?(role['feature_flag'])
     end
 
-    Rails.logger.info("Redshift user sync completed successfully for database=#{database}")
+    Rails.logger.info('Redshift cluster-level user sync completed successfully')
+  end
+
+  # Database-level pass: apply schema/table grants for the current database.
+  def sync_database_grants
+    unless feature_enabled?(database_config['feature_flag'])
+      Rails.logger.info(
+        "Skipping Redshift grants for database=#{database}: feature flag disabled",
+      )
+      return
+    end
+
+    Rails.logger.info("Applying Redshift grants for database=#{database}")
+
+    # system-user grants create the DBT schemas (CREATE SCHEMA)
+    # Iterate over system users in cluster-list order (dbt marts users before rails_worker)
+    lambda_users.each do |lambda_user|
+      schemas = schemas_for(lambda_user_grants, 'user_name', lambda_user['user_name'])
+      apply_lambda_user_grants(lambda_user['user_name'], schemas) if schemas.present?
+    end
+
+    system_users.each do |system_user|
+      next unless feature_enabled?(system_user['feature_flag'])
+
+      schemas = schemas_for(system_user_grants, 'user_name', system_user['user_name'])
+      apply_system_user_grants(system_user['user_name'], schemas) if schemas.present?
+    end
+
+    groups.each do |group|
+      schemas = schemas_for(group_grants, 'name', group['name'])
+      apply_group_grants(group, schemas) if schemas
+    end
+
+    Rails.logger.info("Redshift grants applied successfully for database=#{database}")
   end
 
   private
+
+  def sync_all
+    self.class.new(database: DATABASES.first).sync_cluster
+    DATABASES.each { |name| self.class.new(database: name).sync_database_grants }
+  end
 
   def config_file
     @config_file ||= begin
@@ -85,7 +118,9 @@ class RedshiftSync
   def interpolate_config_hash(hash)
     case hash
     when Hash
-      hash.transform_values { |v| interpolate_config_hash(v) }
+      hash.each_with_object({}) do |(key, value), result|
+        result[interpolate_env_name(key)] = interpolate_config_hash(value)
+      end
     when Array
       hash.map { |v| interpolate_config_hash(v) }
     when String
@@ -139,22 +174,40 @@ class RedshiftSync
     "'md5#{Digest::MD5.hexdigest(password + user_name)}'"
   end
 
-  def user_groups
-    database_config['user_groups'].map { |group| interpolate_config_hash(group) }
-  end
-
-  def user_roles
-    return [] unless database_config['user_roles']
-
-    database_config['user_roles'].map { |role| interpolate_config_hash(role) }
-  end
+  # --- Cluster-level accessors (defined once, not per database) ---
 
   def lambda_users
-    database_config['lambda_users'].map { |user| interpolate_config_hash(user) }
+    cluster_config.fetch('lambda_users', []).map { |user| interpolate_config_hash(user) }
   end
 
   def system_users
-    database_config['system_users'].map { |user| interpolate_config_hash(user) }
+    cluster_config.fetch('system_users', []).map { |user| interpolate_config_hash(user) }
+  end
+
+  def groups
+    cluster_config.fetch('user_groups', []).map { |group| interpolate_config_hash(group) }
+  end
+
+  def roles
+    cluster_config.fetch('user_roles', []).map { |role| interpolate_config_hash(role) }
+  end
+
+  # --- Database-level grant accessors (per database) ---
+  def lambda_user_grants
+    interpolate_config_hash(database_config.fetch('lambda_users', []))
+  end
+
+  def system_user_grants
+    interpolate_config_hash(database_config.fetch('system_users', []))
+  end
+
+  def group_grants
+    interpolate_config_hash(database_config.fetch('user_groups', []))
+  end
+
+  def schemas_for(grant_list, key, name)
+    entry = grant_list.find { |e| e[key] == name }
+    entry && entry['schemas']
   end
 
   def canonical_users
@@ -225,13 +278,13 @@ class RedshiftSync
   def get_all_configured_schemas
     all_schemas = []
 
-    user_groups.each do |group|
+    group_grants.each do |group|
       group['schemas'].each do |schema|
         all_schemas << schema['schema_name'] if feature_enabled?(schema.fetch('feature_flag', nil))
       end
     end
 
-    system_users.each do |user|
+    system_user_grants.each do |user|
       user['schemas'].each do |schema|
         all_schemas << schema['schema_name'] if feature_enabled?(schema.fetch('feature_flag', nil))
       end
@@ -322,22 +375,20 @@ class RedshiftSync
     Rails.logger.warn("Failed to apply masking policies for new users: #{e.message}")
   end
 
-  def create_lambda_user(user_name, schemas)
+  # --- Lambda users ---
+
+  def create_lambda_user_identity(user_name)
+    return if user_exists?(user_name)
+
     Rails.logger.info("Creating lambda user #{user_name}")
+    execute_query("CREATE USER #{user_name} WITH PASSWORD DISABLE SESSION TIMEOUT 900;")
+  end
 
-    result = execute_query("SELECT usename FROM pg_user WHERE usename = '#{user_name}'")
-    user_exists = result.any?
+  def apply_lambda_user_grants(user_name, schemas)
+    Rails.logger.info("Applying grants for lambda user #{user_name} on database=#{database}")
 
-    schema_privileges = schemas.map do |schema|
-      create_lambda_user_privileges(user_name, schema)
-    end
-
-    sql = [
-      *("CREATE USER #{user_name} WITH PASSWORD DISABLE SESSION TIMEOUT 900;" unless user_exists),
-      schema_privileges,
-    ]
-
-    execute_query(sql.flatten.join("\n"))
+    sql = schemas.map { |schema| create_lambda_user_privileges(user_name, schema) }
+    execute_query(sql.join("\n"))
   end
 
   def create_lambda_user_privileges(user_name, schema)
@@ -350,13 +401,28 @@ class RedshiftSync
     SQL
   end
 
-  def create_system_user(user_name, schemas, secret_id, syslog_access)
+  # --- System users ---
+
+  def create_system_user_identity(user_name, secret_id, syslog_access)
+    return if user_exists?(user_name)
+
     Rails.logger.info("Creating system user #{user_name}")
 
-    result = execute_query("SELECT usename FROM pg_user WHERE usename = '#{user_name}'")
-    user_exists = result.any?
+    password_option = secret_id.nil? ? 'DISABLE' : redshift_secret(user_name, secret_id)
+    syslog_access_option = syslog_access ? 'SYSLOG ACCESS UNRESTRICTED' : 'SYSLOG ACCESS RESTRICTED'
 
+    execute_query(
+      "CREATE USER #{user_name} WITH PASSWORD #{password_option} " \
+        "#{syslog_access_option} SESSION TIMEOUT 900;",
+    )
+  end
+
+  def apply_system_user_grants(user_name, schemas)
     active_schemas = schemas.select { |s| feature_enabled?(s['feature_flag']) }
+    return if active_schemas.empty?
+
+    Rails.logger.info("Applying grants for system user #{user_name} on database=#{database}")
+
     schema_privileges = active_schemas.map do |schema|
       create_system_user_privileges(
         user_name,
@@ -367,18 +433,7 @@ class RedshiftSync
       )
     end
 
-    syslog_access_option = syslog_access ? 'SYSLOG ACCESS UNRESTRICTED' : 'SYSLOG ACCESS RESTRICTED'
-
-    create_user_sql =
-      unless user_exists
-        password_option = secret_id.nil? ? 'DISABLE' : redshift_secret(user_name, secret_id)
-        "CREATE USER #{user_name} WITH PASSWORD #{password_option} " \
-          "#{syslog_access_option} SESSION TIMEOUT 900;"
-      end
-
-    sql = [*create_user_sql, schema_privileges]
-
-    execute_query(sql.flatten.join("\n"))
+    execute_query(schema_privileges.flatten.join("\n"))
 
     active_schemas.each do |schema|
       Rails.logger.info(
@@ -437,19 +492,20 @@ class RedshiftSync
     sql
   end
 
-  def create_user_group(user_group)
-    Rails.logger.info("Creating user group #{user_group['name']}")
+  # --- Groups ---
 
+  def create_group(group_name)
     result = execute_query(
-      "SELECT groname FROM pg_group WHERE groname = #{quote(user_group['name'])}",
+      "SELECT groname FROM pg_group WHERE groname = #{quote(group_name)}",
     )
+    return if result.any?
 
-    if !result.any?
-      sql = "CREATE group #{user_group['name']};"
-      execute_query(sql)
-    end
+    Rails.logger.info("Creating user group #{group_name}")
+    execute_query("CREATE group #{group_name};")
+  end
 
-    create_schema_privileges_for_group(user_group)
+  def apply_group_grants(user_group, schemas)
+    create_schema_privileges_for_group(user_group, schemas)
   end
 
   def revoke_all_privileges_for_group(group_name, schema_name)
@@ -459,15 +515,17 @@ class RedshiftSync
     SQL
   end
 
-  def create_schema_privileges_for_group(user_group)
-    Rails.logger.info("Updating schema privileges for user group #{user_group['name']}")
+  def create_schema_privileges_for_group(user_group, schemas)
+    Rails.logger.info(
+      "Updating schema privileges for user group #{user_group['name']} on database=#{database}",
+    )
 
     result = execute_query(
       "SELECT groname FROM pg_group WHERE groname = #{quote(user_group['name'])}",
     )
     return if !result.any?
 
-    active_schemas = user_group['schemas'].select do |s|
+    active_schemas = schemas.select do |s|
       feature_enabled?(s.fetch('feature_flag', nil))
     end
 
@@ -570,6 +628,8 @@ class RedshiftSync
       Rails.logger.info("User group #{group['name']} is empty")
     end
   end
+
+  # --- Roles ---
 
   def create_user_role(user_role)
     Rails.logger.info("Checking user role #{user_role['role_name']}...")

@@ -22,6 +22,11 @@ module UserSyncConfig
     @redshift_config ||= YAML.safe_load(File.read(redshift_config_path))
   end
 
+  # Cluster-level identities/memberships, defined once (see redshift_config.yaml).
+  def cluster_config
+    redshift_config.fetch('cluster', {})
+  end
+
   def redshift_config_path
     Rails.root.join('config/redshift_config.yaml')
   end
