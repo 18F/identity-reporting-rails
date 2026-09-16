@@ -1,18 +1,19 @@
 # frozen_string_literal: true
 
 module FraudOps
-  class EmailAddressesZeroEtlBootstrap
+  # One-time backfill of fraudops.frd_email_addresses_zetl from the Zero-ETL replica
+  # of the IdP email_addresses table.
+  class EmailAddressesZeroEtlBackfill
     SCHEMA_NAME = 'fraudops'
-    SOURCE_TABLE = 'frd_email_addresses'
+    SOURCE_TABLE = "#{IdentityConfig.store.redshift_database_zero_etl_name}.public.email_addresses"
     TARGET_TABLE = 'frd_email_addresses_zetl'
     MATCH_KEY = 'id'
-    INSERT_DB_USER = 'pii_reader'
 
     def initialize(zetl_cutoff_datetime:)
       @zetl_cutoff_datetime = zetl_cutoff_datetime
     end
 
-    def bootstrap
+    def backfill
       unless target_table_exists?
         Rails.logger.info("#{qualified(TARGET_TABLE)} does not exist, nothing to do")
         return false
@@ -20,7 +21,7 @@ module FraudOps
 
       seed_target_table
 
-      Rails.logger.info("Seeded #{qualified(TARGET_TABLE)} from #{qualified(SOURCE_TABLE)}")
+      Rails.logger.info("Seeded #{qualified(TARGET_TABLE)} from #{SOURCE_TABLE}")
 
       true
     end
@@ -34,14 +35,8 @@ module FraudOps
     end
 
     def seed_target_table
-      connection.execute(set_session_authorization_query)
-
-      begin
-        DataWarehouseApplicationRecord.transaction do
-          connection.execute(insert_target_table_query)
-        end
-      ensure
-        connection.execute(reset_session_authorization_query)
+      DataWarehouseApplicationRecord.transaction do
+        connection.execute(insert_target_table_query)
       end
     end
 
@@ -52,11 +47,11 @@ module FraudOps
           source.id,
           source.encrypted_email,
           source.user_id,
-          source.email,
-          source.dw_created_at,
-          source.dw_updated_at
+          %{schema_name}.decrypt_udf(source.encrypted_email, source.id),
+          CURRENT_TIMESTAMP,
+          CURRENT_TIMESTAMP
         FROM %{source_table} AS source
-        WHERE source.dw_created_at < %{cutoff}
+        WHERE source.created_at < %{cutoff}
           AND NOT EXISTS (
             SELECT 1
             FROM %{target_table} AS target
@@ -65,20 +60,12 @@ module FraudOps
       SQL
     end
 
-    def set_session_authorization_query
-      format('SET SESSION AUTHORIZATION %{insert_db_user}', build_params)
-    end
-
-    def reset_session_authorization_query
-      'RESET SESSION AUTHORIZATION'
-    end
-
     def build_params
       {
-        source_table: qualified(SOURCE_TABLE),
+        schema_name: SCHEMA_NAME,
+        source_table: SOURCE_TABLE,
         target_table: qualified(TARGET_TABLE),
         match_key: MATCH_KEY,
-        insert_db_user: INSERT_DB_USER,
         cutoff: connection.quote(zetl_cutoff_datetime),
       }
     end
