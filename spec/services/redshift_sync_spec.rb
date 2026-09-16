@@ -1159,5 +1159,23 @@ RSpec.describe RedshiftSync do
 
       expect(missing_users).to be_empty, error_message
     end
+
+    it 'checks schema access' do
+      let(:idp_zero_etl_enabled) { true }
+
+      sys_users = real_config['databases']['analytics']['system_users']
+      all_users = sys_users.append(real_configreal_config['databases']['analytics']['user_groups'])
+
+      expected_users = %w[lg_users lg_powerusers lg_admins \
+                          marts qa_marts fraudops_marts fraudops_qa_marts rails_worker ]
+
+      user = all_users.find { |u| u['user_name'] == name }
+      idp_core = user&.fetch('schemas', [])&.find { |s| s['schema_name'] == 'idp_core' }
+
+      all_users.flat_map do |_user_name, user_config|
+        user_config['schemas'].map { |s| s['schema_name'] }
+      end
+    end
+    # expect().true
   end
 end
