@@ -199,6 +199,10 @@ databases:
           - schema_name: idp
             schema_privileges: USAGE
             table_privileges: SELECT
+          - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT  
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -217,6 +221,10 @@ databases:
           - schema_name: idp
             schema_privileges: USAGE
             table_privileges: SELECT
+          - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT  
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -234,7 +242,7 @@ databases:
             table_privileges: ALL PRIVILEGES
           - schema_name: idp
             schema_privileges: USAGE
-            table_privileges: SELECT
+            table_privileges: SELECT          
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -279,7 +287,7 @@ databases:
           - schema_name: idp_core
             feature_flag: idp_zero_etl_enabled
             schema_privileges: USAGE
-            table_privileges: SELECT            
+            table_privileges: SELECT
           - schema_name: system_tables
             schema_privileges: USAGE
             table_privileges: SELECT
