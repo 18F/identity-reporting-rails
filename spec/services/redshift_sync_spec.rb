@@ -1217,20 +1217,77 @@ RSpec.describe RedshiftSync do
       expect(missing_users).to be_empty, error_message
     end
 
-    it 'checks schema access' do
+    describe 'redshift_config.yaml validation' do
+      let(:real_config) do
+        YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))
+      end
+      let(:expected_idp_core_readers) do
+        %w[
+          lg_users
+          lg_powerusers
+          lg_admins
+          marts
+          qa_marts
+          fraudops_marts
+          fraudops_qa_marts
+        ]
+      end
+      let(:expected_idp_core_writers) do
+        %w[
+          rails_worker
+        ]
+      end
+      let(:expected_idp_core_users) { expected_idp_core_readers + expected_idp_core_writers }
+      let(:sys_users) { real_config['databases']['analytics']['system_users'] }
+      let(:human_users) { real_config['databases']['analytics']['user_groups'] }
+      let(:all_users) { sys_users + human_users }
       let(:idp_zero_etl_enabled) { true }
+      let(:zero_etl_flag) { 'idp_zero_etl_enabled' }
 
-      sys_users = real_config['databases']['analytics']['system_users']
-      all_users = sys_users.append(real_configreal_config['databases']['analytics']['user_groups'])
+      it 'checks that expected idp_core users are in config' do
+        all_user_names = all_users.map do |user_config|
+          user_config['name'] || user_config['user_name']
+        end
 
-      expected_users = %w[lg_users lg_powerusers lg_admins \
-                          marts qa_marts fraudops_marts fraudops_qa_marts rails_worker ]
+        expect(all_user_names).to include(*expected_idp_core_users)
+      end
 
-      user = all_users.find { |u| u['user_name'] == name }
-      idp_core = user&.fetch('schemas', [])&.find { |s| s['schema_name'] == 'idp_core' }
+      it 'checks that expected users have idp_core access' do
+        idp_core_users = all_users.select do |user_config|
+          expected_idp_core_users.include?(user_config['name'] || user_config['user_name'])
+        end
 
-      all_users.flat_map do |_user_name, user_config|
-        user_config['schemas'].map { |s| s['schema_name'] }
+        idp_core_users.each do |user_config|
+          idp_core_config =
+            user_config.fetch('schemas').find { |s| s['schema_name'] == 'idp_core' }
+
+          expect(idp_core_config).not_to be_nil
+
+          schema_privileges = idp_core_config['schema_privileges']
+          table_privileges = idp_core_config['table_privileges']
+
+          expect(schema_privileges).to eq('USAGE')
+
+          user_moniker = user_config['name'] || user_config['user_name']
+          if expected_idp_core_readers.include?(user_moniker)
+            expect(table_privileges).to eq('SELECT'),
+                                        "Expected #{user_moniker} to have SELECT, " \
+                                        "but got #{table_privileges.inspect}"
+          elsif expected_idp_core_writers.include?(user_moniker)
+            expect(table_privileges).to eq('ALL PRIVILEGES'),
+                                        "Expected #{user_moniker} to have ALL PRIVILEGES, " \
+                                        "but got #{table_privileges.inspect}"
+          end
+        end
+      end
+
+      it 'checks for flagged idp_core access' do
+        all_users.flat_map do |user_config|
+          idp_core_config =
+            user_config['schemas'].find { |s| s['schema_name'] == 'idp_core' }
+
+          expect(idp_core_config.fetch('feature_flag')).to eq(zero_etl_flag)
+        end
       end
     end
     # expect().true
