@@ -206,6 +206,9 @@ databases:
             tables:
               - events
               - production
+          - schema_name: idp_core
+            schema_privileges: USAGE
+            table_privileges: SELECT
 
       - user_name: qa_marts
         secret_id: "redshift/%{env_name}-analytics-dbt-qa_marts"
@@ -226,6 +229,9 @@ databases:
             tables:
               - events
               - production
+          - schema_name: idp_core
+            schema_privileges: USAGE
+            table_privileges: SELECT
 
       - user_name: fraudops_marts
         secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_marts"
@@ -251,6 +257,9 @@ databases:
           - schema_name: fraudops
             schema_privileges: USAGE
             table_privileges: SELECT
+          - schema_name: idp_core
+            schema_privileges: USAGE
+            table_privileges: SELECT
 
       - user_name: fraudops_qa_marts
         secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_qa_marts"
@@ -274,6 +283,9 @@ databases:
               - events
               - production
           - schema_name: fraudops
+            schema_privileges: USAGE
+            table_privileges: SELECT
+          - schema_name: idp_core
             schema_privileges: USAGE
             table_privileges: SELECT
 
