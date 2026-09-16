@@ -37,32 +37,37 @@ cluster:
       secret_id: "redshift/%{env_name}-analytics-security-audit"
 
     - user_name: quicksight_connector
+      feature_flag: 
+        - redshift_quicksight_connector_enabled
       secret_id: "redshift/%{env_name}-analytics-quicksight-connector"
-      feature_flag: redshift_quicksight_connector_enabled
 
     - user_name: idp_connector
+      feature_flag: 
+        - redshift_idp_connector_enabled
       secret_id: "redshift/%{env_name}-analytics-idp-connector"
-      feature_flag: redshift_idp_connector_enabled
-
+      
     - user_name: marts
-      secret_id: "redshift/%{env_name}-analytics-dbt-marts"
-      feature_flag: dbt_enabled
+      feature_flag: 
+        - dbt_enabled
+      secret_id: "redshift/%{env_name}-analytics-dbt-marts"    
 
     - user_name: qa_marts
+      feature_flag: 
+        - dbt_enabled
       secret_id: "redshift/%{env_name}-analytics-dbt-qa_marts"
-      feature_flag: dbt_enabled
 
     - user_name: fraudops_marts
-      secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_marts"
       feature_flag:
         - fraud_ops_tracker_enabled
         - dw_fraudops_email_enabled
+      secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_marts"      
 
     - user_name: fraudops_qa_marts
-      secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_qa_marts"
       feature_flag:
         - fraud_ops_tracker_enabled
         - dw_fraudops_email_enabled
+      secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_qa_marts"
+
 
     # rails_worker and pii_reader must be created AFTER the fraudops_marts and
     # fraudops_qa_marts users, because those users' grants create the
@@ -74,11 +79,11 @@ cluster:
       secret_id: "redshift/%{env_name}-analytics-rails-worker"
 
     - user_name: pii_reader
-      syslog_access: true
-      secret_id: "redshift/%{env_name}-analytics-pii-reader"
       feature_flag:
         - dw_fraudops_email_enabled
-        - fraud_ops_tracker_enabled
+        - fraud_ops_tracker_enabled    
+      syslog_access: true
+      secret_id: "redshift/%{env_name}-analytics-pii-reader"
 
   user_groups:
     - name: lg_users
@@ -115,9 +120,9 @@ cluster:
         - "IAMR:%{env_name}_stale_data_check"
 
     - role_name: quicksight_access
+      feature_flag: redshift_quicksight_connector_enabled
       users:
         - quicksight_connector
-      feature_flag: redshift_quicksight_connector_enabled
 
 # Database-level GRANTs.
 #
@@ -199,7 +204,7 @@ databases:
             table_privileges: SELECT
             tables:
               - events
-              - production
+              - production            
 
       - user_name: qa_marts
         schemas:
@@ -217,7 +222,7 @@ databases:
             table_privileges: SELECT
             tables:
               - events
-              - production
+              - production     
 
       - user_name: fraudops_marts
         schemas:
@@ -238,7 +243,7 @@ databases:
               - production
           - schema_name: fraudops
             schema_privileges: USAGE
-            table_privileges: SELECT
+            table_privileges: SELECT          
 
       - user_name: fraudops_qa_marts
         schemas:
@@ -272,9 +277,9 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: idp_core
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag: idp_zero_etl_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT            
           - schema_name: system_tables
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -282,29 +287,33 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT, INSERT, UPDATE, DELETE
           - schema_name: fraudops
-            schema_privileges: USAGE, CREATE
-            table_privileges: SELECT, INSERT, UPDATE, DELETE
             feature_flag:
               - fraud_ops_tracker_enabled
-              - dw_fraudops_email_enabled
+              - dw_fraudops_email_enabled          
+            schema_privileges: USAGE, CREATE
+            table_privileges: SELECT, INSERT, UPDATE, DELETE
           - schema_name: marts
+            feature_flag:
+              - dbt_enabled
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: qa_marts
+            feature_flag:
+              - dbt_enabled
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: fraudops_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag:
               - fraud_ops_tracker_enabled
-              - dw_fraudops_email_enabled
+              - dw_fraudops_email_enabled          
+            schema_privileges: USAGE
+            table_privileges: SELECT
           - schema_name: fraudops_qa_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag:
               - fraud_ops_tracker_enabled
               - dw_fraudops_email_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT
 
       - user_name: pii_reader
         schemas:
@@ -312,17 +321,18 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: fraudops_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag:
               - fraud_ops_tracker_enabled
               - dw_fraudops_email_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
           - schema_name: fraudops_qa_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag:
               - fraud_ops_tracker_enabled
               - dw_fraudops_email_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT
 
     user_groups:
       - name: lg_users
@@ -331,9 +341,9 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: idp_core
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag: idp_zero_etl_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT            
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -353,9 +363,9 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
             schema_privileges: USAGE
             table_privileges: SELECT
-            feature_flag: idp_zero_etl_enabled
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -375,9 +385,9 @@ databases:
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
           - schema_name: idp_core
-            schema_privileges: ALL PRIVILEGES
-            table_privileges: ALL PRIVILEGES
             feature_flag: idp_zero_etl_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT
           - schema_name: logs
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
@@ -394,18 +404,19 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: fraudops_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag:
               - fraud_ops_tracker_enabled
               - dw_fraudops_email_enabled
-          - schema_name: fraudops_qa_marts
             schema_privileges: USAGE
             table_privileges: SELECT
-            feature_flag:
-              - fraud_ops_tracker_enabled
-              - dw_fraudops_email_enabled
 
+          - schema_name: fraudops_qa_marts
+            feature_flag:
+              - fraud_ops_tracker_enabled
+              - dw_fraudops_email_enabled          
+            schema_privileges: USAGE
+            table_privileges: SELECT
+            
   # Zero-ETL replica: read-only, schema/table access is granted to only DBT users.
   analytics_zetl:
     feature_flag: idp_zero_etl_enabled
