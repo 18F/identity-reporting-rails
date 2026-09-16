@@ -40,9 +40,9 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: idp_core
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag: idp_zero_etl_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT            
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -68,9 +68,9 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: idp_core
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag: idp_zero_etl_enabled
+            schema_privileges: USAGE
+            table_privileges: SELECT            
           - schema_name: logs
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -96,9 +96,9 @@ databases:
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
           - schema_name: idp_core
-            schema_privileges: ALL PRIVILEGES
-            table_privileges: ALL PRIVILEGES
             feature_flag: idp_zero_etl_enabled
+            schema_privileges: ALL PRIVILEGES
+            table_privileges: ALL PRIVILEGES            
           - schema_name: logs
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
@@ -207,8 +207,9 @@ databases:
               - events
               - production
           - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
             schema_privileges: USAGE
-            table_privileges: SELECT
+            table_privileges: SELECT            
 
       - user_name: qa_marts
         secret_id: "redshift/%{env_name}-analytics-dbt-qa_marts"
@@ -230,8 +231,10 @@ databases:
               - events
               - production
           - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
             schema_privileges: USAGE
             table_privileges: SELECT
+            
 
       - user_name: fraudops_marts
         secret_id: "redshift/%{env_name}-analytics-dbt-fraudops_marts"
@@ -258,6 +261,7 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
             schema_privileges: USAGE
             table_privileges: SELECT
 
@@ -286,6 +290,7 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
             schema_privileges: USAGE
             table_privileges: SELECT
 
@@ -304,9 +309,10 @@ databases:
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
             schema_privileges: USAGE
             table_privileges: SELECT
-            feature_flag: idp_zero_etl_enabled
+            
           - schema_name: system_tables
             schema_privileges: USAGE
             table_privileges: SELECT
