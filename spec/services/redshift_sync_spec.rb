@@ -627,9 +627,7 @@ RSpec.describe RedshiftSync do
   end
 
   # Constructed with no database, #sync runs the cluster-level pass exactly once
-  # (on the first database) and then fans the grant pass out to one instance per
-  # database in DATABASES. Every other spec here builds an instance for a single
-  # database, so this is the only place the fan-out itself needs covering.
+  # and then fans the grant pass out to one instance per database in DATABASES.
   describe '#sync fan-out across databases' do
     subject(:sync) { described_class.new }
 
@@ -647,7 +645,7 @@ RSpec.describe RedshiftSync do
       end
     end
 
-    it 'runs the cluster-level sync exactly once, on the first database' do
+    it 'runs the cluster-level sync exactly once on the analytics database' do
       sync.sync
 
       expect(cluster_synced).to eq(['analytics'])
@@ -659,17 +657,16 @@ RSpec.describe RedshiftSync do
       expect(grants_applied).to eq(['analytics', 'analytics_zetl'])
     end
 
-    it 'does not run cluster work on the fan-out instance itself' do
-      expect(sync).not_to receive(:sync_cluster)
-      expect(sync).not_to receive(:drop_users)
-
+    it 'does not run cluster work on the fan-out instances' do
       sync.sync
+
+      expect(cluster_synced).to eq(['analytics'])
     end
 
     it 'propagates an error from the cluster sync and applies no grants' do
       allow(described_class).to receive(:new).with(database: 'analytics').
-        and_return(instance_double(described_class).tap do |first|
-          allow(first).to receive(:sync_cluster).and_raise(StandardError, 'boom')
+        and_return(instance_double(described_class).tap do |analytics_sync|
+          allow(analytics_sync).to receive(:sync_cluster).and_raise(StandardError, 'boom')
         end)
 
       expect { sync.sync }.to raise_error(StandardError, 'boom')

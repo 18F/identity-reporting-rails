@@ -20,13 +20,14 @@ class RedshiftSync
 
   # Redshift users, groups, and roles are cluster-global,schema/table grants are database-scoped
   def sync
-    return sync_all if database.nil?
+    self.class.new(database: DATABASES.first).sync_cluster
 
-    sync_cluster
-    sync_database_grants
+    DATABASES.each do |name|
+      self.class.new(database: name).sync_database_grants
+    end
   end
 
-  # create identities, groups, and roles, and sync memberships.
+  # Create identities, groups, and roles, and sync memberships.
   def sync_cluster
     Rails.logger.info('Starting Redshift cluster-level user sync')
 
@@ -94,11 +95,6 @@ class RedshiftSync
   end
 
   private
-
-  def sync_all
-    self.class.new(database: DATABASES.first).sync_cluster
-    DATABASES.each { |name| self.class.new(database: name).sync_database_grants }
-  end
 
   def config_file
     @config_file ||= begin
