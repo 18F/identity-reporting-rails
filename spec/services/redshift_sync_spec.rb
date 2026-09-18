@@ -162,7 +162,7 @@ RSpec.describe RedshiftSync do
       expect(
         sync.send(
           :feature_enabled?,
-          %w[redshift_quicksight_connector_enabled fraud_ops_tracker_enabled],
+          %w[redshift_quicksigs_connector_enabled fraud_ops_tracker_enabled],
         ),
       ).to be false
     end
@@ -1212,15 +1212,19 @@ RSpec.describe RedshiftSync do
           expect(schema_privileges).to eq('USAGE')
 
           user_moniker = user_config['name'] || user_config['user_name']
-          if expected_idp_core_readers.include?(user_moniker)
-            expect(table_privileges).to eq('SELECT'),
-                                        "Expected #{user_moniker} to have SELECT, " \
-                                        "but got #{table_privileges.inspect}"
-          elsif expected_idp_core_writers.include?(user_moniker)
-            expect(table_privileges).to eq('ALL PRIVILEGES'),
-                                        "Expected #{user_moniker} to have ALL PRIVILEGES, " \
-                                        "but got #{table_privileges.inspect}"
-          end
+          expected_table_privileges =
+            if expected_idp_core_readers.include?(user_moniker)
+              'SELECT'
+            elsif expected_idp_core_writers.include?(user_moniker)
+              'ALL PRIVILEGES'
+            end
+
+          failure_message = [
+            "Expected #{user_moniker} to have #{expected_table_privileges} on idp_core.",
+            "Got: #{table_privileges.inspect}",
+          ].join("\n")
+
+          expect(table_privileges).to eq(expected_table_privileges), failure_message
         end
       end
 
