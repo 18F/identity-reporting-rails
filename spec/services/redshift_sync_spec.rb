@@ -332,6 +332,79 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe '#sync_user_group' do
+    # canonical_users resolves to IAM:john.doe (dwuser) and IAM:jane.smith (dwadmin)
+    # from test_users_yaml, so lg_admins has exactly one member.
+    let(:group) do
+      {
+        'name' => 'lg_admins',
+        'aws_groups' => { 'prod' => ['dwadmin'], 'sandbox' => ['dwadmin', 'dwadminnonprod'] },
+        'system_roles' => ['sys:monitor'],
+      }
+    end
+
+    let(:group_members_query) { /SELECT usename FROM pg_user, pg_group/ }
+
+    before do
+      allow(mock_connection).to receive(:execute).with(group_members_query).
+        and_return([{ 'usename' => 'IAM:old.admin' }])
+    end
+
+    it 'grants system roles to the group members rather than to the group' do
+      expect(mock_connection).to receive(:execute).with(group_members_query).ordered
+      expect(mock_connection).to receive(:execute).ordered do |sql|
+        expect(sql).to include('GRANT ROLE sys:monitor TO "IAM:jane.smith";')
+        # Redshift only accepts GRANT ROLE ... TO <user>|ROLE, never TO GROUP.
+        expect(sql).not_to include('TO GROUP')
+      end
+
+      sync.send(:sync_user_group, group)
+    end
+
+    it 'terminates every statement so the batch cannot fuse into one' do
+      expect(mock_connection).to receive(:execute).with(group_members_query).ordered
+      expect(mock_connection).to receive(:execute).ordered do |sql|
+        statements = sql.lines.map(&:strip).reject(&:empty?)
+
+        expect(statements).to all(end_with(';'))
+        expect(statements).to include('ALTER GROUP lg_admins DROP USER "IAM:old.admin";')
+        expect(statements).to include('ALTER GROUP lg_admins ADD USER "IAM:jane.smith";')
+      end
+
+      sync.send(:sync_user_group, group)
+    end
+
+    it 'omits role grants when the group has no members' do
+      allow(sync).to receive(:canonical_users).and_return([])
+
+      expect(mock_connection).to receive(:execute).with(group_members_query).ordered
+      expect(mock_connection).to receive(:execute).ordered do |sql|
+        expect(sql).not_to include('GRANT ROLE')
+      end
+
+      sync.send(:sync_user_group, group)
+    end
+
+    context 'when the group has no system_roles configured' do
+      let(:group) do
+        {
+          'name' => 'lg_users',
+          'aws_groups' => { 'prod' => ['dwuser'], 'sandbox' => ['dwuser', 'dwusernonprod'] },
+        }
+      end
+
+      it 'emits membership changes but no role grants' do
+        expect(mock_connection).to receive(:execute).with(group_members_query).ordered
+        expect(mock_connection).to receive(:execute).ordered do |sql|
+          expect(sql).to include('ALTER GROUP lg_users ADD USER "IAM:john.doe";')
+          expect(sql).not_to include('GRANT ROLE')
+        end
+
+        sync.send(:sync_user_group, group)
+      end
+    end
+  end
+
   describe 'SQL generation for system users' do
     it 'includes CREATE SCHEMA for DBT users' do
       sql = sync.send(

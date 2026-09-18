@@ -103,6 +103,8 @@ cluster:
         sandbox:
           - dwadmin
           - dwadminnonprod
+      system_roles:
+        - "sys:monitor"
 
   user_roles:
     - role_name: dw_ingestion

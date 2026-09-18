@@ -611,11 +611,12 @@ class RedshiftSync
     end
 
     if new_group_users.any?
-      user_group_sql.append(
-        "ALTER GROUP #{group['name']} ADD USER #{new_group_users.map do |v|
-          "\"#{v}\""
-        end.join(', ')}",
-      )
+      quoted_new_users = new_group_users.map { |v| "\"#{v}\"" }.join(', ')
+      user_group_sql.append("ALTER GROUP #{group['name']} ADD USER #{quoted_new_users};")
+
+      group['system_roles']&.each do |role|
+        user_group_sql.append("GRANT ROLE #{role} TO #{quoted_new_users};")
+      end
     end
 
     if user_group_sql.any?
