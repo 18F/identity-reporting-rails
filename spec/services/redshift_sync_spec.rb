@@ -11,12 +11,76 @@ RSpec.describe RedshiftSync do
         'sandbox' => ['dwuser', 'dwusernonprod', 'dwpoweruser', 'dwpowerusernonprod', 'dwadmin',
                       'dwadminnonprod'],
       },
+      # Cluster-level identities/memberships, created once (not per database).
+      'cluster' => {
+        'lambda_users' => [
+          { 'user_name' => 'IAMR:%{env_name}_db_consumption' },
+        ],
+        # Ordered marts (a DBT user) before rails_worker so specs can assert the
+        # grant pass applies DBT-schema-owning users before their dependents.
+        'system_users' => [
+          {
+            'user_name' => 'security_audit',
+            'secret_id' => 'redshift/testenv-analytics-security-audit',
+          },
+          {
+            'user_name' => 'marts',
+            'secret_id' => 'redshift/testenv-analytics-dbt-marts',
+            'feature_flag' => 'dbt_enabled',
+          },
+          {
+            'user_name' => 'rails_worker',
+            'secret_id' => 'redshift/testenv-analytics-rails-worker',
+            'syslog_access' => true,
+          },
+        ],
+        'user_groups' => [
+          {
+            'name' => 'lg_users',
+            'aws_groups' => { 'prod' => ['dwuser'], 'sandbox' => ['dwuser', 'dwusernonprod'] },
+          },
+        ],
+        'user_roles' => [
+          {
+            'role_name' => 'dw_ingestion',
+            'users' => [
+              'rails_worker',
+              'IAMR:%{env_name}_db_consumption',
+              'IAMR:%{env_name}_log_consumption',
+            ],
+          },
+        ],
+      },
+      # Database-level grants. Same-named sections as the identities above, but
+      # carrying only per-database schema/table privileges; matched by name.
       'databases' => {
         'analytics' => {
+          'lambda_users' => [
+            { 'user_name' => 'IAMR:%{env_name}_db_consumption',
+              'schemas' => ['idp', 'fraudops'] },
+          ],
+          'system_users' => [
+            { 'user_name' => 'security_audit',
+              'schemas' => [
+                { 'schema_name' => 'system_tables',
+                  'schema_privileges' => 'USAGE',
+                  'table_privileges' => 'SELECT' },
+              ] },
+            { 'user_name' => 'marts',
+              'schemas' => [
+                { 'schema_name' => 'marts',
+                  'schema_privileges' => 'ALL PRIVILEGES',
+                  'table_privileges' => 'ALL PRIVILEGES' },
+              ] },
+            { 'user_name' => 'rails_worker',
+              'schemas' => [
+                { 'schema_name' => 'idp',
+                  'schema_privileges' => 'USAGE',
+                  'table_privileges' => 'SELECT' },
+              ] },
+          ],
           'user_groups' => [
-            {
-              'name' => 'lg_users',
-              'aws_groups' => { 'prod' => ['dwuser'], 'sandbox' => ['dwuser', 'dwusernonprod'] },
+            { 'name' => 'lg_users',
               'schemas' => [
                 { 'schema_name' => 'idp',
                   'schema_privileges' => 'USAGE',
@@ -24,63 +88,16 @@ RSpec.describe RedshiftSync do
                 { 'schema_name' => 'logs',
                   'schema_privileges' => 'USAGE',
                   'table_privileges' => 'SELECT' },
-              ],
-            },
-          ],
-          'lambda_users' => [
-            { 'user_name' => 'IAMR:testenv_db_consumption', 'schemas' => ['idp', 'fraudops'] },
-          ],
-          'system_users' => [
-            {
-              'user_name' => 'security_audit',
-              'secret_id' => 'redshift/testenv-analytics-security-audit',
-              'schemas' => [
-                { 'schema_name' => 'system_tables',
-                  'schema_privileges' => 'USAGE',
-                  'table_privileges' => 'SELECT' },
-              ],
-            },
-            {
-              'user_name' => 'rails_worker',
-              'secret_id' => 'redshift/testenv-analytics-rails-worker',
-              'syslog_access' => true,
-              'schemas' => [
-                { 'schema_name' => 'idp',
-                  'schema_privileges' => 'USAGE',
-                  'table_privileges' => 'SELECT' },
-              ],
-            },
-          ],
-          'user_roles' => [
-            {
-              'role_name' => 'dw_ingestion',
-              'users' => [
-                'rails_worker',
-                'IAMR:%{env_name}_db_consumption',
-                'IAMR:%{env_name}_log_consumption',
-              ],
-            },
+              ] },
           ],
         },
         # Mirrors the real config: the zero-ETL replica is gated behind
         # idp_zero_etl_enabled, which is absent from terraform_config below (disabled).
         'analytics_zetl' => {
           'feature_flag' => 'idp_zero_etl_enabled',
-          'user_groups' => [],
           'lambda_users' => [],
-          'system_users' => [
-            {
-              'user_name' => 'marts',
-              'secret_id' => 'redshift/testenv-analytics-dbt-marts',
-              'feature_flag' => 'dbt_enabled',
-              'schemas' => [
-                { 'schema_name' => 'public',
-                  'schema_privileges' => 'USAGE',
-                  'table_privileges' => 'SELECT' },
-              ],
-            },
-          ],
-          'user_roles' => [],
+          'system_users' => [],
+          'user_groups' => [],
         },
       },
     }
@@ -223,18 +240,16 @@ RSpec.describe RedshiftSync do
   end
 
   describe '#create_schema_privileges_for_group' do
-    let(:user_group) do
-      {
-        'name' => 'lg_users',
-        'schemas' => [
-          { 'schema_name' => 'idp',
-            'schema_privileges' => 'USAGE',
-            'table_privileges' => 'SELECT' },
-          { 'schema_name' => 'logs',
-            'schema_privileges' => 'USAGE',
-            'table_privileges' => 'SELECT' },
-        ],
-      }
+    let(:user_group) { { 'name' => 'lg_users' } }
+    let(:schemas) do
+      [
+        { 'schema_name' => 'idp',
+          'schema_privileges' => 'USAGE',
+          'table_privileges' => 'SELECT' },
+        { 'schema_name' => 'logs',
+          'schema_privileges' => 'USAGE',
+          'table_privileges' => 'SELECT' },
+      ]
     end
     let(:executed_sql) { [] }
 
@@ -247,7 +262,7 @@ RSpec.describe RedshiftSync do
     end
 
     it 'revokes only schemas the group should not have' do
-      sync.send(:create_schema_privileges_for_group, user_group)
+      sync.send(:create_schema_privileges_for_group, user_group, schemas)
 
       sql = executed_sql.join("\n")
       expect(sql).not_to include('REVOKE ALL ON SCHEMA idp FROM GROUP lg_users')
@@ -257,7 +272,7 @@ RSpec.describe RedshiftSync do
     end
 
     it 'grants on every feature-enabled configured schema for the group' do
-      sync.send(:create_schema_privileges_for_group, user_group)
+      sync.send(:create_schema_privileges_for_group, user_group, schemas)
 
       sql = executed_sql.join("\n")
       expect(sql).to include('GRANT USAGE ON SCHEMA idp TO GROUP lg_users')
@@ -453,12 +468,7 @@ RSpec.describe RedshiftSync do
     end
   end
 
-  describe '#create_system_user' do
-    let(:schemas) do
-      [{ 'schema_name' => 'system_tables',
-         'schema_privileges' => 'USAGE',
-         'table_privileges' => 'SELECT' }]
-    end
+  describe '#create_system_user_identity' do
     let(:secret_id) { 'redshift/testenv-analytics-pii-reader' }
 
     context 'when the system user already exists' do
@@ -472,14 +482,14 @@ RSpec.describe RedshiftSync do
       it 'does not fetch the secret from Secrets Manager' do
         expect(secrets_manager_client).not_to receive(:get_secret_value)
 
-        sync.send(:create_system_user, 'pii_reader', schemas, secret_id, false)
+        sync.send(:create_system_user_identity, 'pii_reader', secret_id, false)
       end
 
       it 'does not issue a CREATE USER statement' do
         expect(mock_connection).not_to receive(:execute).
           with(a_string_matching(/CREATE USER pii_reader/))
 
-        sync.send(:create_system_user, 'pii_reader', schemas, secret_id, false)
+        sync.send(:create_system_user_identity, 'pii_reader', secret_id, false)
       end
     end
 
@@ -498,7 +508,7 @@ RSpec.describe RedshiftSync do
         expect(mock_connection).to receive(:execute).
           with(a_string_matching(/CREATE USER pii_reader WITH PASSWORD 'md5[0-9a-f]{32}'/))
 
-        sync.send(:create_system_user, 'pii_reader', schemas, secret_id, false)
+        sync.send(:create_system_user_identity, 'pii_reader', secret_id, false)
       end
 
       it 'uses PASSWORD DISABLE and does not fetch a secret when secret_id is nil' do
@@ -506,37 +516,52 @@ RSpec.describe RedshiftSync do
         expect(mock_connection).to receive(:execute).
           with(a_string_matching(/CREATE USER pii_reader WITH PASSWORD DISABLE/))
 
-        sync.send(:create_system_user, 'pii_reader', schemas, nil, false)
+        sync.send(:create_system_user_identity, 'pii_reader', nil, false)
+      end
+    end
+  end
+
+  describe '#apply_system_user_grants' do
+    let(:schemas) do
+      [
+        { 'schema_name' => 'idp_core',
+          'schema_privileges' => 'USAGE',
+          'table_privileges' => 'SELECT' },
+        { 'schema_name' => 'system_tables',
+          'schema_privileges' => 'USAGE',
+          'table_privileges' => 'SELECT' },
+      ]
+    end
+    let(:executed_sql) { [] }
+
+    before do
+      allow(mock_connection).to receive(:execute) do |sql|
+        executed_sql << sql
+        double(any?: true)
       end
     end
 
-    context 'with multiple feature-enabled configured schemas' do
-      let(:schemas) do
-        [
-          { 'schema_name' => 'idp_core',
-            'schema_privileges' => 'USAGE',
-            'table_privileges' => 'SELECT' },
-          { 'schema_name' => 'system_tables',
-            'schema_privileges' => 'USAGE',
-            'table_privileges' => 'SELECT' },
-        ]
-      end
-      let(:executed_sql) { [] }
+    it 'emits GRANT statements for every feature-enabled configured schema' do
+      sync.send(:apply_system_user_grants, 'security_audit', schemas)
 
-      before do
-        allow(mock_connection).to receive(:execute) do |sql|
-          executed_sql << sql
-          double(any?: true)
-        end
-      end
+      sql = executed_sql.join("\n")
+      expect(sql).to include('GRANT USAGE ON SCHEMA idp_core TO security_audit')
+      expect(sql).to include('GRANT USAGE ON SCHEMA system_tables TO security_audit')
+    end
 
-      it 'emits GRANT statements for every configured schema' do
-        sync.send(:create_system_user, 'security_audit', schemas, secret_id, false)
+    it 'skips schemas whose feature flag is disabled' do
+      gated_schemas = schemas + [
+        { 'schema_name' => 'fraudops',
+          'schema_privileges' => 'USAGE',
+          'table_privileges' => 'SELECT',
+          'feature_flag' => 'fraud_ops_tracker_enabled' },
+      ]
 
-        sql = executed_sql.join("\n")
-        expect(sql).to include('GRANT USAGE ON SCHEMA idp_core TO security_audit')
-        expect(sql).to include('GRANT USAGE ON SCHEMA system_tables TO security_audit')
-      end
+      sync.send(:apply_system_user_grants, 'security_audit', gated_schemas)
+
+      sql = executed_sql.join("\n")
+      expect(sql).to include('GRANT USAGE ON SCHEMA idp_core TO security_audit')
+      expect(sql).not_to include('GRANT USAGE ON SCHEMA fraudops TO security_audit')
     end
   end
 
@@ -601,78 +626,85 @@ RSpec.describe RedshiftSync do
     end
   end
 
-  # Constructed with no database, #sync fans out to one instance per database in
-  # DATABASES. Every other spec here builds an instance for a single database, so
-  # this is the only place the fan-out itself needs covering.
+  # Constructed with no database, #sync runs the cluster-level pass exactly once
+  # and then fans the grant pass out to one instance per database in DATABASES.
   describe '#sync fan-out across databases' do
     subject(:sync) { described_class.new }
 
-    let(:per_database) { [] }
+    let(:cluster_synced) { [] }
+    let(:grants_applied) { [] }
 
     before do
       allow(described_class).to receive(:new).and_call_original
       described_class::DATABASES.each do |name|
         per_database_sync = instance_double(described_class)
-        allow(per_database_sync).to receive(:sync) { per_database << name }
+        allow(per_database_sync).to receive(:sync_cluster) { cluster_synced << name }
+        allow(per_database_sync).to receive(:sync_database_grants) { grants_applied << name }
         allow(described_class).to receive(:new).with(database: name).
           and_return(per_database_sync)
       end
     end
 
-    it 'syncs one instance per database, in order' do
+    it 'runs the cluster-level sync exactly once on the analytics database' do
       sync.sync
 
-      expect(per_database).to eq(['analytics', 'analytics_zetl'])
+      expect(cluster_synced).to eq(['analytics'])
     end
 
-    it 'does not sync itself, so no database state is shared between databases' do
-      expect(sync).not_to receive(:drop_users)
-
+    it 'applies database grants once per database, in order' do
       sync.sync
+
+      expect(grants_applied).to eq(['analytics', 'analytics_zetl'])
     end
 
-    it 'propagates an error and does not continue to the next database' do
+    it 'does not run cluster work on the fan-out instances' do
+      sync.sync
+
+      expect(cluster_synced).to eq(['analytics'])
+    end
+
+    it 'propagates an error from the cluster sync and applies no grants' do
       allow(described_class).to receive(:new).with(database: 'analytics').
-        and_return(instance_double(described_class).tap do |first|
-          allow(first).to receive(:sync).and_raise(StandardError, 'boom')
+        and_return(instance_double(described_class).tap do |analytics_sync|
+          allow(analytics_sync).to receive(:sync_cluster).and_raise(StandardError, 'boom')
         end)
 
       expect { sync.sync }.to raise_error(StandardError, 'boom')
-      expect(per_database).to be_empty
+      expect(grants_applied).to be_empty
     end
   end
 
-  describe '#sync database-level feature flag gating' do
+  describe '#sync_database_grants feature flag gating' do
     before do
-      allow(sync).to receive(:create_lambda_user)
-      allow(sync).to receive(:create_system_user)
-      allow(sync).to receive(:create_user_group)
-      allow(sync).to receive(:sync_user_group)
-      allow(sync).to receive(:create_user_role)
+      allow(sync).to receive(:apply_lambda_user_grants)
+      allow(sync).to receive(:apply_system_user_grants)
+      allow(sync).to receive(:apply_group_grants)
     end
 
     context 'when the database has no feature_flag configured' do
-      it 'runs the sync' do
-        expect(sync).to receive(:drop_users)
+      it 'applies the grants' do
+        expect(Rails.logger).to receive(:info).
+          with(/Applying Redshift grants for database=analytics/)
 
-        sync.sync
+        sync.sync_database_grants
       end
     end
 
     context "when the database's feature_flag is disabled" do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
 
-      it 'skips the sync entirely without executing any SQL' do
-        expect(sync).not_to receive(:drop_users)
+      it 'skips the grants entirely without executing any SQL' do
+        expect(sync).not_to receive(:apply_group_grants)
         expect(mock_connection).not_to receive(:execute)
 
-        sync.sync
+        sync.sync_database_grants
       end
 
-      it 'logs that the sync was skipped' do
-        expect(Rails.logger).to receive(:info).with(/Skipping Redshift user sync/)
+      it 'logs that the grants were skipped' do
+        expect(Rails.logger).to receive(:info).
+          with(/Skipping Redshift grants for database=analytics_zetl/)
 
-        sync.sync
+        sync.sync_database_grants
       end
     end
 
@@ -683,21 +715,26 @@ RSpec.describe RedshiftSync do
         allow(sync).to receive(:config_file).and_return("idp_zero_etl_enabled = true\n")
       end
 
-      it 'runs the sync' do
-        expect(sync).to receive(:drop_users)
+      it 'applies the grants' do
+        expect(Rails.logger).to receive(:info).
+          with(/Applying Redshift grants for database=analytics_zetl/)
 
-        sync.sync
+        sync.sync_database_grants
       end
     end
   end
 
-  describe '#sync execution order' do
-    it 'executes all steps in correct sequence' do
+  describe '#sync_cluster execution order' do
+    it 'creates identities and groups, drops/creates users, syncs membership, then roles' do
       call_order = []
 
-      allow(sync).to receive(:create_lambda_user) { call_order << :create_lambda_user }
-      allow(sync).to receive(:create_system_user) { call_order << :create_system_user }
-      allow(sync).to receive(:create_user_group) { call_order << :create_user_group }
+      allow(sync).to receive(:create_lambda_user_identity) do
+        call_order << :create_lambda_user_identity
+      end
+      allow(sync).to receive(:create_system_user_identity) do
+        call_order << :create_system_user_identity
+      end
+      allow(sync).to receive(:create_group) { call_order << :create_group }
       allow(sync).to receive(:drop_users) { call_order << :drop_users }
       allow(sync).to receive(:create_users) do
         call_order << :create_users
@@ -706,13 +743,13 @@ RSpec.describe RedshiftSync do
       allow(sync).to receive(:sync_user_group) { call_order << :sync_user_group }
       allow(sync).to receive(:create_user_role) { call_order << :create_user_role }
 
-      sync.sync
+      sync.sync_cluster
 
       expect(call_order.uniq).to eq(
         [
-          :create_lambda_user,
-          :create_system_user,
-          :create_user_group,
+          :create_lambda_user_identity,
+          :create_system_user_identity,
+          :create_group,
           :drop_users,
           :create_users,
           :sync_user_group,
@@ -722,11 +759,41 @@ RSpec.describe RedshiftSync do
     end
   end
 
-  describe '#sync masking policy application' do
+  describe '#sync_database_grants execution order' do
     before do
-      allow(sync).to receive(:create_lambda_user)
-      allow(sync).to receive(:create_system_user)
-      allow(sync).to receive(:create_user_group)
+      allow(sync).to receive(:apply_lambda_user_grants)
+      allow(sync).to receive(:apply_group_grants)
+    end
+
+    it 'applies system-user grants in cluster-list order so DBT schemas precede dependents' do
+      applied = []
+      allow(sync).to receive(:apply_system_user_grants) { |name, _schemas| applied << name }
+
+      sync.sync_database_grants
+
+      expect(applied).to eq(%w[security_audit marts rails_worker])
+      expect(applied.index('marts')).to be < applied.index('rails_worker')
+    end
+
+    it 'applies lambda grants first and group grants last' do
+      order = []
+      allow(sync).to receive(:apply_lambda_user_grants) { order << :lambda }
+      allow(sync).to receive(:apply_system_user_grants) { order << :system }
+      allow(sync).to receive(:apply_group_grants) { order << :group }
+
+      sync.sync_database_grants
+
+      expect(order.first).to eq(:lambda)
+      expect(order.last).to eq(:group)
+      expect(order).to include(:system)
+    end
+  end
+
+  describe '#sync_cluster masking policy application' do
+    before do
+      allow(sync).to receive(:create_lambda_user_identity)
+      allow(sync).to receive(:create_system_user_identity)
+      allow(sync).to receive(:create_group)
       allow(sync).to receive(:drop_users)
       allow(sync).to receive(:sync_user_group)
       allow(sync).to receive(:create_user_role)
@@ -744,7 +811,7 @@ RSpec.describe RedshiftSync do
 
       it 'calls RedshiftMaskingSync with the new users' do
         expect(masking_sync).to receive(:sync).with(user_filter: new_users)
-        sync.sync
+        sync.sync_cluster
       end
     end
 
@@ -755,24 +822,22 @@ RSpec.describe RedshiftSync do
 
       it 'does not call RedshiftMaskingSync' do
         expect(RedshiftMaskingSync).not_to receive(:new)
-        sync.sync
+        sync.sync_cluster
       end
     end
 
-    context 'when syncing a database other than analytics' do
+    context 'when the cluster pass runs against a database other than analytics' do
       subject(:sync) { described_class.new(database: 'analytics_zetl') }
 
       let(:new_users) { ['IAM:john.doe'] }
 
       before do
-        # Enable the idp_zero_etl_enabled gate so the sync body actually runs.
-        allow(sync).to receive(:config_file).and_return("idp_zero_etl_enabled = true\n")
         allow(sync).to receive(:create_users).and_return(new_users)
       end
 
       it 'does not call RedshiftMaskingSync even when new users are created' do
         expect(RedshiftMaskingSync).not_to receive(:new)
-        sync.sync
+        sync.sync_cluster
       end
     end
 
@@ -787,51 +852,48 @@ RSpec.describe RedshiftSync do
       end
 
       it 'does not raise an error' do
-        expect { sync.sync }.not_to raise_error
+        expect { sync.sync_cluster }.not_to raise_error
       end
 
       it 'logs a warning' do
         expect(Rails.logger).to receive(:warn).with(a_string_matching(/masking policies/i))
-        sync.sync
+        sync.sync_cluster
       end
     end
   end
 
   describe 'user roles' do
-    describe '#user_roles' do
-      it 'returns interpolated user roles from config' do
-        roles = sync.send(:user_roles)
+    describe '#roles' do
+      it 'returns interpolated roles from the cluster config' do
+        cluster_roles = sync.send(:roles)
 
-        expect(roles.length).to eq(1)
-        expect(roles.first['role_name']).to eq('dw_ingestion')
-        expect(roles.first['users']).to include(
+        expect(cluster_roles.length).to eq(1)
+        expect(cluster_roles.first['role_name']).to eq('dw_ingestion')
+        expect(cluster_roles.first['users']).to include(
           'rails_worker',
           'IAMR:testenv_db_consumption',
           'IAMR:testenv_log_consumption',
         )
       end
 
-      it 'returns empty array when user_roles is not defined in config' do
+      it 'returns empty array when roles are not defined in config' do
         allow(sync).to receive(:redshift_config).and_return(
           {
             'enabled_aws_groups' => { 'sandbox' => ['dwuser'] },
-            'databases' => {
-              'analytics' => {
-                'user_groups' => [],
-                'lambda_users' => [],
-                'system_users' => [],
-              },
+            'cluster' => {
+              'lambda_users' => [],
+              'system_users' => [],
+              'user_groups' => [],
             },
+            'databases' => { 'analytics' => {} },
           },
         )
 
-        roles = sync.send(:user_roles)
-
-        expect(roles).to eq([])
+        expect(sync.send(:roles)).to eq([])
       end
     end
 
-    describe 'per-role feature flag gating in #sync' do
+    describe 'per-role feature flag gating in #sync_cluster' do
       # Two roles: dw_ingestion has no feature_flag (always on), quicksight_access is
       # gated behind redshift_quicksight_connector_enabled (disabled in terraform_config).
       let(:gated_roles) do
@@ -852,12 +914,12 @@ RSpec.describe RedshiftSync do
 
       before do
         gated_config = test_redshift_config.deep_merge(
-          'databases' => { 'analytics' => { 'user_roles' => gated_roles } },
+          'cluster' => { 'user_roles' => gated_roles },
         )
         allow(sync).to receive(:redshift_config).and_return(gated_config)
-        allow(sync).to receive(:create_lambda_user)
-        allow(sync).to receive(:create_system_user)
-        allow(sync).to receive(:create_user_group)
+        allow(sync).to receive(:create_lambda_user_identity)
+        allow(sync).to receive(:create_system_user_identity)
+        allow(sync).to receive(:create_group)
         allow(sync).to receive(:drop_users)
         allow(sync).to receive(:create_users).and_return([])
         allow(sync).to receive(:sync_user_group)
@@ -867,7 +929,7 @@ RSpec.describe RedshiftSync do
       end
 
       it 'skips the gated role without affecting the ungated role' do
-        sync.sync
+        sync.sync_cluster
 
         expect(created_roles).to include('dw_ingestion')
         expect(created_roles).not_to include('quicksight_access')
@@ -877,7 +939,7 @@ RSpec.describe RedshiftSync do
         allow(sync).to receive(:config_file).
           and_return("redshift_quicksight_connector_enabled = true\n")
 
-        sync.sync
+        sync.sync_cluster
 
         expect(created_roles).to include('dw_ingestion', 'quicksight_access')
       end
@@ -1102,46 +1164,41 @@ RSpec.describe RedshiftSync do
       YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))
     end
 
-    it 'references only users defined in lambda_users, system_users, or known exceptions, ' \
-       'for every database' do
+    it 'references only users defined in cluster lambda_users, system_users, or ' \
+       'known exceptions' do
       exceptions = ['superuser']
+      cluster = real_config.fetch('cluster')
+
+      allowed_role_users = (
+        cluster['lambda_users'].map { |u| u['user_name'] } +
+        cluster['system_users'].map { |u| u['user_name'] } +
+        exceptions
+      ).uniq
+
       invalid_references = []
-
-      real_config['databases'].each do |db_name, db_config|
-        next if db_config['user_roles'].nil?
-
-        allowed_role_users = (
-          db_config['lambda_users'].map { |u| u['user_name'] } +
-          db_config['system_users'].map { |u| u['user_name'] } +
-          exceptions
-        ).uniq
-
-        db_config['user_roles'].each do |role|
-          role['users'].each do |user|
-            unless allowed_role_users.include?(user)
-              invalid_references <<
-                "[#{db_name}] Role '#{role['role_name']}' references unknown user '#{user}'"
-            end
+      (cluster['user_roles'] || []).each do |role|
+        role['users'].each do |user|
+          unless allowed_role_users.include?(user)
+            invalid_references <<
+              "Role '#{role['role_name']}' references unknown user '#{user}'"
           end
         end
       end
 
       error_message = [
-        'Found invalid user references in user_roles:',
+        'Found invalid user references in cluster roles:',
         invalid_references.join("\n"),
         '',
-        'Users in user_roles must be defined in lambda_users, system_users, ' \
-          'or be a known exception (superuser), within the same database.',
+        'Users in roles must be defined in cluster lambda_users, system_users, ' \
+          'or be a known exception (superuser).',
       ].join("\n")
 
       expect(invalid_references).to be_empty, error_message
     end
 
-    it 'includes all system_users, across every database, in ' \
+    it 'includes all cluster system_users in ' \
        'RedshiftUnexpectedUserDetectionJob exclusion list' do
-      system_user_names = real_config['databases'].flat_map do |_db_name, db_config|
-        db_config['system_users'].map { |u| u['user_name'] }
-      end.uniq
+      system_user_names = real_config['cluster']['system_users'].map { |u| u['user_name'] }.uniq
       excluded_users = RedshiftUnexpectedUserDetectionJob::STATIC_EXCLUDED_USERS + ['idp_connector']
 
       missing_users = system_user_names - excluded_users

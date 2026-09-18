@@ -6,24 +6,22 @@ RSpec.describe RedshiftPasswordRotator do
 
   let(:test_redshift_config) do
     {
-      'databases' => {
-        'analytics' => {
-          'system_users' => [
-            {
-              'user_name' => 'security_audit',
-              'secret_id' => 'redshift/%{env_name}-analytics-security-audit',
-            },
-            {
-              'user_name' => 'rails_worker',
-              'secret_id' => 'redshift/%{env_name}-analytics-rails-worker',
-            },
-            {
-              # No secret_id -> not eligible for rotation
-              'user_name' => 'passwordless_user',
-              'secret_id' => nil,
-            },
-          ],
-        },
+      'cluster' => {
+        'system_users' => [
+          {
+            'user_name' => 'security_audit',
+            'secret_id' => 'redshift/%{env_name}-analytics-security-audit',
+          },
+          {
+            'user_name' => 'rails_worker',
+            'secret_id' => 'redshift/%{env_name}-analytics-rails-worker',
+          },
+          {
+            # No secret_id -> not eligible for rotation
+            'user_name' => 'passwordless_user',
+            'secret_id' => nil,
+          },
+        ],
       },
     }
   end
@@ -211,7 +209,7 @@ RSpec.describe RedshiftPasswordRotator do
 
     it 'warns and does nothing when there are no matching users' do
       allow(rotator).to receive(:redshift_config).and_return(
-        'databases' => { 'analytics' => { 'system_users' => [] } },
+        'cluster' => { 'system_users' => [] },
       )
 
       expect(rotator).not_to receive(:rotate_user_password)
