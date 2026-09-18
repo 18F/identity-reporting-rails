@@ -151,13 +151,17 @@ databases:
               - pg_user
           - schema_name: system_tables
             schema_privileges: USAGE
-            table_privileges: SELECT
+            table_privileges: SELECT          
 
       - user_name: quicksight_connector
         secret_id: "redshift/%{env_name}-analytics-quicksight-connector"
         feature_flag: redshift_quicksight_connector_enabled
         schemas:
           - schema_name: idp
+            schema_privileges: USAGE
+            table_privileges: SELECT
+          - schema_name: idp_core
+            feature_flag: idp_zero_etl_enabled
             schema_privileges: USAGE
             table_privileges: SELECT
           - schema_name: logs
