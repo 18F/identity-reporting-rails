@@ -1217,7 +1217,7 @@ RSpec.describe RedshiftSync do
       expect(missing_users).to be_empty, error_message
     end
 
-    describe 'redshift_config.yaml validation' do
+    describe 'idp core access validation' do
       let(:real_config) do
         YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))
       end
@@ -1225,7 +1225,8 @@ RSpec.describe RedshiftSync do
         %w[
           lg_users
           lg_powerusers
-          lg_admins
+          quicksight_connector
+          rails_worker
           marts
           qa_marts
           fraudops_marts
@@ -1234,66 +1235,87 @@ RSpec.describe RedshiftSync do
       end
       let(:expected_idp_core_writers) do
         %w[
-          rails_worker
+          lg_admins
         ]
       end
       let(:expected_idp_core_users) { expected_idp_core_readers + expected_idp_core_writers }
       let(:sys_users) { real_config['databases']['analytics']['system_users'] }
       let(:human_users) { real_config['databases']['analytics']['user_groups'] }
       let(:all_users) { sys_users + human_users }
+      let(:all_idp_core_users) do
+        all_users.select do |user_config|
+          user_config.fetch('schemas').any? { |s| s['schema_name'] == 'idp_core' }
+        end
+      end
+      let(:all_idp_core_user_names) do
+        all_idp_core_users.map do |user_config|
+          user_config['name'] || user_config['user_name']
+        end
+      end
       let(:idp_zero_etl_enabled) { true }
       let(:zero_etl_flag) { 'idp_zero_etl_enabled' }
 
-      it 'checks that expected idp_core users are in config' do
-        all_user_names = all_users.map do |user_config|
-          user_config['name'] || user_config['user_name']
-        end
-
-        expect(all_user_names).to include(*expected_idp_core_users)
-      end
-
-      it 'checks that expected users have idp_core access' do
-        idp_core_users = all_users.select do |user_config|
-          expected_idp_core_users.include?(user_config['name'] || user_config['user_name'])
-        end
-
-        idp_core_users.each do |user_config|
-          idp_core_config =
-            user_config.fetch('schemas').find { |s| s['schema_name'] == 'idp_core' }
-
-          expect(idp_core_config).not_to be_nil
-
-          schema_privileges = idp_core_config['schema_privileges']
-          table_privileges = idp_core_config['table_privileges']
-
-          expect(schema_privileges).to eq('USAGE')
-
-          user_moniker = user_config['name'] || user_config['user_name']
-          expected_table_privileges =
-            if expected_idp_core_readers.include?(user_moniker)
-              'SELECT'
-            elsif expected_idp_core_writers.include?(user_moniker)
-              'ALL PRIVILEGES'
-            end
-
-          failure_message = [
-            "Expected #{user_moniker} to have #{expected_table_privileges} on idp_core.",
-            "Got: #{table_privileges.inspect}",
-          ].join("\n")
-
-          expect(table_privileges).to eq(expected_table_privileges), failure_message
-        end
-      end
-
-      it 'checks for flagged idp_core access' do
-        all_users.flat_map do |user_config|
+      it 'checks that all idp_core access is feature flagged' do
+        all_idp_core_users.flat_map do |user_config|
           idp_core_config =
             user_config['schemas'].find { |s| s['schema_name'] == 'idp_core' }
 
           expect(idp_core_config.fetch('feature_flag')).to eq(zero_etl_flag)
         end
       end
+
+      it 'checks that expected idp_core users are in config' do
+        missing_users = expected_idp_core_users - all_idp_core_user_names
+        expect(missing_users).to be_empty,
+                                 "Expected users are missing idp_core access: #{missing_users.join(', ')}"
+      end
+
+      it 'does not grant idp_core access to unexpected users' do
+        extra_users = all_idp_core_user_names - expected_idp_core_users
+
+        expect(extra_users).to be_empty,
+                               "Unexpected users have idp_core access: #{extra_users.join(', ')}"
+      end
+
+      it 'checks that expected users have idp_core access' do
+        validated_idp_core_users = all_users.select do |user_config|
+          expected_idp_core_users.include?(user_config['name'] || user_config['user_name'])
+        end
+
+        validated_idp_core_users.each do |user_config|
+          idp_core_config =
+            user_config.fetch('schemas').find { |s| s['schema_name'] == 'idp_core' }
+
+          user_moniker = user_config['name'] || user_config['user_name']
+
+          expect(idp_core_config).not_to be_nil
+
+          if expected_idp_core_readers.include?(user_moniker)
+            expected_schema_privileges = 'USAGE'
+            expected_table_privileges = 'SELECT'
+          elsif expected_idp_core_writers.include?(user_moniker)
+            expected_schema_privileges = 'ALL PRIVILEGES'
+            expected_table_privileges = 'ALL PRIVILEGES'
+          end
+
+          schema_privileges = idp_core_config['schema_privileges']
+          table_privileges = idp_core_config['table_privileges']
+
+          failure_message = [
+            "Expected #{user_moniker} to have schema privilege #{expected_schema_privileges} on idp_core.",
+            "Got: #{schema_privileges.inspect}",
+          ].join("\n")
+
+          expect(schema_privileges).to eq(expected_schema_privileges), failure_message
+
+          failure_message = [
+            "Expected #{user_moniker} to have table privilege #{expected_table_privileges} on idp_core.",
+            "Got: #{table_privileges.inspect}",
+          ].join("\n")
+
+          expect(table_privileges).to eq(expected_table_privileges), failure_message
+        end
+      end
     end
-    # expect().true
   end
 end
