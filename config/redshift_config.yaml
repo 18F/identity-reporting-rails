@@ -103,8 +103,6 @@ cluster:
         sandbox:
           - dwadmin
           - dwadminnonprod
-      system_roles:
-        - "sys:monitor"
 
   user_roles:
     - role_name: dw_admin
@@ -114,10 +112,11 @@ cluster:
         sandbox:
           - dwadmin
           - dwadminnonprod
-      assigned_roles:
+      inherited_roles:
         - "sys:monitor"
 
     - role_name: dw_ingestion
+      member_users:
       member_users:
         - rails_worker
         - superuser
@@ -126,6 +125,7 @@ cluster:
         - "IAMR:%{env_name}_stale_data_check"
 
     - role_name: quicksight_access
+      member_users:
       member_users:
         - quicksight_connector
       feature_flag: redshift_quicksight_connector_enabled

@@ -601,6 +601,8 @@ class RedshiftSync
     sql
   end
 
+  # Canonical users in any of the given env-keyed aws_groups, e.g.
+  # { 'prod' => ['dwadmin'] }. Re-resolved each sync, so membership self-heals.
   def users_in_aws_groups(aws_groups)
     return [] if aws_groups.blank?
 
@@ -633,19 +635,11 @@ class RedshiftSync
       )
     end
 
-    new_group_users = canonical_users.select do |user|
-      users_yaml[user.gsub('IAM:', '')]['aws_groups'].any? do |aws_group|
-        group['aws_groups'][env_type].include?(aws_group)
-      end
-    end
+    new_group_users = users_in_aws_groups(group['aws_groups'])
 
     if new_group_users.any?
       quoted_new_users = new_group_users.map { |v| "\"#{v}\"" }.join(', ')
       user_group_sql.append("ALTER GROUP #{group['name']} ADD USER #{quoted_new_users};")
-
-      group['system_roles']&.each do |role|
-        user_group_sql.append("GRANT ROLE #{role} TO #{quoted_new_users};")
-      end
     end
 
     if user_group_sql.any?
@@ -671,41 +665,19 @@ class RedshiftSync
     end
 
     sync_user_role(user_role)
-    grant_assigned_roles(user_role)
+    grant_inherited_roles(user_role)
   end
 
-  def grant_assigned_roles(user_role)
-    assigned_roles = user_role.fetch('assigned_roles', []).uniq
+  def grant_inherited_roles(user_role)
+    inherited_roles = user_role.fetch('inherited_roles', [])
+    return if inherited_roles.empty?
 
-    current_assigned_roles_statement = <<~SQL
-      SELECT granted_role_name
-      FROM svv_role_grants
-      WHERE role_name = #{quote(user_role['role_name'])}
-    SQL
-
-    result = execute_query(current_assigned_roles_statement)
-    current_assigned_roles = result.map { |row| row['granted_role_name'] }
-
-    roles_to_revoke = current_assigned_roles - assigned_roles
-    roles_to_grant = assigned_roles - current_assigned_roles
-
-    sql = []
-
-    roles_to_revoke.each do |role|
-      Rails.logger.info("Revoking role #{role} from role #{user_role['role_name']}")
-      sql.append("REVOKE ROLE #{role} FROM ROLE #{user_role['role_name']};")
-    end
-
-    roles_to_grant.each do |role|
+    sql = inherited_roles.map do |role|
       Rails.logger.info("Granting role #{role} to role #{user_role['role_name']}")
-      sql.append("GRANT ROLE #{role} TO ROLE #{user_role['role_name']};")
+      "GRANT ROLE #{role} TO ROLE #{user_role['role_name']};"
     end
 
-    if sql.any?
-      execute_query(sql.join("\n"))
-    else
-      Rails.logger.info("Assigned roles for role #{user_role['role_name']} are already in sync")
-    end
+    execute_query(sql.join("\n"))
   end
 
   def sync_user_role(user_role)
@@ -719,6 +691,11 @@ class RedshiftSync
 
     result = execute_query(current_role_users_statement)
     current_role_users = result.any? ? result.map { |row| row['user_name'] } : []
+    # Static list, aws_groups membership, or both. Users only.
+    desired_role_users = (
+      user_role.fetch('member_users', []).map { |user| interpolate_env_name(user) } +
+      users_in_aws_groups(user_role['aws_groups'])
+    ).uniq
     # Static list, aws_groups membership, or both. Users only.
     desired_role_users = (
       user_role.fetch('member_users', []).map { |user| interpolate_env_name(user) } +
