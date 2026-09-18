@@ -633,11 +633,19 @@ class RedshiftSync
       )
     end
 
-    desired_group_users = users_in_aws_groups(group['aws_groups'])
+    new_group_users = canonical_users.select do |user|
+      users_yaml[user.gsub('IAM:', '')]['aws_groups'].any? do |aws_group|
+        group['aws_groups'][env_type].include?(aws_group)
+      end
+    end
 
-    if desired_group_users.any?
-      quoted_desired_users = desired_group_users.map { |v| "\"#{v}\"" }.join(', ')
-      user_group_sql.append("ALTER GROUP #{group['name']} ADD USER #{quoted_desired_users};")
+    if new_group_users.any?
+      quoted_new_users = new_group_users.map { |v| "\"#{v}\"" }.join(', ')
+      user_group_sql.append("ALTER GROUP #{group['name']} ADD USER #{quoted_new_users};")
+
+      group['system_roles']&.each do |role|
+        user_group_sql.append("GRANT ROLE #{role} TO #{quoted_new_users};")
+      end
     end
 
     if user_group_sql.any?

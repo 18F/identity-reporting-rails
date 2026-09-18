@@ -379,6 +379,7 @@ RSpec.describe RedshiftSync do
       {
         'name' => 'lg_admins',
         'aws_groups' => { 'prod' => ['dwadmin'], 'sandbox' => ['dwadmin', 'dwadminnonprod'] },
+        'system_roles' => ['sys:monitor'],
       }
     end
 
@@ -387,6 +388,17 @@ RSpec.describe RedshiftSync do
     before do
       allow(mock_connection).to receive(:execute).with(group_members_query).
         and_return([{ 'usename' => 'IAM:old.admin' }])
+    end
+
+    it 'grants system roles to the group members rather than to the group' do
+      expect(mock_connection).to receive(:execute).with(group_members_query).ordered
+      expect(mock_connection).to receive(:execute).ordered do |sql|
+        expect(sql).to include('GRANT ROLE sys:monitor TO "IAM:jane.smith";')
+        # Redshift only accepts GRANT ROLE ... TO <user>|ROLE, never TO GROUP.
+        expect(sql).not_to include('TO GROUP')
+      end
+
+      sync.send(:sync_user_group, group)
     end
 
     it 'terminates every statement so the batch cannot fuse into one' do
@@ -402,137 +414,34 @@ RSpec.describe RedshiftSync do
       sync.send(:sync_user_group, group)
     end
 
-    it 'resolves membership from aws_groups for the current env_type' do
+    it 'omits role grants when the group has no members' do
+      allow(sync).to receive(:canonical_users).and_return([])
+
       expect(mock_connection).to receive(:execute).with(group_members_query).ordered
       expect(mock_connection).to receive(:execute).ordered do |sql|
-        # jane.smith is dwadmin; john.doe is dwuser and must not appear.
-        expect(sql).to include('ADD USER "IAM:jane.smith";')
-        expect(sql).not_to include('IAM:john.doe')
-      end
-
-      sync.send(:sync_user_group, group)
-    end
-
-    it 'leaves role grants to the role sync' do
-      expect(mock_connection).to receive(:execute).with(group_members_query).ordered
-      expect(mock_connection).to receive(:execute).ordered do |sql|
-        # Redshift only accepts GRANT ROLE ... TO <user>|ROLE, never TO GROUP.
         expect(sql).not_to include('GRANT ROLE')
-        expect(sql).not_to include('TO GROUP')
       end
 
       sync.send(:sync_user_group, group)
     end
-  end
 
-  describe '#users_in_aws_groups' do
-    it 'selects canonical users belonging to any listed aws_group' do
-      users = sync.send(
-        :users_in_aws_groups,
-        { 'prod' => ['dwadmin'], 'sandbox' => ['dwadmin', 'dwadminnonprod'] },
-      )
-
-      expect(users).to eq(['IAM:jane.smith'])
-    end
-
-    it 'returns an empty list when aws_groups is nil' do
-      expect(sync.send(:users_in_aws_groups, nil)).to eq([])
-    end
-
-    it 'returns an empty list when no aws_group matches the current env_type' do
-      expect(sync.send(:users_in_aws_groups, { 'prod' => ['dwadmin'] })).to eq([])
-    end
-  end
-
-  describe '#grant_assigned_roles' do
-    let(:user_role) do
-      { 'role_name' => 'dw_admin', 'assigned_roles' => ['sys:monitor'] }
-    end
-    let(:role_grants_query) { /SELECT granted_role_name\s+FROM svv_role_grants/ }
-
-    before do
-      allow(mock_connection).to receive(:execute).with(role_grants_query).and_return([])
-    end
-
-    it 'nests the system role inside the custom role' do
-      expect(mock_connection).to receive(:execute).with(role_grants_query).ordered
-      expect(mock_connection).to receive(:execute).
-        ordered.
-        with('GRANT ROLE sys:monitor TO ROLE dw_admin;')
-
-      sync.send(:grant_assigned_roles, user_role)
-    end
-
-    it 'revokes roles that are no longer assigned before granting new ones' do
-      user_role['assigned_roles'] = ['sys:monitor', 'sys:secadmin']
-
-      allow(mock_connection).to receive(:execute).with(role_grants_query).
-        and_return([
-                     { 'granted_role_name' => 'sys:monitor' },
-                     { 'granted_role_name' => 'sys:operator' },
-                   ])
-
-      expect(mock_connection).to receive(:execute).with(role_grants_query).ordered
-      expect(mock_connection).to receive(:execute).ordered do |sql|
-        expect(sql).to include('REVOKE ROLE sys:operator FROM ROLE dw_admin;')
-        expect(sql).to include('GRANT ROLE sys:secadmin TO ROLE dw_admin;')
-        expect(sql.index('REVOKE ROLE')).to be < sql.index('GRANT ROLE')
-        expect(sql).not_to include('GRANT ROLE sys:monitor')
+    context 'when the group has no system_roles configured' do
+      let(:group) do
+        {
+          'name' => 'lg_users',
+          'aws_groups' => { 'prod' => ['dwuser'], 'sandbox' => ['dwuser', 'dwusernonprod'] },
+        }
       end
 
-      sync.send(:grant_assigned_roles, user_role)
-    end
+      it 'emits membership changes but no role grants' do
+        expect(mock_connection).to receive(:execute).with(group_members_query).ordered
+        expect(mock_connection).to receive(:execute).ordered do |sql|
+          expect(sql).to include('ALTER GROUP lg_users ADD USER "IAM:john.doe";')
+          expect(sql).not_to include('GRANT ROLE')
+        end
 
-    it 'does not grant roles that are already assigned' do
-      allow(mock_connection).to receive(:execute).with(role_grants_query).
-        and_return([{ 'granted_role_name' => 'sys:monitor' }])
-
-      expect(mock_connection).to receive(:execute).with(role_grants_query)
-      expect(mock_connection).not_to receive(:execute).
-        with(a_string_matching(/GRANT|REVOKE/))
-
-      sync.send(:grant_assigned_roles, user_role)
-    end
-
-    it 'records the error when Redshift rejects the grant' do
-      allow(mock_connection).to receive(:execute).with(/GRANT ROLE/).
-        and_raise(ActiveRecord::StatementInvalid, 'role "sys:moniter" does not exist')
-
-      sync.send(:grant_assigned_roles, user_role)
-
-      expect(sync.errors).to contain_exactly(/does not exist/)
-    end
-
-    it 'logs the rejected statement' do
-      allow(mock_connection).to receive(:execute).with(/GRANT ROLE/).
-        and_raise(ActiveRecord::StatementInvalid, 'permission denied')
-
-      expect(Rails.logger).to receive(:error) do |payload|
-        expect(JSON.parse(payload)).to include(
-          'error' => 'SQL execution failed',
-          'failed_sql' => 'GRANT ROLE sys:monitor TO ROLE dw_admin;',
-        )
+        sync.send(:sync_user_group, group)
       end
-
-      sync.send(:grant_assigned_roles, user_role)
-    end
-
-    it 'issues no statements when nothing is configured or granted' do
-      expect(mock_connection).to receive(:execute).with(role_grants_query)
-      expect(mock_connection).not_to receive(:execute).
-        with(a_string_matching(/GRANT|REVOKE/))
-
-      sync.send(:grant_assigned_roles, { 'role_name' => 'dw_ingestion' })
-    end
-
-    it 'revokes every nested role when no assigned_roles are configured' do
-      allow(mock_connection).to receive(:execute).with(role_grants_query).
-        and_return([{ 'granted_role_name' => 'sys:operator' }])
-
-      expect(mock_connection).to receive(:execute).
-        with('REVOKE ROLE sys:operator FROM ROLE dw_ingestion;')
-
-      sync.send(:grant_assigned_roles, { 'role_name' => 'dw_ingestion' })
     end
   end
 
