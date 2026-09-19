@@ -583,8 +583,6 @@ class RedshiftSync
     sql
   end
 
-  # Canonical users in any of the given env-keyed aws_groups, e.g.
-  # { 'prod' => ['dwadmin'] }. Re-resolved each sync, so membership self-heals.
   def users_in_aws_groups(aws_groups)
     return [] if aws_groups.blank?
 
