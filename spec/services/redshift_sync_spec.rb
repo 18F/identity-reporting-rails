@@ -280,6 +280,46 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe '#revoke_all_privileges_for_group' do
+    it 'revokes schema and existing-table privileges' do
+      sql = sync.send(:revoke_all_privileges_for_group, 'lg_admins', 'logs')
+
+      expect(sql).to include('REVOKE ALL ON SCHEMA logs FROM GROUP lg_admins')
+      expect(sql).to include(
+        'REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA logs FROM GROUP lg_admins',
+      )
+    end
+
+    context 'when the schema is dbt-owned and its owning user exists' do
+      before { allow(sync).to receive(:user_exists?).with('fraudops_marts').and_return(true) }
+
+      it 'also revokes default privileges so future dbt tables are not re-granted' do
+        sql = sync.send(:revoke_all_privileges_for_group, 'lg_admins', 'fraudops_marts')
+
+        expect(sql).to include(
+          'ALTER DEFAULT PRIVILEGES FOR USER fraudops_marts IN SCHEMA fraudops_marts ' \
+          'REVOKE ALL ON TABLES FROM GROUP lg_admins',
+        )
+      end
+    end
+
+    context 'when the schema is dbt-owned but its owning user does not exist' do
+      before { allow(sync).to receive(:user_exists?).with('fraudops_marts').and_return(false) }
+
+      it 'omits the default-privileges revoke, which would error on a missing user' do
+        sql = sync.send(:revoke_all_privileges_for_group, 'lg_admins', 'fraudops_marts')
+
+        expect(sql).not_to include('ALTER DEFAULT PRIVILEGES')
+      end
+    end
+
+    it 'omits the default-privileges revoke for non-dbt schemas' do
+      sql = sync.send(:revoke_all_privileges_for_group, 'lg_admins', 'idp')
+
+      expect(sql).not_to include('ALTER DEFAULT PRIVILEGES')
+    end
+  end
+
   describe '#get_existing_schemas' do
     let(:executed_sql) { [] }
 
