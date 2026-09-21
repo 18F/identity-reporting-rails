@@ -51,8 +51,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
   end
 
   before do
-    allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(true)
-    allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
     allow(IdentityConfig.store).to receive(:demographics_metrics_s3_report_configs).and_return(
       mock_report_configs,
     )
@@ -102,28 +100,6 @@ RSpec.describe Reports::DemographicsMetricsReport do
   end
 
   describe '#perform' do
-    context 'when redshift_sia_v3 is disabled' do
-      before do
-        allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(false)
-      end
-
-      it 'logs warning and returns false' do
-        expect(Rails.logger).to receive(:warn).with('Redshift SIA V3 is disabled')
-        expect(report.perform).to eq(false)
-      end
-    end
-
-    context 'when s3_reports is disabled' do
-      before do
-        allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(false)
-      end
-
-      it 'returns early without processing' do
-        expect(report).not_to receive(:generate_and_upload_report_for_issuer)
-        report.perform
-      end
-    end
-
     context 'when configs are empty' do
       before do
         allow(IdentityConfig.store).to receive(

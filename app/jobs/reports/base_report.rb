@@ -43,11 +43,6 @@ module Reports
     end
 
     def save_report(report_name, body, extension:)
-      if !IdentityConfig.store.s3_reports_enabled
-        logger.info('Not uploading report to S3, s3_reports_enabled is false')
-        return body
-      end
-
       upload_file_to_s3_timestamped_and_latest(report_name, body, extension)
     end
 

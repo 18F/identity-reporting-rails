@@ -18,16 +18,6 @@ module Reports
     end
 
     def perform(perform_report_date = nil)
-      unless IdentityConfig.store.redshift_sia_v3_enabled
-        Rails.logger.warn "#{REPORT_NAME}: Redshift SIA V3 is disabled"
-        return false
-      end
-
-      unless IdentityConfig.store.s3_reports_enabled
-        Rails.logger.warn "#{REPORT_NAME}: S3 reports are disabled"
-        return false
-      end
-
       @report_date = perform_report_date || report_date || Time.zone.yesterday
 
       allowed_types = [Date, Time, ActiveSupport::TimeWithZone]

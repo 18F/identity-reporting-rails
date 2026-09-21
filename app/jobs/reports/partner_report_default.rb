@@ -46,15 +46,6 @@ module Reports
         raise ArgumentError, 'Cannot specify both included_issuers and excluded_issuers'
       end
 
-      unless IdentityConfig.store.redshift_sia_v3_enabled
-        Rails.logger.warn 'Redshift SIA V3 is disabled'
-        return false
-      end
-      unless IdentityConfig.store.s3_reports_enabled
-        Rails.logger.warn 'S3 reports are disabled'
-        return false
-      end
-
       @report_date = report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
 
       Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports (#{@report_version} "\
