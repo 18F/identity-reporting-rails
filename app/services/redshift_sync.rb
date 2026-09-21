@@ -505,10 +505,22 @@ class RedshiftSync
   end
 
   def revoke_all_privileges_for_group(group_name, schema_name)
-    <<~SQL
+    sql = <<~SQL
       REVOKE ALL ON SCHEMA #{schema_name} FROM GROUP #{group_name};
       REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA #{schema_name} FROM GROUP #{group_name};
     SQL
+
+    # REVOKE above only covers tables that exist now. The matching grant in
+    # create_user_group_privileges uses ALTER DEFAULT PRIVILEGES for dbt-owned
+    # schemas, which is a separate catalog entry: without revoking it too, the
+    # next dbt-created table re-grants access to this group.
+    if dbt_user_schema?(schema_name) && user_exists?(schema_name)
+      sql += <<~SQL
+        ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} REVOKE ALL ON TABLES FROM GROUP #{group_name};
+      SQL
+    end
+
+    sql
   end
 
   def create_schema_privileges_for_group(user_group, schemas)
