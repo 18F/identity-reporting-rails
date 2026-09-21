@@ -28,13 +28,6 @@ module Reports
 
     def perform(perform_run_date = nil, perform_days_back_for_time_period = nil,
                 perform_time_frame = nil)
-      unless IdentityConfig.store.redshift_sia_v3_enabled
-        Rails.logger.warn 'Redshift SIA V3 is disabled'
-        return false
-      end
-
-      return unless IdentityConfig.store.s3_reports_enabled
-
       final_run_date = perform_run_date || @run_date
       final_days_back = perform_days_back_for_time_period || @days_back_for_time_period
       final_time_frame = perform_time_frame || @time_frame

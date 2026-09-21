@@ -6,6 +6,7 @@ RSpec.describe Reports::IdvLegacyConversionSupplementReport do
 
   before do
     ServiceProvider.delete_all
+    allow(report).to receive(:upload_file_to_s3_bucket) { |path:, body:, **| body }
   end
 
   describe '#perform' do

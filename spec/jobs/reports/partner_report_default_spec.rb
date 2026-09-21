@@ -72,8 +72,6 @@ RSpec.describe Reports::PartnerReportDefault do
   end
 
   before do
-    allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(true)
-    allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
     allow_any_instance_of(described_class).to receive(:bucket_name).and_return(bucket_name)
     allow_any_instance_of(described_class).to receive(:upload_file_to_s3_bucket)
     allow(job).to receive(:generate_base_s3_path).with(directory: 'portal').and_return('')
@@ -164,30 +162,6 @@ RSpec.describe Reports::PartnerReportDefault do
   end
 
   describe '#perform' do
-    context 'when redshift_sia_v3 is disabled' do
-      before do
-        allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(false)
-      end
-
-      it 'logs warning and returns false' do
-        expect(Rails.logger).to receive(:warn).with('Redshift SIA V3 is disabled')
-        # Don't expect any error logs since this should return early
-        expect(Rails.logger).not_to receive(:error)
-        expect(job.perform(report_date)).to eq(false)
-      end
-    end
-
-    context 'when s3_reports is disabled' do
-      before do
-        allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(false)
-      end
-
-      it 'returns early without processing' do
-        expect(job).not_to receive(:generate_and_upload_reports)
-        job.perform(report_date)
-      end
-    end
-
     context 'with an invalid report_version' do
       it 'logs error and returns false' do
         expect(Rails.logger).to receive(:error).with(
