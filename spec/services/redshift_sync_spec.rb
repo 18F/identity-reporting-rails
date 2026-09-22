@@ -1226,7 +1226,6 @@ RSpec.describe RedshiftSync do
           lg_users
           lg_powerusers
           quicksight_connector
-          rails_worker
           marts
           qa_marts
           fraudops_marts
@@ -1236,6 +1235,7 @@ RSpec.describe RedshiftSync do
       let(:expected_idp_core_writers) do
         %w[
           lg_admins
+          rails_worker
         ]
       end
       let(:expected_idp_core_users) { expected_idp_core_readers + expected_idp_core_writers }
