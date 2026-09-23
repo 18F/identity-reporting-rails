@@ -105,8 +105,18 @@ cluster:
           - dwadminnonprod
 
   user_roles:
+    - role_name: dw_admin
+      aws_groups:
+        prod:
+          - dwadmin
+        sandbox:
+          - dwadmin
+          - dwadminnonprod
+      inherited_roles:
+        - "sys:monitor"
+
     - role_name: dw_ingestion
-      users:
+      member_users:
         - rails_worker
         - superuser
         - "IAMR:%{env_name}_db_consumption"
@@ -114,7 +124,7 @@ cluster:
         - "IAMR:%{env_name}_stale_data_check"
 
     - role_name: quicksight_access
-      users:
+      member_users:
         - quicksight_connector
       feature_flag: redshift_quicksight_connector_enabled
 
