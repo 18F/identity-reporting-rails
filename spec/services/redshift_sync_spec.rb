@@ -43,7 +43,7 @@ RSpec.describe RedshiftSync do
         'user_roles' => [
           {
             'role_name' => 'dw_ingestion',
-            'member_users' => [
+            'users' => [
               'rails_worker',
               'IAMR:%{env_name}_db_consumption',
               'IAMR:%{env_name}_log_consumption',
@@ -329,127 +329,6 @@ RSpec.describe RedshiftSync do
 
       expect(sql).not_to include('ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts')
       expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA marts TO GROUP lg_users')
-    end
-  end
-
-  describe '#sync_user_group' do
-    # canonical_users resolves to IAM:john.doe (dwuser) and IAM:jane.smith (dwadmin)
-    # from test_users_yaml, so lg_admins has exactly one member.
-    let(:group) do
-      {
-        'name' => 'lg_admins',
-        'aws_groups' => { 'prod' => ['dwadmin'], 'sandbox' => ['dwadmin', 'dwadminnonprod'] },
-      }
-    end
-
-    let(:group_members_query) { /SELECT usename FROM pg_user, pg_group/ }
-
-    before do
-      allow(mock_connection).to receive(:execute).with(group_members_query).
-        and_return([{ 'usename' => 'IAM:old.admin' }])
-    end
-
-    it 'terminates every statement so the batch cannot fuse into one' do
-      expect(mock_connection).to receive(:execute).with(group_members_query).ordered
-      expect(mock_connection).to receive(:execute).ordered do |sql|
-        statements = sql.lines.map(&:strip).reject(&:empty?)
-
-        expect(statements).to all(end_with(';'))
-        expect(statements).to include('ALTER GROUP lg_admins DROP USER "IAM:old.admin";')
-        expect(statements).to include('ALTER GROUP lg_admins ADD USER "IAM:jane.smith";')
-      end
-
-      sync.send(:sync_user_group, group)
-    end
-
-    it 'resolves membership from aws_groups for the current env_type' do
-      expect(mock_connection).to receive(:execute).with(group_members_query).ordered
-      expect(mock_connection).to receive(:execute).ordered do |sql|
-        # jane.smith is dwadmin; john.doe is dwuser and must not appear.
-        expect(sql).to include('ADD USER "IAM:jane.smith";')
-        expect(sql).not_to include('IAM:john.doe')
-      end
-
-      sync.send(:sync_user_group, group)
-    end
-
-    it 'leaves role grants to the role sync' do
-      expect(mock_connection).to receive(:execute).with(group_members_query).ordered
-      expect(mock_connection).to receive(:execute).ordered do |sql|
-        # Redshift only accepts GRANT ROLE ... TO <user>|ROLE, never TO GROUP.
-        expect(sql).not_to include('GRANT ROLE')
-        expect(sql).not_to include('TO GROUP')
-      end
-
-      sync.send(:sync_user_group, group)
-    end
-  end
-
-  describe '#users_in_aws_groups' do
-    it 'selects canonical users belonging to any listed aws_group' do
-      users = sync.send(
-        :users_in_aws_groups,
-        { 'prod' => ['dwadmin'], 'sandbox' => ['dwadmin', 'dwadminnonprod'] },
-      )
-
-      expect(users).to eq(['IAM:jane.smith'])
-    end
-
-    it 'returns an empty list when aws_groups is nil' do
-      expect(sync.send(:users_in_aws_groups, nil)).to eq([])
-    end
-
-    it 'returns an empty list when no aws_group matches the current env_type' do
-      expect(sync.send(:users_in_aws_groups, { 'prod' => ['dwadmin'] })).to eq([])
-    end
-  end
-
-  describe '#grant_inherited_roles' do
-    let(:user_role) do
-      { 'role_name' => 'dw_admin', 'inherited_roles' => ['sys:monitor'] }
-    end
-
-    it 'nests the system role inside the custom role' do
-      expect(mock_connection).to receive(:execute).
-        with('GRANT ROLE sys:monitor TO ROLE dw_admin;')
-
-      sync.send(:grant_inherited_roles, user_role)
-    end
-
-    it 'grants without first consulting svv_role_grants' do
-      # Redshift decides what is allowed; we do not pre-filter in Ruby.
-      expect(mock_connection).not_to receive(:execute).with(/svv_role_grants/)
-
-      sync.send(:grant_inherited_roles, user_role)
-    end
-
-    it 'fails the sync when Redshift rejects the grant' do
-      allow(mock_connection).to receive(:execute).with(/GRANT ROLE/).
-        and_raise(ActiveRecord::StatementInvalid, 'role "sys:moniter" does not exist')
-
-      expect { sync.send(:grant_inherited_roles, user_role) }.
-        to raise_error(ActiveRecord::StatementInvalid, /does not exist/)
-    end
-
-    it 'logs the rejected statement before re-raising' do
-      allow(mock_connection).to receive(:execute).with(/GRANT ROLE/).
-        and_raise(ActiveRecord::StatementInvalid, 'permission denied')
-
-      expect(Rails.logger).to receive(:error) do |payload|
-        expect(JSON.parse(payload)).to include(
-          'error' => 'SQL execution failed',
-          'failed_sql' => 'GRANT ROLE sys:monitor TO ROLE dw_admin;',
-        )
-      end
-
-      expect { sync.send(:grant_inherited_roles, user_role) }.
-        to raise_error(ActiveRecord::StatementInvalid)
-    end
-
-    it 'does nothing when no inherited_roles are configured' do
-      expect(mock_connection).not_to receive(:execute)
-
-      sync.send(:grant_inherited_roles, { 'role_name' => 'dw_ingestion' })
     end
   end
 
@@ -990,7 +869,7 @@ RSpec.describe RedshiftSync do
 
         expect(cluster_roles.length).to eq(1)
         expect(cluster_roles.first['role_name']).to eq('dw_ingestion')
-        expect(cluster_roles.first['member_users']).to include(
+        expect(cluster_roles.first['users']).to include(
           'rails_worker',
           'IAMR:testenv_db_consumption',
           'IAMR:testenv_log_consumption',
@@ -1021,11 +900,11 @@ RSpec.describe RedshiftSync do
         [
           {
             'role_name' => 'dw_ingestion',
-            'member_users' => ['rails_worker'],
+            'users' => ['rails_worker'],
           },
           {
             'role_name' => 'quicksight_access',
-            'member_users' => ['quicksight_connector'],
+            'users' => ['quicksight_connector'],
             'feature_flag' => 'redshift_quicksight_connector_enabled',
           },
         ]
@@ -1070,7 +949,7 @@ RSpec.describe RedshiftSync do
       let(:user_role) do
         {
           'role_name' => 'dw_ingestion',
-          'member_users' => ['rails_worker', 'IAMR:testenv_db_consumption'],
+          'users' => ['rails_worker', 'IAMR:testenv_db_consumption'],
         }
       end
 
@@ -1121,7 +1000,7 @@ RSpec.describe RedshiftSync do
       let(:user_role) do
         {
           'role_name' => 'dw_ingestion',
-          'member_users' => ['rails_worker', 'IAMR:testenv_db_consumption'],
+          'users' => ['rails_worker', 'IAMR:testenv_db_consumption'],
         }
       end
 
@@ -1173,7 +1052,7 @@ RSpec.describe RedshiftSync do
         let(:user_role) do
           {
             'role_name' => 'dw_ingestion',
-            'member_users' => [],
+            'users' => [],
           }
         end
 
@@ -1199,7 +1078,7 @@ RSpec.describe RedshiftSync do
         let(:user_role) do
           {
             'role_name' => 'dw_ingestion',
-            'member_users' => [],
+            'users' => [],
           }
         end
 
@@ -1230,7 +1109,7 @@ RSpec.describe RedshiftSync do
         let(:user_role) do
           {
             'role_name' => 'dw_ingestion',
-            'member_users' => ['IAMR:%{env_name}_db_consumption'],
+            'users' => ['IAMR:%{env_name}_db_consumption'],
           }
         end
 
@@ -1277,74 +1156,6 @@ RSpec.describe RedshiftSync do
           sync.send(:sync_user_role, user_role)
         end
       end
-
-      context 'with aws_groups-driven membership' do
-        let(:user_role) do
-          {
-            'role_name' => 'dw_admin',
-            'aws_groups' => {
-              'prod' => ['dwadmin'],
-              'sandbox' => ['dwadmin', 'dwadminnonprod'],
-            },
-          }
-        end
-
-        it 'grants the role to users resolved from aws_groups' do
-          allow(mock_connection).to receive(:execute).
-            with(/SELECT user_name\s+FROM svv_user_grants/).and_return([])
-
-          expect(mock_connection).to receive(:execute).
-            with(/SELECT user_name\s+FROM svv_user_grants/).ordered
-          expect(mock_connection).to receive(:execute).ordered do |sql|
-            expect(sql).to include('GRANT ROLE dw_admin TO "IAM:jane.smith";')
-            # john.doe is dwuser, not an admin.
-            expect(sql).not_to include('IAM:john.doe')
-          end
-
-          sync.send(:sync_user_role, user_role)
-        end
-
-        # The reason this design exists: demotions self-heal without new code.
-        it 'revokes the role from users who no longer belong to the aws_groups' do
-          allow(mock_connection).to receive(:execute).
-            with(/SELECT user_name\s+FROM svv_user_grants/).
-            and_return([
-                         { 'user_name' => 'IAM:jane.smith' },
-                         { 'user_name' => 'IAM:demoted.admin' },
-                       ])
-
-          expect(mock_connection).to receive(:execute).
-            with(/SELECT user_name\s+FROM svv_user_grants/).ordered
-          expect(mock_connection).to receive(:execute).ordered do |sql|
-            expect(sql).to include('REVOKE ROLE dw_admin FROM "IAM:demoted.admin";')
-            expect(sql).not_to include('REVOKE ROLE dw_admin FROM "IAM:jane.smith";')
-          end
-
-          sync.send(:sync_user_role, user_role)
-        end
-
-        it 'does not raise when the role has no static users list' do
-          allow(mock_connection).to receive(:execute).
-            with(/SELECT user_name\s+FROM svv_user_grants/).and_return([])
-
-          expect { sync.send(:sync_user_role, user_role) }.not_to raise_error
-        end
-
-        it 'unions a static users list with aws_groups members' do
-          user_role['member_users'] = ['rails_worker']
-          allow(mock_connection).to receive(:execute).
-            with(/SELECT user_name\s+FROM svv_user_grants/).and_return([])
-
-          expect(mock_connection).to receive(:execute).
-            with(/SELECT user_name\s+FROM svv_user_grants/).ordered
-          expect(mock_connection).to receive(:execute).ordered do |sql|
-            expect(sql).to include('GRANT ROLE dw_admin TO "rails_worker";')
-            expect(sql).to include('GRANT ROLE dw_admin TO "IAM:jane.smith";')
-          end
-
-          sync.send(:sync_user_role, user_role)
-        end
-      end
     end
   end
 
@@ -1366,9 +1177,7 @@ RSpec.describe RedshiftSync do
 
       invalid_references = []
       (cluster['user_roles'] || []).each do |role|
-        # A role may draw its members from aws_groups instead of a static list,
-        # in which case the members are IAM users and not checkable here.
-        role.fetch('member_users', []).each do |user|
+        role['users'].each do |user|
           unless allowed_role_users.include?(user)
             invalid_references <<
               "Role '#{role['role_name']}' references unknown user '#{user}'"
@@ -1385,70 +1194,6 @@ RSpec.describe RedshiftSync do
       ].join("\n")
 
       expect(invalid_references).to be_empty, error_message
-    end
-
-    it 'gives every role a member source' do
-      roles_without_members = (real_config['cluster']['user_roles'] || []).reject do |role|
-        role.key?('member_users') || role.key?('aws_groups')
-      end.map { |role| role['role_name'] }
-
-      expect(roles_without_members).to be_empty, [
-        'These roles declare neither `member_users` nor `aws_groups`, so they would be',
-        'created with no members and silently grant nothing:',
-        roles_without_members.map { |r| "  - #{r}" }.join("\n"),
-      ].join("\n")
-    end
-
-    it 'scopes every role aws_groups entry to a known env_type and aws_group' do
-      valid_env_types = real_config['enabled_aws_groups'].keys
-      invalid = []
-
-      (real_config['cluster']['user_roles'] || []).each do |role|
-        (role['aws_groups'] || {}).each do |env_type, aws_groups|
-          unless valid_env_types.include?(env_type)
-            invalid << "Role '#{role['role_name']}' uses unknown env_type '#{env_type}'"
-            next
-          end
-
-          (aws_groups - real_config['enabled_aws_groups'][env_type]).each do |aws_group|
-            invalid << "Role '#{role['role_name']}' references aws_group " \
-                       "'#{aws_group}' that is not enabled for '#{env_type}'"
-          end
-        end
-      end
-
-      expect(invalid).to be_empty, [
-        'Role aws_groups must use an env_type and aws_groups that appear in',
-        'enabled_aws_groups, otherwise the role resolves to zero members:',
-        invalid.join("\n"),
-      ].join("\n")
-    end
-
-    it 'only nests system-defined roles via inherited_roles' do
-      nested = (real_config['cluster']['user_roles'] || []).
-        flat_map { |role| role.fetch('inherited_roles', []) }
-
-      # CREATE ROLE is never run for these, so they must already exist on the
-      # cluster. The sys: prefix is reserved for Redshift's built-in roles.
-      expect(nested).to all(start_with('sys:'))
-    end
-
-    it 'uses only recognized keys in every role' do
-      # Readers all fetch with a default, so a misspelled key is silence rather
-      # than a crash, and the emptiness checks above pass vacuously on the [].
-      known_keys = %w[role_name member_users aws_groups inherited_roles feature_flag]
-
-      unknown = (real_config['cluster']['user_roles'] || []).flat_map do |role|
-        (role.keys - known_keys).map do |key|
-          "Role '#{role['role_name']}' has unrecognized key '#{key}'"
-        end
-      end
-
-      expect(unknown).to be_empty, [
-        'Unrecognized role keys are ignored at sync time rather than raising,',
-        "so the role silently grants nothing. Known keys: #{known_keys.join(', ')}.",
-        unknown.join("\n"),
-      ].join("\n")
     end
 
     it 'includes all cluster system_users in ' \
