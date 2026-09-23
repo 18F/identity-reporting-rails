@@ -31,6 +31,14 @@ module Reporting
       end
     end
 
+    def bool_true(path)
+      "COALESCE(#{path} = TRUE, FALSE)"
+    end
+
+    def bool_not_true(path)
+      "NOT COALESCE(#{path} = TRUE, FALSE)"
+    end
+
     private
 
     def connection
