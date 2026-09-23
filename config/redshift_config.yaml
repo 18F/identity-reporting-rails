@@ -112,7 +112,7 @@ cluster:
         sandbox:
           - dwadmin
           - dwadminnonprod
-      inherited_roles:
+      assigned_roles:
         - "sys:monitor"
 
     - role_name: dw_ingestion
