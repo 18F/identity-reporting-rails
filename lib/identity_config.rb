@@ -72,6 +72,7 @@ class IdentityConfig
     config.add(:s3_reports_enabled, type: :boolean)
     config.add(:s3_report_public_bucket_prefix, type: :string)
     config.add(:unload_line_count_threshold, type: :integer)
+    config.add(:verification_funnel_s3_report_configs, type: :json)
 
     # Allow override via environment variable for worker-specific credentials
     # Two-worker setup:
