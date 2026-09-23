@@ -404,30 +404,30 @@ RSpec.describe RedshiftSync do
     end
   end
 
-  describe '#grant_inherited_roles' do
+  describe '#grant_assigned_roles' do
     let(:user_role) do
-      { 'role_name' => 'dw_admin', 'inherited_roles' => ['sys:monitor'] }
+      { 'role_name' => 'dw_admin', 'assigned_roles' => ['sys:monitor'] }
     end
 
     it 'nests the system role inside the custom role' do
       expect(mock_connection).to receive(:execute).
         with('GRANT ROLE sys:monitor TO ROLE dw_admin;')
 
-      sync.send(:grant_inherited_roles, user_role)
+      sync.send(:grant_assigned_roles, user_role)
     end
 
     it 'grants without first consulting svv_role_grants' do
       # Redshift decides what is allowed; we do not pre-filter in Ruby.
       expect(mock_connection).not_to receive(:execute).with(/svv_role_grants/)
 
-      sync.send(:grant_inherited_roles, user_role)
+      sync.send(:grant_assigned_roles, user_role)
     end
 
     it 'fails the sync when Redshift rejects the grant' do
       allow(mock_connection).to receive(:execute).with(/GRANT ROLE/).
         and_raise(ActiveRecord::StatementInvalid, 'role "sys:moniter" does not exist')
 
-      expect { sync.send(:grant_inherited_roles, user_role) }.
+      expect { sync.send(:grant_assigned_roles, user_role) }.
         to raise_error(ActiveRecord::StatementInvalid, /does not exist/)
     end
 
@@ -442,14 +442,14 @@ RSpec.describe RedshiftSync do
         )
       end
 
-      expect { sync.send(:grant_inherited_roles, user_role) }.
+      expect { sync.send(:grant_assigned_roles, user_role) }.
         to raise_error(ActiveRecord::StatementInvalid)
     end
 
-    it 'does nothing when no inherited_roles are configured' do
+    it 'does nothing when no assigned_roles are configured' do
       expect(mock_connection).not_to receive(:execute)
 
-      sync.send(:grant_inherited_roles, { 'role_name' => 'dw_ingestion' })
+      sync.send(:grant_assigned_roles, { 'role_name' => 'dw_ingestion' })
     end
   end
 
@@ -1424,9 +1424,9 @@ RSpec.describe RedshiftSync do
       ].join("\n")
     end
 
-    it 'only nests system-defined roles via inherited_roles' do
+    it 'only nests system-defined roles via assigned_roles' do
       nested = (real_config['cluster']['user_roles'] || []).
-        flat_map { |role| role.fetch('inherited_roles', []) }
+        flat_map { |role| role.fetch('assigned_roles', []) }
 
       # CREATE ROLE is never run for these, so they must already exist on the
       # cluster. The sys: prefix is reserved for Redshift's built-in roles.
@@ -1436,7 +1436,7 @@ RSpec.describe RedshiftSync do
     it 'uses only recognized keys in every role' do
       # Readers all fetch with a default, so a misspelled key is silence rather
       # than a crash, and the emptiness checks above pass vacuously on the [].
-      known_keys = %w[role_name member_users aws_groups inherited_roles feature_flag]
+      known_keys = %w[role_name member_users aws_groups assigned_roles feature_flag]
 
       unknown = (real_config['cluster']['user_roles'] || []).flat_map do |role|
         (role.keys - known_keys).map do |key|

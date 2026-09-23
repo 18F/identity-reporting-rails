@@ -645,14 +645,14 @@ class RedshiftSync
     end
 
     sync_user_role(user_role)
-    grant_inherited_roles(user_role)
+    grant_assigned_roles(user_role)
   end
 
-  def grant_inherited_roles(user_role)
-    inherited_roles = user_role.fetch('inherited_roles', [])
-    return if inherited_roles.empty?
+  def grant_assigned_roles(user_role)
+    assigned_roles = user_role.fetch('assigned_roles', [])
+    return if assigned_roles.empty?
 
-    sql = inherited_roles.map do |role|
+    sql = assigned_roles.map do |role|
       Rails.logger.info("Granting role #{role} to role #{user_role['role_name']}")
       "GRANT ROLE #{role} TO ROLE #{user_role['role_name']};"
     end
