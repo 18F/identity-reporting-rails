@@ -44,7 +44,7 @@ RSpec.describe Reporting::VerificationFunnelReport do
   end
 
   demand = 'IdV: doc auth welcome submitted'
-  doc_auth = 'IdV: doc auth image upload vendor pii validation'
+  doc_auth = 'IdV: doc auth ssn visited'
   info_val = 'IdV: doc auth verify proofing results'
   phone = 'idv_enter_password_visited'
   verified = 'User registration: agency handoff visited'
@@ -52,23 +52,24 @@ RSpec.describe Reporting::VerificationFunnelReport do
   before do
     # user1: full funnel, verified
     create_event(user_id: 'user1', name: demand)
-    create_event(user_id: 'user1', name: doc_auth, success: true)
+    create_event(user_id: 'user1', name: doc_auth)
     create_event(user_id: 'user1', name: info_val, success: true)
     create_event(user_id: 'user1', name: phone)
     create_event(user_id: 'user1', name: verified)
 
     # user2: reached info validation, then dropped off (no phone/verified)
     create_event(user_id: 'user2', name: demand)
-    create_event(user_id: 'user2', name: doc_auth, success: true)
+    create_event(user_id: 'user2', name: doc_auth)
     create_event(user_id: 'user2', name: info_val, success: true)
 
-    # user3: doc auth FAILED (success=false must NOT count toward stage 2)
+    # user3: never reached the SSN page (no doc_auth event) - stage 1 only.
+    # (An AAMVA/DMV state-ID failure blocks the user before the SSN page, so the
+    # doc-auth page-visit event never fires for them - a legitimate doc-auth drop.)
     create_event(user_id: 'user3', name: demand)
-    create_event(user_id: 'user3', name: doc_auth, success: false)
 
     # user4: NON-facial-match user - must be excluded entirely by the filter
     create_event(user_id: 'user4', name: demand, facial_match: nil)
-    create_event(user_id: 'user4', name: doc_auth, success: true, facial_match: nil)
+    create_event(user_id: 'user4', name: doc_auth, facial_match: nil)
 
     # user5: different service provider - must be excluded by the SP filter
     create_event(user_id: 'user5', name: demand, service_provider: other_issuer)
@@ -83,7 +84,7 @@ RSpec.describe Reporting::VerificationFunnelReport do
     it 'counts unique users at each stage (excluding wrong SP, non-facial-match, out of range)' do
       # Only user1, user2, user3 qualify at the demand stage.
       expect(rows[1]).to eq(['Verification Demand', 3, 1.0])
-      # Stage 2 success: user1, user2 (user3 was success=false).
+      # Stage 2 (SSN page visited): user1, user2 (user3 never reached it).
       expect(rows[2]).to eq(['Document Authentication Success', 2, 2.0 / 3])
       # Stage 3 success: user1, user2.
       expect(rows[3]).to eq(['Information Validation Success', 2, 2.0 / 3])
