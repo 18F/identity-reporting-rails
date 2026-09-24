@@ -16,21 +16,15 @@ module Reporting
       # Stage 2 - Document Authentication Success
       DOCUMENT_AUTHENTICATION_SUCCESS = 'IdV: doc auth ssn visited'
 
-      # ----------------------------------------------------------------------
-      # Stage 3 (Information Validation Success):
-      #   ORIGINAL (idp):  'IdV: phone of record visited'  -- page-visit proxy
-      #   MODIFIED (here): 'IdV: doc auth verify proofing results' with
-      #                    success=true
-      #   WHY: To guard against "phone pre-check" flow (turned off in prod at the moment)
-      #        Phone pre-check: Users skip the phone page entirely - when the resolution
-      #        background job pre-checks the phone risk score, verify_info routes
-      #        them directly to enter_password without visiting the phone page.
-      #        Those users fire the original Stage 4 event without ever firing
-      #        Stage 3, creating a silent undercount. The improved event
-      #        (resolution result) fires for all users regardless of phone
-      #        routing.
-      # ----------------------------------------------------------------------
-      INFORMATION_VALIDATION_SUCCESS = 'IdV: doc auth verify proofing results'
+      # Stage 3 - Information Validation Success (phone page visit).
+      # IRS is IAL2-only with no IPP/GPO, and phone pre-check is 0% in prod as 9/24/26, so
+      # everyone hits this page. If phone pre-check goes above 0%, or this report
+      # is reused for non-IRS SPs (IPP/GPO users skip the phone page), switch this
+      # event to 'IdV: doc auth verify proofing results' AND re-add the
+      # `AND #{bool_true('success_flag')}` gate on this stage in metrics_query
+      # (plus the success_flag extraction in the CTE), since that event fires for
+      # all users regardless of phone routing and carries a success property.
+      INFORMATION_VALIDATION_SUCCESS = 'IdV: phone of record visited'
 
       # Stage 4 - Phone Verification Success.
       PHONE_VERIFICATION_SUCCESS = 'idv_enter_password_visited'
@@ -125,16 +119,12 @@ module Reporting
       facial_match = extract_json_path(
         'message', 'properties.sp_request.facial_match', type: 'BOOLEAN'
       )
-      success = extract_json_path(
-        'message', 'properties.event_properties.success', type: 'BOOLEAN'
-      )
 
       <<~SQL
         WITH base_events AS (
           SELECT
             user_id,
-            name,
-            #{success} AS success_flag
+            name
           FROM logs.events
           WHERE service_provider = #{connection.quote(issuer_string)}
             AND cloudwatch_timestamp >= #{connection.quote(formatted_start_time)}
@@ -151,7 +141,6 @@ module Reporting
                 THEN user_id END) AS document_authentication_success,
 
           COUNT(DISTINCT CASE WHEN name = #{connection.quote(Events::INFORMATION_VALIDATION_SUCCESS)}
-                AND #{bool_true('success_flag')}
                 THEN user_id END) AS information_validation_success,
 
           COUNT(DISTINCT CASE WHEN name = #{connection.quote(Events::PHONE_VERIFICATION_SUCCESS)}
