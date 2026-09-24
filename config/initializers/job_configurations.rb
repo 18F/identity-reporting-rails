@@ -95,13 +95,13 @@ else
       verification_funnel_report_weekly: {
         class: 'Reports::VerificationFunnelReport',
         cron: cron_1d, # 6 AM UTC daily
-        args: -> { [Time.zone.now, 2, 'weekly'] },
+        args: -> { [Time.zone.now, 1, 'weekly'] },
       },
       # IDV verification funnel report - monthly period, run weekly (Mondays).
       verification_funnel_report_monthly: {
         class: 'Reports::VerificationFunnelReport',
         cron: cron_weekly_monday_6am,
-        args: -> { [Time.zone.now, 2, 'monthly'] },
+        args: -> { [Time.zone.now, 1, 'monthly'] },
       },
       # Partner report v2 (default going forward, new column names)
       partner_report_default_v2: {
