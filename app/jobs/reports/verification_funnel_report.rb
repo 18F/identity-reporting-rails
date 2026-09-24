@@ -11,10 +11,9 @@ module Reports
 
     REPORT_NAME = 'VerificationFunnelReport' # Used for S3 file paths
 
-    # Funnel events come from logs data (minimal modeling delay), so
-    # no data lag and thus a small default look-back.
+    # Log data has no modeling lag; 1-day look-back reports yesterday's period.
     DATA_LAG_DAYS = 0
-    DEFAULT_LOOK_BACK_DAYS = 2
+    DEFAULT_LOOK_BACK_DAYS = 1
 
     VALID_TIME_FRAMES = %w[daily weekly monthly quarterly].freeze
 
