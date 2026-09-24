@@ -45,7 +45,7 @@ RSpec.describe Reporting::VerificationFunnelReport do
 
   demand = 'IdV: doc auth welcome submitted'
   doc_auth = 'IdV: doc auth ssn visited'
-  info_val = 'IdV: doc auth verify proofing results'
+  info_val = 'IdV: phone of record visited'
   phone = 'idv_enter_password_visited'
   verified = 'User registration: agency handoff visited'
 
@@ -53,14 +53,14 @@ RSpec.describe Reporting::VerificationFunnelReport do
     # user1: full funnel, verified
     create_event(user_id: 'user1', name: demand)
     create_event(user_id: 'user1', name: doc_auth)
-    create_event(user_id: 'user1', name: info_val, success: true)
+    create_event(user_id: 'user1', name: info_val)
     create_event(user_id: 'user1', name: phone)
     create_event(user_id: 'user1', name: verified)
 
     # user2: reached info validation, then dropped off (no phone/verified)
     create_event(user_id: 'user2', name: demand)
     create_event(user_id: 'user2', name: doc_auth)
-    create_event(user_id: 'user2', name: info_val, success: true)
+    create_event(user_id: 'user2', name: info_val)
 
     # user3: never reached the SSN page (no doc_auth event) - stage 1 only.
     # (An AAMVA/DMV state-ID failure blocks the user before the SSN page, so the
