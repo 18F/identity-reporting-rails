@@ -13,27 +13,16 @@ module Reporting
       # Stage 1 - Verification Demand (the funnel start / percentage denominator)
       VERIFICATION_DEMAND = 'IdV: doc auth welcome submitted'
 
-      # ----------------------------------------------------------------------
-      # Stage 2 (Document Authentication Success):
-      #   ORIGINAL (idp):  'IdV: doc auth ssn visited'  -- page-visit proxy
-      #   MODIFIED (here): 'IdV: doc auth image upload vendor pii validation'
-      #                    with success=true
-      #   WHY: With AAMVA-at-doc-auth enabled, AAMVA failures block users before
-      #        the SSN page. The original event never fires for those users,
-      #        making them look like a Stage 1->2 drop-off for the wrong reason
-      #        (labeled "doc auth failure" when it was actually an AAMVA DMV
-      #        check failure). The improved event is the actual doc PII
-      #        validation outcome.
-      # ----------------------------------------------------------------------
-      DOCUMENT_AUTHENTICATION_SUCCESS = 'IdV: doc auth image upload vendor pii validation'
+      # Stage 2 - Document Authentication Success
+      DOCUMENT_AUTHENTICATION_SUCCESS = 'IdV: doc auth ssn visited'
 
       # ----------------------------------------------------------------------
-      # BLOCK COMMENT
       # Stage 3 (Information Validation Success):
       #   ORIGINAL (idp):  'IdV: phone of record visited'  -- page-visit proxy
       #   MODIFIED (here): 'IdV: doc auth verify proofing results' with
       #                    success=true
-      #   WHY: Some users skip the phone page entirely -- when the resolution
+      #   WHY: To guard against "phone pre-check" flow (turned off in prod at the moment)
+      #        Phone pre-check: Users skip the phone page entirely - when the resolution
       #        background job pre-checks the phone risk score, verify_info routes
       #        them directly to enter_password without visiting the phone page.
       #        Those users fire the original Stage 4 event without ever firing
@@ -159,7 +148,6 @@ module Reporting
                 THEN user_id END) AS verification_demand,
 
           COUNT(DISTINCT CASE WHEN name = #{connection.quote(Events::DOCUMENT_AUTHENTICATION_SUCCESS)}
-                AND #{bool_true('success_flag')}
                 THEN user_id END) AS document_authentication_success,
 
           COUNT(DISTINCT CASE WHEN name = #{connection.quote(Events::INFORMATION_VALIDATION_SUCCESS)}
