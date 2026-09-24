@@ -408,17 +408,48 @@ RSpec.describe RedshiftSync do
     let(:user_role) do
       { 'role_name' => 'dw_admin', 'assigned_roles' => ['sys:monitor'] }
     end
+    let(:role_grants_query) { /SELECT granted_role_name\s+FROM svv_role_grants/ }
+
+    before do
+      allow(mock_connection).to receive(:execute).with(role_grants_query).and_return([])
+    end
 
     it 'nests the system role inside the custom role' do
+      expect(mock_connection).to receive(:execute).with(role_grants_query).ordered
       expect(mock_connection).to receive(:execute).
+        ordered.
         with('GRANT ROLE sys:monitor TO ROLE dw_admin;')
 
       sync.send(:grant_assigned_roles, user_role)
     end
 
-    it 'grants without first consulting svv_role_grants' do
-      # Redshift decides what is allowed; we do not pre-filter in Ruby.
-      expect(mock_connection).not_to receive(:execute).with(/svv_role_grants/)
+    it 'revokes roles that are no longer assigned before granting new ones' do
+      user_role['assigned_roles'] = ['sys:monitor', 'sys:secadmin']
+
+      allow(mock_connection).to receive(:execute).with(role_grants_query).
+        and_return([
+                     { 'granted_role_name' => 'sys:monitor' },
+                     { 'granted_role_name' => 'sys:operator' },
+                   ])
+
+      expect(mock_connection).to receive(:execute).with(role_grants_query).ordered
+      expect(mock_connection).to receive(:execute).ordered do |sql|
+        expect(sql).to include('REVOKE ROLE sys:operator FROM ROLE dw_admin;')
+        expect(sql).to include('GRANT ROLE sys:secadmin TO ROLE dw_admin;')
+        expect(sql.index('REVOKE ROLE')).to be < sql.index('GRANT ROLE')
+        expect(sql).not_to include('GRANT ROLE sys:monitor')
+      end
+
+      sync.send(:grant_assigned_roles, user_role)
+    end
+
+    it 'does not grant roles that are already assigned' do
+      allow(mock_connection).to receive(:execute).with(role_grants_query).
+        and_return([{ 'granted_role_name' => 'sys:monitor' }])
+
+      expect(mock_connection).to receive(:execute).with(role_grants_query)
+      expect(mock_connection).not_to receive(:execute).
+        with(a_string_matching(/GRANT|REVOKE/))
 
       sync.send(:grant_assigned_roles, user_role)
     end
@@ -446,8 +477,20 @@ RSpec.describe RedshiftSync do
         to raise_error(ActiveRecord::StatementInvalid)
     end
 
-    it 'does nothing when no assigned_roles are configured' do
-      expect(mock_connection).not_to receive(:execute)
+    it 'issues no statements when nothing is configured or granted' do
+      expect(mock_connection).to receive(:execute).with(role_grants_query)
+      expect(mock_connection).not_to receive(:execute).
+        with(a_string_matching(/GRANT|REVOKE/))
+
+      sync.send(:grant_assigned_roles, { 'role_name' => 'dw_ingestion' })
+    end
+
+    it 'revokes every nested role when no assigned_roles are configured' do
+      allow(mock_connection).to receive(:execute).with(role_grants_query).
+        and_return([{ 'granted_role_name' => 'sys:operator' }])
+
+      expect(mock_connection).to receive(:execute).
+        with('REVOKE ROLE sys:operator FROM ROLE dw_ingestion;')
 
       sync.send(:grant_assigned_roles, { 'role_name' => 'dw_ingestion' })
     end

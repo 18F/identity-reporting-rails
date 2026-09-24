@@ -649,15 +649,37 @@ class RedshiftSync
   end
 
   def grant_assigned_roles(user_role)
-    assigned_roles = user_role.fetch('assigned_roles', [])
-    return if assigned_roles.empty?
+    assigned_roles = user_role.fetch('assigned_roles', []).uniq
 
-    sql = assigned_roles.map do |role|
-      Rails.logger.info("Granting role #{role} to role #{user_role['role_name']}")
-      "GRANT ROLE #{role} TO ROLE #{user_role['role_name']};"
+    current_assigned_roles_statement = <<~SQL
+      SELECT granted_role_name
+      FROM svv_role_grants
+      WHERE role_name = #{quote(user_role['role_name'])}
+    SQL
+
+    result = execute_query(current_assigned_roles_statement)
+    current_assigned_roles = result.map { |row| row['granted_role_name'] }
+
+    roles_to_revoke = current_assigned_roles - assigned_roles
+    roles_to_grant = assigned_roles - current_assigned_roles
+
+    sql = []
+
+    roles_to_revoke.each do |role|
+      Rails.logger.info("Revoking role #{role} from role #{user_role['role_name']}")
+      sql.append("REVOKE ROLE #{role} FROM ROLE #{user_role['role_name']};")
     end
 
-    execute_query(sql.join("\n"))
+    roles_to_grant.each do |role|
+      Rails.logger.info("Granting role #{role} to role #{user_role['role_name']}")
+      sql.append("GRANT ROLE #{role} TO ROLE #{user_role['role_name']};")
+    end
+
+    if sql.any?
+      execute_query(sql.join("\n"))
+    else
+      Rails.logger.info("Assigned roles for role #{user_role['role_name']} are already in sync")
+    end
   end
 
   def sync_user_role(user_role)
