@@ -134,8 +134,7 @@ module Reports
       end
     end
 
-    #   Time period labels:
-    #   daily     -> Jan01
+    #   daily     -> Jan012026
     #   weekly    -> 20260104_20260110
     #   monthly   -> Jan2026
     #   quarterly -> Q12026
@@ -146,7 +145,8 @@ module Reports
 
       case @time_frame
       when 'daily'
-        "#{end_of_range.strftime('%b')}#{end_of_range.strftime('%d')}"
+        "#{end_of_range.strftime('%b')}#{end_of_range.strftime('%d')}"\
+          "#{end_of_range.strftime('%Y')}"
       when 'weekly'
         "#{range.begin.strftime('%Y%m%d')}_#{end_of_range.strftime('%Y%m%d')}"
       when 'monthly'
