@@ -74,7 +74,6 @@ cluster:
       secret_id: "redshift/%{env_name}-analytics-rails-worker"
 
     - user_name: pii_reader
-      syslog_access: true
       secret_id: "redshift/%{env_name}-analytics-pii-reader"
       feature_flag:
         - dw_fraudops_email_enabled
