@@ -20,10 +20,8 @@ module Reporting
       # IRS is IAL2-only with no IPP/GPO, and phone pre-check is 0% in prod as 9/24/26, so
       # everyone hits this page. If phone pre-check goes above 0%, or this report
       # is reused for non-IRS SPs (IPP/GPO users skip the phone page), switch this
-      # event to 'IdV: doc auth verify proofing results' AND re-add the
-      # `AND #{bool_true('success_flag')}` gate on this stage in metrics_query
-      # (plus the success_flag extraction in the CTE), since that event fires for
-      # all users regardless of phone routing and carries a success property.
+      # event to 'IdV: doc auth verify proofing results' and gate this stage on that
+      # event's success property being True
       INFORMATION_VALIDATION_SUCCESS = 'IdV: phone of record visited'
 
       # Stage 4 - Phone Verification Success.

@@ -92,15 +92,23 @@ else
         args: -> { [Time.zone.yesterday.end_of_day] },
       },
       # IDV verification funnel report - weekly period, run daily
+      # Sunday run is external ready, since week is Sun-Sat
       verification_funnel_report_weekly: {
         class: 'Reports::VerificationFunnelReport',
         cron: cron_1d, # 6 AM UTC daily
         args: -> { [Time.zone.now, 1, 'weekly'] },
       },
-      # IDV verification funnel report - monthly period, run weekly (Mondays).
-      verification_funnel_report_monthly: {
+      # IDV verification funnel report - monthly period.
+      # Internally every week and externally on 1st of month after month end
+      verification_funnel_report_monthly_refresh: {
         class: 'Reports::VerificationFunnelReport',
         cron: cron_weekly_monday_6am,
+        args: -> { [Time.zone.now, 1, 'monthly'] },
+      },
+      # Chance this is same as 1st of month - harmless double run
+      verification_funnel_report_monthly: {
+        class: 'Reports::VerificationFunnelReport',
+        cron: cron_1st_of_month_6am,
         args: -> { [Time.zone.now, 1, 'monthly'] },
       },
       # Partner report v2 (default going forward, new column names)

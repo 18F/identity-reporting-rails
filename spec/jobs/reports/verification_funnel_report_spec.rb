@@ -120,9 +120,9 @@ RSpec.describe Reports::VerificationFunnelReport do
       captured
     end
 
-    it 'uses a daily folder + Mon-day label' do
+    it 'uses a daily folder + Mon-day-year label' do
       expect(path_for(Time.zone.parse('2026-03-04'), 'daily')).to include(
-        '/VerificationFunnelReport/123/daily/Mar02/',
+        '/VerificationFunnelReport/123/daily/Mar022026/',
       )
     end
 
