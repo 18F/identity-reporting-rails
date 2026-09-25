@@ -2,6 +2,8 @@ require 'fugit'
 
 cron_hourly_offset = '55 * * * *'
 cron_15m = '*/15 * * * *'
+cron_15m_5 = '5/15 * * * *'
+cron_15m_10 = '10/15 * * * *'
 cron_5m = '0/5 * * * *'
 # cron_10m = '0/10 * * * *'
 cron_1d = '0 6 * * *' # 6:00am UTC or 2:00am EST
@@ -134,12 +136,12 @@ else
       # Sync Redshift users - runs every 15 minutes
       redshift_sync_job: {
         class: 'RedshiftSyncJob',
-        cron: cron_15m,
+        cron: cron_15m_5,
       },
       # Sync QuickSight users - runs every 15 minutes
       quicksight_sync_job: {
         class: 'QuicksightSyncJob',
-        cron: cron_15m,
+        cron: cron_15m_10,
       },
       # Refresh idp_core late-binding views from analytics_zetl db - runs daily,
       idp_zero_etl_sync_job: {
