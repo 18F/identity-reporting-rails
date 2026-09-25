@@ -1,21 +1,17 @@
 require 'rails_helper'
 
-# RedshiftSync reads config/redshift_config.yaml with a default for every key,
-# so a hand edit that is misspelled, misplaced, or points at nothing is silently
-# ignored in PROD rather than raising. These are the rules the file must follow;
-# the role-membership checks live in spec/services/redshift_sync_spec.rb.
+# RedshiftSync falls back to a default for any missing or misspelled key and puts names straight
+# into SQL, so a bad edit either silently changes access or makes the sync fail at runtime.
 RSpec.describe 'config/redshift_config.yaml' do
   let(:real_config) do
     YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))
   end
 
-  # The data_warehouse migrations create every other schema; RedshiftSync creates
-  # these itself, from the matching DBT user's ALL PRIVILEGES grant.
+  # Created by the sync on the same-named DBT user's ALL PRIVILEGES grant, not by migrations.
   let(:sync_created_schemas) { %w[fraudops_marts fraudops_qa_marts] }
 
-  # The shape RedshiftSync expects. A Hash lists every allowed key (a trailing
-  # '?' marks it optional), [x] is a list of x, { String => x } is a map with
-  # free-form keys, and a leaf is a Class or a lambda returning a problem.
+  # A Hash lists the allowed keys ('?' = optional), [x] is a list of x, { String => x } has
+  # free-form keys, and a leaf is a Class or a lambda returning a problem or nil.
   let(:config_shape) do
     # Pasted into SQL unquoted, so Redshift case-folds or rejects anything else.
     identifier = lambda do |v|
@@ -31,8 +27,7 @@ RSpec.describe 'config/redshift_config.yaml' do
     secret_id = lambda do |v|
       'must include %{env_name}' unless v.is_a?(String) && v.include?('%{env_name}')
     end
-    # feature_enabled? treats any name it cannot find in IdentityConfig or the
-    # Terraform main.tf as off, so a misspelled flag silently disables the entry.
+    # Unknown flags read as off, silently disabling the entry; the extras are Terraform-only.
     known_flags = IdentityConfig.store.to_h.filter_map do |key, value|
       key.to_s if [true, false].include?(value)
     end + %w[dbt_enabled redshift_idp_connector_enabled redshift_quicksight_connector_enabled]
@@ -42,8 +37,7 @@ RSpec.describe 'config/redshift_config.yaml' do
       end
     end
     boolean = ->(v) { 'must be true or false' unless [true, false].include?(v) }
-    # Not the same as omitting the key: `tables: []` grants ALL TABLES, and an
-    # empty enabled_aws_groups list drops every IAM user in that environment.
+    # `tables: []` grants ALL TABLES, and an empty enabled_aws_groups list drops every IAM user.
     non_empty_list = lambda do |item|
       lambda do |v|
         unless v.is_a?(Array) && v.any? && v.all? { |x| shape_errors(x, item, '').empty? }
@@ -51,7 +45,7 @@ RSpec.describe 'config/redshift_config.yaml' do
         end
       end
     end
-    # No bare ALL: should_create_schema? matches 'ALL PRIVILEGES' exactly.
+    # No bare ALL, since should_create_schema? matches 'ALL PRIVILEGES' exactly.
     privileges = lambda do |*allowed|
       keyword = Regexp.union(allowed)
       lambda do |v|
@@ -61,8 +55,7 @@ RSpec.describe 'config/redshift_config.yaml' do
       end
     end
 
-    # Both required: a missing env_type resolves to zero members there, and the
-    # sync then revokes everyone. Write `prod: []` if that is really intended.
+    # A missing env_type empties the group there; write `prod: []` if that is really intended.
     env_aws_groups = { 'prod' => [String], 'sandbox' => [String] }
     schema_grant = {
       'schema_name' => identifier,
@@ -152,8 +145,7 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'has no duplicate keys' do
-    # YAML keeps only the last of two identical keys in a mapping, silently
-    # dropping everything under the first (e.g. a second `system_users:`).
+    # YAML silently keeps only the last of duplicate keys (e.g. a second `system_users:`).
     document = YAML.parse_file(Rails.root.join('config/redshift_config.yaml'))
     mappings = document.select { |node| node.is_a?(Psych::Nodes::Mapping) }
 
@@ -169,10 +161,8 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'matches the expected shape' do
-    # The sync reads every key with a default, so a misspelled or misplaced key
-    # is silently ignored rather than raising: `feature_flags:` creates the user
-    # in every environment, `tables:` on a group schema grants ALL TABLES, and
-    # `restricted_tables:` on a system user schema restricts nothing.
+    # A bad key is ignored: `feature_flags:` creates the user everywhere, `tables:` on a group
+    # grants ALL TABLES, and `restricted_tables:` on a system user restricts nothing.
     errors = shape_errors(real_config, config_shape, 'redshift_config.yaml')
 
     expect(errors).to be_empty, [
@@ -202,10 +192,10 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'nests only Redshift built-in roles via assigned_roles' do
+    # CREATE ROLE is never run for these, so they must be Redshift built-ins.
     nested = (real_config['cluster']['user_roles'] || []).
       flat_map { |role| role.fetch('assigned_roles', []) }
 
-    # CREATE ROLE is never run for these, so they must be Redshift built-ins.
     built_in = %w[sys:dba sys:monitor sys:operator sys:secadmin sys:superuser]
     expect(nested - built_in).to be_empty, "Not Redshift system-defined: #{nested - built_in}"
   end
@@ -230,10 +220,8 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'grants to exactly the identities defined under cluster' do
-    # The grant pass walks the cluster lists and looks each identity up here by
-    # name, so a database entry whose name matches nothing is never applied, and
-    # a cluster identity with no database entry (e.g. an emptied section) gets
-    # no grants, while its old grants stay on the cluster.
+    # Grants are looked up by cluster name, so an unmatched database entry is never applied and
+    # a cluster identity without one gets no new grants (but keeps its old ones).
     cluster = real_config['cluster']
 
     problems = %w[lambda_users system_users user_groups].flat_map do |section|
@@ -253,10 +241,9 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'grants only on schemas and tables that exist' do
-    # Names are pasted into GRANT/REVOKE, so a typo aborts the sync, except under
-    # lambda_users, where CREATE SCHEMA IF NOT EXISTS quietly adds a junk schema.
+    # A typo aborts the sync's GRANT, except under lambda_users, where it creates a junk schema.
     schema_rb = Rails.root.join('db/data_warehouse_schema.rb').read
-    # idp_core holds IdpZeroEtlBindingViewSync's views over analytics_zetl's public.
+    # Not from migrations: pg_catalog, IdpZeroEtlBindingViewSync's idp_core, zero-ETL public.
     known = {
       'analytics' => schema_rb.scan(/create_(?:schema|table) "([\w.]+)"/).flatten +
                      %w[pg_catalog pg_catalog.pg_user idp_core] + sync_created_schemas,
@@ -282,17 +269,17 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'grants on sync-created schemas only after, and only when, their DBT user creates them' do
-    # Grants run in cluster.system_users order, then groups, so an earlier or
-    # more widely enabled grant on the schema fails on a new cluster.
+    # Grants run in system_users order, then groups, so on a new cluster a grant before the DBT
+    # user's, or where that user is off, fails because the schema does not exist yet.
     users = real_config['cluster']['system_users']
     order = users.map { |user| user['user_name'] }
     user_flags = users.to_h { |user| [user['user_name'], Array(user['feature_flag'])] }
 
     problems = real_config['databases'].flat_map do |db, db_config|
-      # Groups are granted after every system user.
       grantees = db_config['system_users'] + db_config['user_groups']
       grantees.flat_map do |grantee|
         name = entry_name(grantee)
+        # Groups are not in order, so they sort after every system user.
         position = order.index(name) || order.size
         grantee['schemas'].filter_map do |schema|
           creator = schema['schema_name']
@@ -316,9 +303,8 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'lists each name once per section' do
-    # A repeated database entry is ignored (lookups take the first match), a
-    # repeated cluster entry or schema is synced twice with the last one winning,
-    # and users sharing a secret_id share a password the rotator changes twice.
+    # Repeats: a database entry is ignored, a cluster entry or schema syncs twice (last wins),
+    # and a shared secret_id is one password the rotator changes twice.
     sections = real_config['cluster'].transform_keys { |key| "cluster.#{key}" }
     sections['cluster.system_users secret_id'] =
       real_config['cluster']['system_users'].filter_map { |user| user['secret_id'] }
@@ -342,14 +328,12 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'keeps nonprod aws_groups out of prod' do
-    # QuicksightSync drops *nonprod groups in prod itself, but RedshiftSync
-    # trusts this list, so a nonprod group here would reach the prod warehouse.
+    # QuicksightSync drops *nonprod groups in prod, but RedshiftSync trusts this list as is.
     expect(real_config['enabled_aws_groups']['prod'].grep(/nonprod\z/)).to be_empty
   end
 
   it 'maps every enabled aws_group to a prioritized role' do
-    # QuicksightSync silently skips an aws_group missing from aws_role_map, and
-    # ranks a role missing from role_priority below every other.
+    # QuicksightSync skips an unmapped aws_group and ranks an unprioritized role below all others.
     role_map = real_config['aws_role_map']
     enabled = real_config['enabled_aws_groups'].values.flatten.uniq
 
