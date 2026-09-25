@@ -10,21 +10,28 @@ require_relative '../../config/environment'
 class RedshiftSync
   include UserSyncConfig
 
+  class SyncError < StandardError; end
+
   DATABASES = ['analytics', 'analytics_zetl'].freeze
 
-  attr_reader :database
+  attr_reader :database, :errors
 
-  def initialize(database: nil)
+  def initialize(database: nil, errors: [])
     @database = database
+    @errors = errors
   end
 
   # Redshift users, groups, and roles are cluster-global,schema/table grants are database-scoped
   def sync
-    self.class.new(database: DATABASES.first).sync_cluster
+    self.class.new(database: DATABASES.first, errors: errors).sync_cluster
 
     DATABASES.each do |name|
-      self.class.new(database: name).sync_database_grants
+      self.class.new(database: name, errors: errors).sync_database_grants
     end
+
+    return if errors.empty?
+
+    raise SyncError, "#{errors.size} Redshift statement(s) failed:\n#{errors.join("\n")}"
   end
 
   # Create identities, groups, and roles, and sync memberships.
@@ -229,7 +236,8 @@ class RedshiftSync
         failed_sql: redact_secrets(sql),
       }.to_json,
     )
-    raise
+    errors << "database=#{database}: #{e.message}"
+    []
   end
 
   def redact_secrets(sql)

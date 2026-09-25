@@ -454,15 +454,16 @@ RSpec.describe RedshiftSync do
       sync.send(:grant_assigned_roles, user_role)
     end
 
-    it 'fails the sync when Redshift rejects the grant' do
+    it 'records the error when Redshift rejects the grant' do
       allow(mock_connection).to receive(:execute).with(/GRANT ROLE/).
         and_raise(ActiveRecord::StatementInvalid, 'role "sys:moniter" does not exist')
 
-      expect { sync.send(:grant_assigned_roles, user_role) }.
-        to raise_error(ActiveRecord::StatementInvalid, /does not exist/)
+      sync.send(:grant_assigned_roles, user_role)
+
+      expect(sync.errors).to contain_exactly(/does not exist/)
     end
 
-    it 'logs the rejected statement before re-raising' do
+    it 'logs the rejected statement' do
       allow(mock_connection).to receive(:execute).with(/GRANT ROLE/).
         and_raise(ActiveRecord::StatementInvalid, 'permission denied')
 
@@ -473,8 +474,7 @@ RSpec.describe RedshiftSync do
         )
       end
 
-      expect { sync.send(:grant_assigned_roles, user_role) }.
-        to raise_error(ActiveRecord::StatementInvalid)
+      sync.send(:grant_assigned_roles, user_role)
     end
 
     it 'issues no statements when nothing is configured or granted' do
@@ -732,7 +732,7 @@ RSpec.describe RedshiftSync do
   describe '#execute_query' do
     let(:failing_sql) { 'GRANT SELECT ON ALL TABLES IN SCHEMA marts TO rails_worker;' }
 
-    it 'logs the failing SQL and re-raises on a StatementInvalid error' do
+    it 'logs the failing SQL and records the error on a StatementInvalid error' do
       allow(mock_connection).to receive(:execute).
         and_raise(ActiveRecord::StatementInvalid.new('PG::InternalError: could not open relation'))
 
@@ -743,9 +743,8 @@ RSpec.describe RedshiftSync do
         expect(parsed['message']).to include('could not open relation')
       end
 
-      expect { sync.send(:execute_query, failing_sql) }.to raise_error(
-        ActiveRecord::StatementInvalid,
-      )
+      expect(sync.send(:execute_query, failing_sql)).to eq([])
+      expect(sync.errors).to contain_exactly(/could not open relation/)
     end
 
     it 'returns the connection result and does not log on success' do
@@ -770,9 +769,7 @@ RSpec.describe RedshiftSync do
         expect(logged).to include('CREATE USER pii_reader')
       end
 
-      expect { sync.send(:execute_query, create_user) }.to raise_error(
-        ActiveRecord::StatementInvalid,
-      )
+      sync.send(:execute_query, create_user)
     end
 
     it 'leaves the non-secret PASSWORD DISABLE form intact' do
@@ -784,9 +781,7 @@ RSpec.describe RedshiftSync do
         expect(JSON.parse(payload)['failed_sql']).to include('WITH PASSWORD DISABLE')
       end
 
-      expect { sync.send(:execute_query, create_user) }.to raise_error(
-        ActiveRecord::StatementInvalid,
-      )
+      sync.send(:execute_query, create_user)
     end
   end
 
@@ -804,7 +799,7 @@ RSpec.describe RedshiftSync do
         per_database_sync = instance_double(described_class)
         allow(per_database_sync).to receive(:sync_cluster) { cluster_synced << name }
         allow(per_database_sync).to receive(:sync_database_grants) { grants_applied << name }
-        allow(described_class).to receive(:new).with(database: name).
+        allow(described_class).to receive(:new).with(database: name, errors: anything).
           and_return(per_database_sync)
       end
     end
@@ -828,13 +823,26 @@ RSpec.describe RedshiftSync do
     end
 
     it 'propagates an error from the cluster sync and applies no grants' do
-      allow(described_class).to receive(:new).with(database: 'analytics').
+      allow(described_class).to receive(:new).with(database: 'analytics', errors: anything).
         and_return(instance_double(described_class).tap do |analytics_sync|
           allow(analytics_sync).to receive(:sync_cluster).and_raise(StandardError, 'boom')
         end)
 
       expect { sync.sync }.to raise_error(StandardError, 'boom')
       expect(grants_applied).to be_empty
+    end
+
+    it 'runs every pass before raising the SQL failures recorded in the shared errors' do
+      allow(described_class).to receive(:new).
+        with(database: 'analytics', errors: anything) do |errors:, **|
+          instance_double(described_class).tap do |db_sync|
+            allow(db_sync).to receive(:sync_cluster) { errors << 'database=analytics: boom' }
+            allow(db_sync).to receive(:sync_database_grants) { grants_applied << 'analytics' }
+          end
+        end
+
+      expect { sync.sync }.to raise_error(described_class::SyncError, /1 Redshift .*boom/m)
+      expect(grants_applied).to eq(['analytics', 'analytics_zetl'])
     end
   end
 
