@@ -10,21 +10,28 @@ require_relative '../../config/environment'
 class RedshiftSync
   include UserSyncConfig
 
+  class SyncError < StandardError; end
+
   DATABASES = ['analytics', 'analytics_zetl'].freeze
 
-  attr_reader :database
+  attr_reader :database, :errors
 
-  def initialize(database: nil)
+  def initialize(database: nil, errors: [])
     @database = database
+    @errors = errors
   end
 
   # Redshift users, groups, and roles are cluster-global,schema/table grants are database-scoped
   def sync
-    self.class.new(database: DATABASES.first).sync_cluster
+    self.class.new(database: DATABASES.first, errors: errors).sync_cluster
 
     DATABASES.each do |name|
-      self.class.new(database: name).sync_database_grants
+      self.class.new(database: name, errors: errors).sync_database_grants
     end
+
+    return if errors.empty?
+
+    raise SyncError, "#{errors.size} Redshift statement(s) failed:\n#{errors.join("\n")}"
   end
 
   # Create identities, groups, and roles, and sync memberships.
@@ -229,7 +236,8 @@ class RedshiftSync
         failed_sql: redact_secrets(sql),
       }.to_json,
     )
-    raise
+    errors << "database=#{database}: #{e.message}"
+    []
   end
 
   def redact_secrets(sql)
@@ -593,6 +601,17 @@ class RedshiftSync
     sql
   end
 
+  def users_in_aws_groups(aws_groups)
+    return [] if aws_groups.blank?
+
+    permitted = aws_groups[env_type] || []
+
+    canonical_users.select do |user|
+      user_aws_groups = users_yaml[user.delete_prefix('IAM:')]['aws_groups'] || []
+      user_aws_groups.intersect?(permitted)
+    end
+  end
+
   def sync_user_group(group)
     Rails.logger.info("Syncing users for #{group['name']}")
 
@@ -614,18 +633,11 @@ class RedshiftSync
       )
     end
 
-    new_group_users = canonical_users.select do |user|
-      users_yaml[user.gsub('IAM:', '')]['aws_groups'].any? do |aws_group|
-        group['aws_groups'][env_type].include?(aws_group)
-      end
-    end
+    desired_group_users = users_in_aws_groups(group['aws_groups'])
 
-    if new_group_users.any?
-      user_group_sql.append(
-        "ALTER GROUP #{group['name']} ADD USER #{new_group_users.map do |v|
-          "\"#{v}\""
-        end.join(', ')}",
-      )
+    if desired_group_users.any?
+      quoted_desired_users = desired_group_users.map { |v| "\"#{v}\"" }.join(', ')
+      user_group_sql.append("ALTER GROUP #{group['name']} ADD USER #{quoted_desired_users};")
     end
 
     if user_group_sql.any?
@@ -651,6 +663,41 @@ class RedshiftSync
     end
 
     sync_user_role(user_role)
+    grant_assigned_roles(user_role)
+  end
+
+  def grant_assigned_roles(user_role)
+    assigned_roles = user_role.fetch('assigned_roles', []).uniq
+
+    current_assigned_roles_statement = <<~SQL
+      SELECT granted_role_name
+      FROM svv_role_grants
+      WHERE role_name = #{quote(user_role['role_name'])}
+    SQL
+
+    result = execute_query(current_assigned_roles_statement)
+    current_assigned_roles = result.map { |row| row['granted_role_name'] }
+
+    roles_to_revoke = current_assigned_roles - assigned_roles
+    roles_to_grant = assigned_roles - current_assigned_roles
+
+    sql = []
+
+    roles_to_revoke.each do |role|
+      Rails.logger.info("Revoking role #{role} from role #{user_role['role_name']}")
+      sql.append("REVOKE ROLE #{role} FROM ROLE #{user_role['role_name']};")
+    end
+
+    roles_to_grant.each do |role|
+      Rails.logger.info("Granting role #{role} to role #{user_role['role_name']}")
+      sql.append("GRANT ROLE #{role} TO ROLE #{user_role['role_name']};")
+    end
+
+    if sql.any?
+      execute_query(sql.join("\n"))
+    else
+      Rails.logger.info("Assigned roles for role #{user_role['role_name']} are already in sync")
+    end
   end
 
   def sync_user_role(user_role)
@@ -664,7 +711,11 @@ class RedshiftSync
 
     result = execute_query(current_role_users_statement)
     current_role_users = result.any? ? result.map { |row| row['user_name'] } : []
-    desired_role_users = user_role['users'].map { |user| interpolate_env_name(user) }
+    # Static list, aws_groups membership, or both. Users only.
+    desired_role_users = (
+      user_role.fetch('member_users', []).map { |user| interpolate_env_name(user) } +
+      users_in_aws_groups(user_role['aws_groups'])
+    ).uniq
 
     users_to_revoke = current_role_users - desired_role_users
     users_to_grant = desired_role_users - current_role_users
