@@ -41,6 +41,64 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
     allow(job).to receive(:config_file_path).and_return(file_path)
   end
 
+  describe '#perform' do
+    let(:failure_message) { 'PG::InternalError: ERROR:  Invalid input' }
+    # Raise for one table only, so the other table still has to be processed.
+    let(:failing_table) { source_table }
+
+    before do
+      allow(job).to receive(:table_definitions).and_return([table, table2])
+      allow(job).to receive(:create_target_table)
+      allow(job).to receive(:sync_target_and_source_table_schemas)
+      allow(job).to receive(:convert_source_char_columns)
+      allow(job).to receive(:update_sync_time)
+      allow(job).to receive(:upsert_data) do
+        if job.instance_variable_get(:@source_table) == failing_table
+          raise ActiveRecord::StatementInvalid, failure_message
+        end
+      end
+    end
+
+    it 'names the failing table in the aggregated error' do
+      expect { job.perform }.to raise_error(
+        StandardError,
+        "Error processing table #{failing_table}: #{failure_message}",
+      )
+    end
+
+    it 'keeps processing the remaining tables after one fails' do
+      expect { job.perform }.to raise_error(StandardError)
+
+      expect(job).to have_received(:upsert_data).twice
+      expect(job).to have_received(:update_sync_time).once
+    end
+
+    context 'when more than one table fails' do
+      before do
+        allow(job).to receive(:upsert_data).and_raise(
+          ActiveRecord::StatementInvalid, failure_message
+        )
+      end
+
+      it 'aggregates one message per failing table' do
+        expect { job.perform }.to raise_error(
+          StandardError,
+          "Error processing table #{source_table}: #{failure_message}; " \
+          "Error processing table #{source_table2}: #{failure_message}",
+        )
+      end
+    end
+
+    context 'when every table succeeds' do
+      let(:failing_table) { 'no_such_table' }
+
+      it 'does not raise' do
+        expect { job.perform }.not_to raise_error
+        expect(job).to have_received(:update_sync_time).twice
+      end
+    end
+  end
+
   describe '#upsert_data' do
     context 'when using Redshift as the adapter' do
       before do

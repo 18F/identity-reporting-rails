@@ -13,7 +13,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
         upsert_data
         update_sync_time
       rescue StandardError => e
-        error_msgs << "Error processing table #{table[:source_table]}: #{e.message}"
+        error_msgs << "Error processing table #{table['source_table']}: #{e.message}"
       end
     end
     # Raise an error if any table processing failed
