@@ -166,6 +166,25 @@ RSpec.describe Reports::DemographicsMetricsReport do
         report.perform(report_date, days_back, time_frame)
       end
 
+      it 'includes the full last day of the quarter when run_date is a Date' do
+        date_report = described_class.new(Date.parse('2026-04-15'), days_back, 'quarterly')
+        allow(date_report).to receive(:bucket_name).and_return('test-bucket')
+        allow(date_report).to receive(:upload_file_to_s3_bucket)
+        allow(date_report).to receive(:get_sp_id_for_issuer).with(
+          'urn:gov:gsa:openidconnect.profiles:sp:sso:ssa:sample_app',
+        ).and_return(123)
+        allow(date_report).to receive(:get_sp_id_for_issuer).with(
+          'urn:gov:gsa:openidconnect.profiles:sp:sso:va:sample_app',
+        ).and_return(456)
+
+        expect(Reporting::DemographicsMetricsReport).to receive(:new).with(
+          issuer_string: anything,
+          time_range: satisfy { |range| range.end.strftime('%H:%M:%S') == '23:59:59' },
+        ).twice.and_return(mock_demographics_report)
+
+        date_report.perform
+      end
+
       it 'uploads reports to S3 with correct file naming' do
         # For external reports (quarter ended + lag passed)
 

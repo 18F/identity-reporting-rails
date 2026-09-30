@@ -75,6 +75,20 @@ RSpec.describe Reports::VerificationFunnelReport do
       report.perform
     end
 
+    it 'includes the full last day of the period when run_date is a Date' do
+      date_report = described_class.new(Date.parse('2026-09-01'), 1, 'monthly')
+      allow(date_report).to receive(:bucket_name).and_return('test-bucket')
+      allow(date_report).to receive(:upload_file_to_s3_bucket)
+      allow(date_report).to receive(:get_sp_id_for_issuer).with(issuer).and_return(123)
+
+      expect(Reporting::VerificationFunnelReport).to receive(:new).with(
+        issuer_string: issuer,
+        time_range: satisfy { |range| range.end.strftime('%H:%M:%S') == '23:59:59' },
+      ).and_return(mock_funnel_report)
+
+      date_report.perform
+    end
+
     it 'continues past a failing issuer and logs it' do
       configs = [{ 'issuer_string' => 'bad' }, { 'issuer_string' => issuer }]
       allow(IdentityConfig.store).to receive(:verification_funnel_s3_report_configs).and_return(
