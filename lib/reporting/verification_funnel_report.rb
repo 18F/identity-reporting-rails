@@ -130,6 +130,7 @@ module Reporting
             AND #{facial_match} = TRUE
             AND user_id IS NOT NULL
             AND user_id <> ''
+            AND name IN (#{quoted(Events.all_events)})
         )
         SELECT
           COUNT(DISTINCT CASE WHEN name = #{connection.quote(Events::VERIFICATION_DEMAND)}
@@ -156,6 +157,10 @@ module Reporting
 
     def formatted_end_time
       time_range.end.end_of_day.strftime('%Y-%m-%dT%H:%M:%SZ')
+    end
+
+    def quoted(values)
+      values.map { |value| connection.quote(value) }.join(', ')
     end
 
     def safely_divide(numerator, denominator)
