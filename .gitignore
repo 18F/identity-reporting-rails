@@ -69,6 +69,3 @@ devenv.local.nix
 
 # pre-commit
 .pre-commit-config.yaml
-
-# Superpowers
-docs/superpowers/
