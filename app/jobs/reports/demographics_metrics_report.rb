@@ -128,15 +128,16 @@ module Reports
     end
 
     def report_time_range
+      anchor = @run_date.prev_day(@days_back_for_time_period)
+      anchor = anchor.in_time_zone unless anchor.is_a?(ActiveSupport::TimeWithZone)
+
       case @time_frame
       when 'quarterly'
-        @run_date.prev_day(@days_back_for_time_period).all_quarter
+        anchor.all_quarter
       when 'monthly'
         raise NotImplementedError, 'Monthly reporting is not yet implemented'
-        # @run_date.prev_day(@days_back_for_time_period).all_month
       when 'daily'
         raise NotImplementedError, 'Daily reporting is not yet implemented'
-        # @run_date.prev_day(@days_back_for_time_period).all_day
       else
         raise ArgumentError, "Unsupported time frame: #{@time_frame}"
       end

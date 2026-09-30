@@ -220,11 +220,11 @@ module Reporting
     end
 
     def formatted_start_time
-      time_range.begin.strftime('%Y-%m-%dT%H:%M:%SZ')
+      time_range.begin.beginning_of_day.strftime('%Y-%m-%dT%H:%M:%SZ')
     end
 
     def formatted_end_time
-      time_range.end.strftime('%Y-%m-%dT%H:%M:%SZ')
+      time_range.end.end_of_day.strftime('%Y-%m-%dT%H:%M:%SZ')
     end
   end
 end

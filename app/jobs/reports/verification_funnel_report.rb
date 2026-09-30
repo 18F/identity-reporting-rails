@@ -115,9 +115,9 @@ module Reports
       ).as_reports
     end
 
-    # Currently assuming week boundary using Ruby, which may not be intended. Verify
     def report_time_range
       anchor = @run_date.prev_day(@days_back_for_time_period)
+      anchor = anchor.in_time_zone unless anchor.is_a?(ActiveSupport::TimeWithZone)
 
       case @time_frame
       when 'daily'

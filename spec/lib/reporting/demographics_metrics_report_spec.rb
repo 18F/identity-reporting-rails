@@ -299,5 +299,13 @@ RSpec.describe Reporting::DemographicsMetricsReport do
       expect(report.send(:formatted_start_time)).to eq('2026-04-01T00:00:00Z')
       expect(report.send(:formatted_end_time)).to eq('2026-06-30T23:59:59Z')
     end
+
+    it 'includes the full end-of-day even when time_range is built from Dates' do
+      date_range = Date.new(2026, 4, 1)..Date.new(2026, 6, 30)
+      date_report = described_class.new(issuer_string: issuer_string, time_range: date_range)
+
+      expect(date_report.send(:formatted_start_time)).to eq('2026-04-01T00:00:00Z')
+      expect(date_report.send(:formatted_end_time)).to eq('2026-06-30T23:59:59Z')
+    end
   end
 end
