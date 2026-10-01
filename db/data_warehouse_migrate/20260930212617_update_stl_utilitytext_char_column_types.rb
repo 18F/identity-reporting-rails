@@ -1,17 +1,14 @@
 class UpdateStlUtilitytextCharColumnTypes < ActiveRecord::Migration[8.1]
-  # system_tables.stl_utilitytext was created in Nov 2024, before
-  # create_target_table started mapping CHAR to VARCHAR, so `text` is still
-  # character(200) and `label` is still character(320). Redshift only allows
-  # single-byte characters in fixed-length strings, so any multibyte character
-  # (e.g. an em dash in dbt model SQL) makes the nightly MERGE fail with
-  # "Invalid input ... code: 8001".
+  # system_tables.stl_utilitytext predates create_target_table's CHAR -> VARCHAR
+  # mapping, so `text` is still character(200) and `label` character(320).
+  # Redshift allows only single-byte characters in fixed-length strings, so one
+  # multibyte character (e.g. an em dash in dbt model SQL) fails the nightly
+  # MERGE with "Invalid input ... code: 8001".
   #
-  # Widths are preserved rather than widened: MAX(OCTET_LENGTH(text)) and
-  # MAX(LEN(text)) both measure 200 in prod, so the source view caps `text` at
-  # 200 *bytes*, and Redshift recommends the smallest workable column size.
-  #
-  # Trailing CHAR padding is copied as-is (no RTRIM) so stored bytes are
-  # unchanged; consumers already trim at read time.
+  # Widths are preserved, not widened: a prod measurement found
+  # MAX(OCTET_LENGTH(text)) = MAX(LEN(text)) = 200, and Redshift recommends the
+  # smallest workable column size. The copy is verbatim, so stored bytes
+  # (including trailing CHAR padding) are unchanged, as in 20251028200932.
   def up
     convert_column_type('system_tables.stl_utilitytext', 'text', 'VARCHAR(200)')
     convert_column_type('system_tables.stl_utilitytext', 'label', 'VARCHAR(320)')
