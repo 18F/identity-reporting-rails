@@ -41,7 +41,7 @@ RSpec.describe Reporting::PartnerReportDefaultV2 do
       'count_device_behavior_fraud_signals' => 11,
       'count_pass_via_lg99' => 12,
       'count_creation_successful' => 45,
-      'count_total_creations' => 50,
+      'count_creation_friction' => 50,
       'count_auth_successful' => 50,
       'count_total_auths' => 55,
       'count_desktop_successful' => 1000,

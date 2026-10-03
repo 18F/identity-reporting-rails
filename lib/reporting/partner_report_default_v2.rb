@@ -218,7 +218,7 @@ module Reporting
       count_device_behavior_fraud_signals
       count_pass_via_lg99
       count_creation_successful
-      count_total_creations
+      count_creation_friction
       count_auth_successful
       count_total_auths
       count_desktop_successful
