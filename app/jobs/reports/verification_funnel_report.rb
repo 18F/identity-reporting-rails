@@ -37,14 +37,22 @@ module Reports
 
       issuer_configs = report_configs
       if issuer_configs.nil? || issuer_configs.empty?
-        Rails.logger.error 'verification_funnel_s3_report_configs is empty or nil - no work to do'
+        log_message(
+          :error,
+          'No issuer configurations found in verification_funnel_s3_report_configs',
+          false,
+          log_context,
+        )
         raise ArgumentError, 'No issuer configurations found in'\
                              ' verification_funnel_s3_report_configs'
       end
 
-      Rails.logger.info "Starting #{report_type}-facing #{@time_frame} verification funnel "\
-                        "report generation for #{issuer_configs.length} issuers "\
-                        "#{report_time_range.begin.to_date} to #{report_time_range.end.to_date}"
+      log_message(
+        :info,
+        'Starting verification funnel report generation',
+        true,
+        log_context(issuer_count: issuer_configs.length),
+      )
 
       failed_issuers = []
       issuer_configs.each do |issuer_config|
@@ -52,22 +60,68 @@ module Reports
           generate_and_upload_report_for_issuer(issuer_config)
         rescue StandardError => err
           issuer_string = issuer_config['issuer_string']
-          Rails.logger.error "Failed to generate verification funnel report for issuer"\
-                             " #{issuer_string}: #{err.message}"
+          log_message(
+            :error,
+            'Failed to generate verification funnel report for issuer',
+            false,
+            log_context(
+              issuer: issuer_string,
+              error: err.message,
+              error_class: err.class.name,
+            ),
+          )
           failed_issuers << issuer_string
         end
       end
 
-      if failed_issuers.any?
-        Rails.logger.warn "Verification funnel report generation completed with "\
-                          "#{failed_issuers.length} failures: #{failed_issuers.join(', ')}"
+      if failed_issuers.length == issuer_configs.length
+        log_message(
+          :error,
+          'Verification funnel report generation failed for all issuers',
+          false,
+          log_context(
+            issuer_count: issuer_configs.length,
+            failed_issuer_count: failed_issuers.length,
+            failed_issuers: failed_issuers,
+          ),
+        )
+        # Raise so the failure reaches GoodJob and the workerJobs-failed alarm
+        raise StandardError,
+              "Verification funnel report failed for all #{issuer_configs.length} issuer(s): "\
+              "#{failed_issuers.join(', ')}"
+      elsif failed_issuers.any?
+        log_message(
+          :warn,
+          'Verification funnel report generation completed with failures',
+          false,
+          log_context(
+            issuer_count: issuer_configs.length,
+            failed_issuer_count: failed_issuers.length,
+            failed_issuers: failed_issuers,
+          ),
+        )
       else
-        Rails.logger.info 'Completed verification funnel report generation'\
-                          ' for all issuers successfully'
+        log_message(
+          :info,
+          'Completed verification funnel report generation for all issuers successfully',
+          true,
+          log_context(issuer_count: issuer_configs.length),
+        )
       end
     end
 
     private
+
+    # explicitly include job_id
+    def log_context(extra = {})
+      {
+        job_id: job_id,
+        time_frame: @time_frame,
+        report_type: report_type,
+        period_start: report_time_range.begin.to_date.to_s,
+        period_end: report_time_range.end.to_date.to_s,
+      }.merge(extra)
+    end
 
     def assign_parameters(run_date, days_back, time_frame)
       @run_date = run_date || Time.zone.now
@@ -91,7 +145,12 @@ module Reports
     def generate_and_upload_report_for_issuer(issuer_config)
       issuer_string = issuer_config['issuer_string']
 
-      Rails.logger.info "Generating verification funnel report for issuer: #{issuer_string}"
+      log_message(
+        :info,
+        'Generating verification funnel report for issuer',
+        true,
+        log_context(issuer: issuer_string),
+      )
 
       # Numeric service provider id for the S3 path (from IssuerStringToSpIdHelper).
       sp_id = get_sp_id_for_issuer(issuer_string)
@@ -105,7 +164,12 @@ module Reports
         upload_to_s3(report.fetch(:table), sp_id: sp_id, filename: report.fetch(:filename))
       end
 
-      Rails.logger.info "Completed verification funnel report for issuer: #{issuer_string}"
+      log_message(
+        :info,
+        'Completed verification funnel report for issuer',
+        true,
+        log_context(issuer: issuer_string, sp_id: sp_id, report_count: reports.length),
+      )
     end
 
     def funnel_reports_for_issuer(issuer_string)
@@ -194,7 +258,12 @@ module Reports
             content_type: 'text/csv',
             bucket: bucket_name,
           )
-          Rails.logger.info "Uploaded #{generated_filename} to S3: #{full_path}"
+          log_message(
+            :info,
+            'Uploaded verification funnel report to S3',
+            true,
+            log_context(sp_id: sp_id, filename: generated_filename, s3_path: full_path),
+          )
         end
       end
     end

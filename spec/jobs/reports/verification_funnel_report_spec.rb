@@ -96,9 +96,50 @@ RSpec.describe Reports::VerificationFunnelReport do
       )
       allow(report).to receive(:get_sp_id_for_issuer).with('bad').and_return(nil)
 
-      expect(Rails.logger).to receive(:error).with(/Failed to generate.*bad/)
-      expect(Rails.logger).to receive(:warn).with(/completed with 1 failures/)
+      expect(report).to receive(:log_message).with(
+        :error,
+        'Failed to generate verification funnel report for issuer',
+        false,
+        hash_including(issuer: 'bad'),
+      )
+      expect(report).to receive(:log_message).with(
+        :warn,
+        'Verification funnel report generation completed with failures',
+        false,
+        hash_including(failed_issuer_count: 1, failed_issuers: ['bad']),
+      )
+      allow(report).to receive(:log_message).and_call_original
+
       expect { report.perform }.not_to raise_error
+    end
+
+    it 'raises when every configured issuer fails' do
+      configs = [{ 'issuer_string' => 'bad' }, { 'issuer_string' => 'worse' }]
+      allow(IdentityConfig.store).to receive(:verification_funnel_s3_report_configs).and_return(
+        configs,
+      )
+      allow(report).to receive(:get_sp_id_for_issuer).and_return(nil)
+
+      expect { report.perform }.to raise_error(
+        StandardError,
+        /failed for all 2 issuer\(s\): bad, worse/,
+      )
+    end
+
+    it 'emits structured logs carrying the job_id for correlation' do
+      logged = []
+      allow(Rails.logger).to receive(:info) { |msg| logged << msg }
+
+      report.perform
+
+      payloads = logged.filter_map do |msg|
+        JSON.parse(msg, symbolize_names: true) if msg.is_a?(String) && msg.start_with?('{')
+      end
+
+      expect(payloads).to be_present
+      expect(payloads).to all(
+        include(job: described_class.name, job_id: report.job_id, success: true),
+      )
     end
   end
 
