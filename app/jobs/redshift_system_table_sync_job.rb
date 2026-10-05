@@ -1,6 +1,15 @@
 class RedshiftSystemTableSyncJob < ApplicationJob
   queue_as :admin # May require superuser to read pg_table_def table
 
+  # Redshift sizes VARCHAR/CHAR in *bytes*, not characters, and rejects any
+  # non-ASCII byte in a fixed-length CHAR ("Invalid ASCII char: e2"). The source
+  # system views are more permissive than the tables we copy them into, so every
+  # fixed-width CHAR(n) becomes VARCHAR(n * 4) -- 4 being the worst-case UTF-8
+  # byte length of a single character, so an n-character value cannot overflow.
+  UTF8_MAX_BYTES_PER_CHARACTER = 4
+  # Widest VARCHAR Redshift allows.
+  MAX_VARCHAR_BYTES = 65_535
+
   def perform
     error_msgs = []
     table_definitions.each do |table|
@@ -13,7 +22,7 @@ class RedshiftSystemTableSyncJob < ApplicationJob
         upsert_data
         update_sync_time
       rescue StandardError => e
-        error_msgs << "Error processing table #{table[:source_table]}: #{e.message}"
+        error_msgs << "Error processing table #{table['source_table']}: #{e.message}"
       end
     end
     # Raise an error if any table processing failed
@@ -157,8 +166,45 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     fetch_columns_for_table(@source_schema, @source_table, log_label: @source_table)
   end
 
+  # Deliberately *not* pg_table_def: that view only reports columns for schemas
+  # on the connection's search_path, and the production data_warehouse config
+  # (config/database.yml) sets no schema_search_path. Reading the target schema
+  # through pg_table_def therefore returned zero rows in production, silently
+  # turning #convert_source_char_columns into a no-op. svv_columns is not
+  # search_path-dependent. (The source schema, pg_catalog, is always implicitly
+  # on the search_path, which is why #fetch_source_columns still works.)
   def fetch_target_columns
-    fetch_columns_for_table(@target_schema, @target_table, log_label: nil)
+    unless dw_redshift?
+      return fetch_columns_for_table(@target_schema, @target_table, log_label: nil)
+    end
+
+    build_params = {
+      schema: @target_schema,
+      table: @target_table,
+    }
+
+    query = format(<<~SQL, build_params)
+      SELECT column_name AS "column", data_type AS "type",
+             character_maximum_length AS "length"
+      FROM svv_columns
+      WHERE table_schema = '%{schema}' AND table_name = '%{table}'
+      ORDER BY ordinal_position;
+    SQL
+
+    dw_connection.exec_query(query).to_a.map do |row|
+      { 'column' => row['column'], 'type' => column_type_with_length(row) }
+    end
+  end
+
+  # svv_columns splits the declared length out of data_type ('character', 1)
+  # whereas pg_table_def inlines it ('character(1)'). Normalize to the inlined
+  # form so a single type string feeds #redshift_data_type and #source_char_type?.
+  def column_type_with_length(row)
+    type = row['type'].to_s
+    length = row['length']
+    return type if length.blank? || type.include?('(')
+
+    "#{type}(#{length})"
   end
 
   def fetch_columns_for_table(schema, table, log_label: nil)
@@ -187,29 +233,72 @@ class RedshiftSystemTableSyncJob < ApplicationJob
     columns
   end
 
+  # Redshift cannot ALTER a CHAR column into a VARCHAR in place, so each column
+  # is rebuilt: add a widened twin, copy, drop the original, rename the twin.
+  # Note this moves the rebuilt column to the end of the table; every query in
+  # this job names columns explicitly, so ordinal position is not relied on.
   def convert_source_char_columns
     return unless dw_redshift?
     return unless target_table_exists?
 
-    conn = dw_connection
-    loop do
-      col = fetch_target_columns.find { |c| source_char_type?(c['type']) }
-      break unless col
+    columns_needing_conversion.each { |col| convert_char_column(col) }
+  end
 
-      column_name = col['column']
-      desired = redshift_data_type(col['type'])
-      temp = "#{column_name}_ir_tmp"
-      tcol = conn.quote_column_name(column_name)
-      ttmp = conn.quote_column_name(temp)
-      conn.execute("ALTER TABLE #{@target_table_with_schema} ADD COLUMN #{ttmp} #{desired}")
-      conn.execute("UPDATE #{@target_table_with_schema} SET #{ttmp} = #{tcol}")
-      conn.execute("ALTER TABLE #{@target_table_with_schema} DROP COLUMN #{tcol}")
-      conn.execute("ALTER TABLE #{@target_table_with_schema} RENAME COLUMN #{ttmp} TO #{tcol}")
+  def columns_needing_conversion
+    convertible, unwidenable = fetch_target_columns.
+      select { |col| source_char_type?(col['type']) }.
+      partition { |col| widenable?(col['type']) }
+
+    unwidenable.each do |col|
       log_info(
-        "Converted source column #{column_name} to #{desired}", true,
+        "Skipping column #{col['column']}: cannot widen type #{col['type']}", false,
         target_table: @target_table
       )
     end
+
+    convertible
+  end
+
+  # A type whose mapping is still fixed-width cannot be converted: rebuilding the
+  # column would leave it matching #source_char_type? again. An earlier
+  # implementation re-read the catalog in a loop and so never terminated on one.
+  def widenable?(type)
+    !source_char_type?(redshift_data_type(type))
+  end
+
+  def convert_char_column(col)
+    conn = dw_connection
+    column_name = col['column']
+    desired = redshift_data_type(col['type'])
+    tcol = conn.quote_column_name(column_name)
+    ttmp = conn.quote_column_name("#{column_name}_ir_tmp")
+
+    # A prior run that died between ADD and RENAME leaves the twin behind, which
+    # would make ADD COLUMN collide on every subsequent attempt.
+    drop_leftover_temp_column("#{column_name}_ir_tmp")
+
+    conn.execute("ALTER TABLE #{@target_table_with_schema} ADD COLUMN #{ttmp} #{desired}")
+    conn.execute("UPDATE #{@target_table_with_schema} SET #{ttmp} = #{tcol}")
+    conn.execute("ALTER TABLE #{@target_table_with_schema} DROP COLUMN #{tcol}")
+    conn.execute("ALTER TABLE #{@target_table_with_schema} RENAME COLUMN #{ttmp} TO #{tcol}")
+    log_info(
+      "Converted source column #{column_name} to #{desired}", true,
+      target_table: @target_table
+    )
+  end
+
+  def drop_leftover_temp_column(temp_column_name)
+    conn = dw_connection
+    return unless conn.column_exists?(@target_table_with_schema, temp_column_name)
+
+    conn.execute(
+      "ALTER TABLE #{@target_table_with_schema} " \
+      "DROP COLUMN #{conn.quote_column_name(temp_column_name)}",
+    )
+    log_info(
+      "Dropped leftover temp column #{temp_column_name}", true,
+      target_table: @target_table
+    )
   end
 
   def source_char_type?(type)
@@ -297,16 +386,30 @@ class RedshiftSystemTableSyncJob < ApplicationJob
   end
 
   def redshift_data_type(data_type)
-    case data_type
+    type = data_type.to_s
+    case type
     when 'json', 'jsonb', 'array'
       'super'
     when 'text'
       'VARCHAR(MAX)'
-    when /^char/
-      "VARCHAR(#{data_type[/\d+/] || 'MAX'})"
+    when /\A(?:character\s+varying|varchar)\b/i
+      # Already variable-width, so the declared byte length is kept as-is.
+      "VARCHAR(#{type[/\d+/] || 'MAX'})"
+    when /\A(?:character|char|bpchar)\b/i
+      "VARCHAR(#{varchar_bytes_for_fixed_char(type[/\d+/])})"
     else
       data_type
     end
+  end
+
+  # CHAR(n) holds n characters; the equivalent VARCHAR must be sized in bytes,
+  # so n is scaled by the worst-case UTF-8 encoding. Without this a CHAR(1)
+  # holding a multi-byte character (an em dash, a curly quote) would merely
+  # trade "Invalid ASCII char" for "value too long for type character varying".
+  def varchar_bytes_for_fixed_char(length)
+    return 'MAX' if length.blank?
+
+    [length.to_i * UTF8_MAX_BYTES_PER_CHARACTER, MAX_VARCHAR_BYTES].min
   end
 
   def log_info(message, success, additional_info = {})

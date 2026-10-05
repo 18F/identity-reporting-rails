@@ -297,14 +297,68 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
     end
   end
 
+  describe '#column_type_with_length' do
+    it 'inlines the svv_columns length into the type string' do
+      expect(
+        job.send(:column_type_with_length, { 'type' => 'character', 'length' => 1 }),
+      ).to eq('character(1)')
+    end
+
+    it 'leaves types without a length untouched' do
+      expect(
+        job.send(:column_type_with_length, { 'type' => 'integer', 'length' => nil }),
+      ).to eq('integer')
+    end
+
+    it 'does not double up a length that is already inlined' do
+      expect(
+        job.send(:column_type_with_length, { 'type' => 'character(5)', 'length' => 5 }),
+      ).to eq('character(5)')
+    end
+  end
+
+  describe '#fetch_target_columns' do
+    context 'when using Redshift as the adapter' do
+      before do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:adapter_name).
+          and_return('redshift')
+      end
+
+      it 'reads svv_columns rather than the search_path-dependent pg_table_def' do
+        # pg_table_def only reports schemas on the connection search_path, which
+        # production does not set -- so reading it returned no target columns.
+        expect(DataWarehouseApplicationRecord.connection).to receive(:exec_query) do |sql|
+          expect(sql).to include('svv_columns')
+          expect(sql).not_to include('pg_table_def')
+          expect(sql).to include("table_schema = '#{target_schema}'")
+          expect(sql).to include("table_name = '#{target_table}'")
+          []
+        end
+
+        job.send(:fetch_target_columns)
+      end
+
+      it 'normalizes the split length into an inlined type' do
+        allow(DataWarehouseApplicationRecord.connection).to receive(:exec_query).and_return(
+          [{ 'column' => 'legacy_col', 'type' => 'character', 'length' => 50 }],
+        )
+
+        expect(job.send(:fetch_target_columns)).to eq(
+          [{ 'column' => 'legacy_col', 'type' => 'character(50)' }],
+        )
+      end
+    end
+  end
+
   describe '#convert_source_char_columns' do
     before do
       allow(DataWarehouseApplicationRecord.connection).to receive(:adapter_name).
         and_return('redshift')
       allow(job).to receive(:target_table_exists?).and_return(true)
+      allow(DataWarehouseApplicationRecord.connection).to receive(:column_exists?).
+        and_return(false)
       allow(job).to receive(:fetch_target_columns).and_return(
         [{ 'column' => 'legacy_col', 'type' => 'character(5)' }],
-        [{ 'column' => 'legacy_col', 'type' => 'character varying' }],
       )
     end
 
@@ -315,10 +369,60 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
       allow(Rails.logger).to receive(:info)
       job.send(:convert_source_char_columns)
       expect(calls.size).to eq(4)
-      expect(calls[0]).to include('ADD COLUMN', 'VARCHAR(5)')
+      expect(calls[0]).to include('ADD COLUMN', 'VARCHAR(20)')
       expect(calls[1]).to match(/UPDATE .* SET .*legacy_col/)
       expect(calls[2]).to include('DROP COLUMN')
       expect(calls[3]).to include('RENAME COLUMN')
+    end
+
+    it 'converts every char column in a single catalog pass' do
+      allow(job).to receive(:fetch_target_columns).and_return(
+        [
+          { 'column' => 'col_a', 'type' => 'character(1)' },
+          { 'column' => 'col_b', 'type' => 'character(50)' },
+          { 'column' => 'col_c', 'type' => 'integer' },
+        ],
+      )
+      conn = DataWarehouseApplicationRecord.connection
+      calls = []
+      allow(conn).to receive(:execute) { |sql| calls << sql }
+      allow(Rails.logger).to receive(:info)
+
+      job.send(:convert_source_char_columns)
+
+      expect(calls.size).to eq(8)
+      expect(calls[0]).to include('col_a_ir_tmp', 'VARCHAR(4)')
+      expect(calls[4]).to include('col_b_ir_tmp', 'VARCHAR(200)')
+      expect(calls.join).not_to include('col_c')
+    end
+
+    it 'drops a leftover temp column from a prior failed run before re-adding it' do
+      conn = DataWarehouseApplicationRecord.connection
+      allow(conn).to receive(:column_exists?).
+        with(target_table_with_schema, 'legacy_col_ir_tmp').and_return(true)
+      calls = []
+      allow(conn).to receive(:execute) { |sql| calls << sql }
+      allow(Rails.logger).to receive(:info)
+
+      job.send(:convert_source_char_columns)
+
+      expect(calls.size).to eq(5)
+      expect(calls[0]).to include('DROP COLUMN', 'legacy_col_ir_tmp')
+      expect(calls[1]).to include('ADD COLUMN', 'legacy_col_ir_tmp')
+    end
+
+    it 'skips a char type it cannot widen instead of spinning on it' do
+      allow(job).to receive(:fetch_target_columns).and_return(
+        [{ 'column' => 'odd_col', 'type' => 'bpchar' }],
+      )
+      allow(job).to receive(:redshift_data_type).with('bpchar').and_return('bpchar')
+      conn = DataWarehouseApplicationRecord.connection
+      allow(conn).to receive(:execute)
+      allow(Rails.logger).to receive(:info)
+
+      job.send(:convert_source_char_columns)
+
+      expect(conn).not_to have_received(:execute)
     end
   end
 
@@ -349,9 +453,26 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
       end
     end
 
-    context 'when datatypes have a length' do
-      it 'returns VARCHAR(length)' do
-        expect(job.send(:redshift_data_type, 'character(10)')).to eq('VARCHAR(10)')
+    context 'when a fixed-width char type has a length' do
+      it 'scales the length for worst-case UTF-8 bytes' do
+        # Redshift sizes strings in bytes, so CHAR(1) -> VARCHAR(1) would merely
+        # trade "Invalid ASCII char: e2" for "value too long".
+        expect(job.send(:redshift_data_type, 'character(1)')).to eq('VARCHAR(4)')
+        expect(job.send(:redshift_data_type, 'character(10)')).to eq('VARCHAR(40)')
+        expect(job.send(:redshift_data_type, 'char(50)')).to eq('VARCHAR(200)')
+        expect(job.send(:redshift_data_type, 'character(1024)')).to eq('VARCHAR(4096)')
+      end
+
+      it 'caps the scaled length at the widest VARCHAR Redshift allows' do
+        expect(job.send(:redshift_data_type, 'character(65535)')).to eq('VARCHAR(65535)')
+      end
+    end
+
+    context 'when the type is already variable-width' do
+      it 'preserves the declared length rather than widening it' do
+        expect(job.send(:redshift_data_type, 'character varying(320)')).to eq('VARCHAR(320)')
+        expect(job.send(:redshift_data_type, 'varchar(4000)')).to eq('VARCHAR(4000)')
+        expect(job.send(:redshift_data_type, 'character varying')).to eq('VARCHAR(MAX)')
       end
     end
 
@@ -359,7 +480,20 @@ RSpec.describe RedshiftSystemTableSyncJob, type: :job do
       it 'returns the input datatype symbol' do
         expect(job.send(:redshift_data_type, 'integer')).to eq('integer')
         expect(job.send(:redshift_data_type, 'string')).to eq('string')
+        expect(job.send(:redshift_data_type, 'numeric(38,2)')).to eq('numeric(38,2)')
       end
+    end
+  end
+
+  describe '#perform' do
+    it 'names the offending table when a table fails' do
+      allow(job).to receive(:table_definitions).and_return([table])
+      allow(job).to receive(:create_target_table).and_raise(StandardError, 'boom')
+
+      expect { job.perform }.to raise_error(
+        StandardError,
+        "Error processing table #{source_table}: boom",
+      )
     end
   end
 end
