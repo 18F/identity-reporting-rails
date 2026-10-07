@@ -21,7 +21,9 @@ RSpec.describe Reporting::DemographicsMetricsReport do
 
   let(:expected_overview_table) do
     [
-      ['Report Timeframe', "#{time_range.begin} to #{time_range.end}"],
+      ['Report Timeframe',
+       "#{time_range.begin.strftime('%Y-%m-%d %H:%M')} to "\
+       "#{time_range.end.strftime('%Y-%m-%d %H:%M')}"],
       ['Report Generated', Date.current.to_s],
       ['Issuer', issuer_string],
     ]
