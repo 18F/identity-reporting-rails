@@ -33,7 +33,9 @@ RSpec.describe Reports::DemographicsMetricsReport do
       },
       {
         title: 'Overview',
-        table: [['Report Timeframe', "#{time_range.begin} to #{time_range.end}"]],
+        table: [['Report Timeframe',
+                 "#{time_range.begin.strftime('%Y-%m-%d %H:%M')} to "\
+                 "#{time_range.end.strftime('%Y-%m-%d %H:%M')}"]],
         filename: 'overview',
       },
       {

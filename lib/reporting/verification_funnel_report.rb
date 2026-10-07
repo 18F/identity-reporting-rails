@@ -79,10 +79,16 @@ module Reporting
 
     def overview_table
       [
-        ['Report Timeframe', "#{time_range.begin} to #{time_range.end}"],
+        ['Report Timeframe',
+         "#{format_timeframe(time_range.begin)} to #{format_timeframe(time_range.end)}"],
         ['Report Generated', Date.current.to_s],
         ['Issuer', issuer_string.to_s],
       ]
+    end
+
+    # Date + hour/minute only; seconds and zone add noise to the emailed table
+    def format_timeframe(time)
+      time.strftime('%Y-%m-%d %H:%M')
     end
 
     def funnel_table
