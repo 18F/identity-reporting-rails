@@ -33,8 +33,9 @@ The canonical development environment is managed by
 - A **`detect-secrets` pre-commit git hook** is configured in `devenv.nix`. It
   blocks commits containing high-entropy strings (likely secrets), checked
   against `.secrets.baseline`. Commits made by agents will run this hook. Run
-  `git commit` from within `devenv shell` — outside it the hook fails with
-  "Executable `detect-secrets-hook` not found".
+  `git commit` from within `devenv shell` — the hook is driven by `prek`, which
+  needs the environment's Python, so outside the shell it fails with
+  `Failed to run hook detect-secrets` / `Run command python hook failed`.
 - PostgreSQL and Redis are provided by devenv as services, not system installs.
   Start them with `devenv up` (see Running services).
 
@@ -60,7 +61,10 @@ whatever answers on those ports.
 - Service recovery (stale `postmaster.pid` after a crash,
   `Redis::CannotConnectError`, stale native gems after a `devenv.lock` update):
   see the Devenv section of `docs/troubleshooting.md`.
-- Service data lives under `.devenv/state/`, created on first start.
+- Service data lives under `.devenv/state/`, created on first start. Installed
+  gem sources are there too, under
+  `.devenv/state/.bundle/ruby/<ruby-abi-version>/gems/` (`BUNDLE_PATH`) — read
+  them when you need a gem's actual source rather than guessing at its API.
 
 ### Running the test suite from a clean checkout
 
@@ -208,6 +212,57 @@ Migrations are separated by database:
 When adding a migration, place it in the correct directory and confirm the
 target database. Migration linting runs via `scripts/migration_check`.
 
+### Redshift users, grants & masking
+
+`config/redshift_config.yaml` is the single file covering **every** environment
+(prod, staging, dm, and each sandbox); `%{env_name}` is interpolated at runtime.
+Two top-level sections matter:
+
+- `cluster:` — the identities, which are cluster-global: `lambda_users`,
+  `system_users` (name + Secrets Manager `secret_id`), `user_groups`, and
+  `user_roles`.
+- `databases.<db>` — the per-database schema/table GRANTs, repeating
+  `lambda_users` / `system_users` / `user_groups` by name to carry only
+  privileges. Schemas and tables are database-scoped, so this pass runs inside
+  each of `analytics` and `analytics_zetl`.
+
+`RedshiftSync` (`app/services/redshift_sync.rb`) applies it, driven by
+`RedshiftSyncJob` on a 15-minute cron — so a manual `GRANT`/`CREATE USER` from a
+console can be reverted on the next tick. Make the change in the YAML.
+
+- **dbt service users are named after their schemas** (`marts`, `qa_marts`,
+  `fraudops_marts`, `fraudops_qa_marts`), hardcoded in `dbt_user?` /
+  `dbt_user_schema?` (`redshift_sync.rb:454`). The
+  `ALTER DEFAULT PRIVILEGES FOR USER <schema> IN SCHEMA <schema>` statements
+  depend on that name equality; renaming one without the other silently drops
+  the default-privileges grant.
+- **Feature flags** (`fraud_ops_tracker_enabled`, `dw_fraudops_email_enabled`,
+  …) are resolved by `feature_enabled?` from identity-devops
+  `terraform/data-warehouse/<env>/main.tf` (or `IdentityConfig.store`). A
+  flag-gated schema drops out of `get_all_configured_schemas` when off, and that
+  set is also what revokes iterate — so in an environment where the flag is off,
+  neither the grants **nor** the revokes for that schema ever run.
+- **Column masking** config is identity-devops `bin/data-warehouse/mask.yaml`
+  (read from `/etc/login.gov/repos/identity-devops` on the instance), applied by
+  `RedshiftMaskingJob` on a 5-minute cron via `app/services/redshift_masking/*`.
+  A column listed there that does not exist in `information_schema` is a silent
+  no-op — `policy_builder.rb:24` returns no attachments and logs nothing. Check
+  the column really exists before assuming a policy is attached. `mask.yaml`
+  lists `dwadmin` under `masked` or `allowed`, never `denied`.
+- Redshift dynamic data masking is **read-time**: a view returns results under
+  the *querying* user's policies, not the view creator's. So a dbt
+  `CREATE TABLE AS` persists whatever the writing user was allowed to see —
+  masked values become real stored data in the derived table.
+- Two GoodJob workers run with different Redshift credentials (identity-devops
+  `kitchen/cookbooks/identity-analytics/recipes/web.rb`): the `admin` queue
+  connects as the Redshift `superuser`, `default`/`long_running` as
+  `rails_worker`, selected by `REDSHIFT_SECRET_SUFFIX` (default `superuser`,
+  `lib/identity_config.rb:80`). `RedshiftSyncJob` and `RedshiftMaskingJob` are
+  `queue_as :admin` because they need the superuser.
+- Config-shape guard specs go in the `redshift_config.yaml validation` block of
+  `spec/services/redshift_sync_spec.rb:1442`, which loads the real YAML rather
+  than a fixture — add invariants there, not to a new spec file.
+
 Gotchas:
 
 - **The Rails console connects as the read-only DB user by default** — writes
@@ -276,3 +331,20 @@ Pass that path with `-R`:
 
 - `glab issue list -R lg-teams/Team-Data/data-warehouse-ag`
 - `glab issue view <id> -R lg-teams/Team-Data/data-warehouse-ag --comments`
+
+### Deploys & the deployed app
+
+- Per-environment deploys track `origin/stages/<env>` (identity-devops
+  `kitchen/cookbooks/login_dot_gov/attributes/default.rb:104`), so
+  `git merge-base --is-ancestor <sha> origin/stages/prod` answers "is this
+  change in prod yet?".
+- The app runs from `/srv/reporting/current` on the analytics ASG
+  (`asg-<env>-analytics`) as GoodJob systemd workers. The console is
+  `sudo -u websrv bundle exec rails console` from that directory (the
+  `id-rails-console reporting` wrapper does this and logs the session to Slack).
+- The read-only console warning is **primary-only**: `config/application.rb:40`
+  rebinds `ActiveRecord::Base` to `:read_replica`, but
+  `DataWarehouseApplicationRecord` has its own `connects_to`, so Redshift
+  queries still run as the connection's user — `superuser` unless
+  `REDSHIFT_SECRET_SUFFIX` says otherwise. A console that looks read-only can
+  still write to the warehouse.
