@@ -112,6 +112,12 @@ RSpec.describe Reporting::VerificationFunnelReport do
         ['Report Generated', Date.current.to_s],
       )
     end
+
+    it 'formats the report timeframe to the minute, without seconds or zone' do
+      expect(report.overview_table).to include(
+        ['Report Timeframe', '2026-07-01 00:00 to 2026-07-31 23:59'],
+      )
+    end
   end
 
   describe 'formatted time bounds' do
