@@ -422,10 +422,7 @@ class RedshiftSync
     )
   end
 
-  # Reconciles the user's CONNECTION LIMIT with `connection_limit` from the config, on new and
-  # existing users alike. A current limit of 0 is never raised: it is how
-  # bin/break-glass/redshift-user-kill-switch (identity-devops) locks a user out, and restoring
-  # access is a manual step.
+  # Reconciles the user's CONNECTION LIMIT with `connection_limit` from the config
   def sync_connection_limit(user_name, connection_limit)
     return if connection_limit.nil?
 
