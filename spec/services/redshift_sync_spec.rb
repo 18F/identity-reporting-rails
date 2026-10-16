@@ -725,6 +725,94 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe '#sync_connection_limit' do
+    let(:executed_sql) { [] }
+    let(:current_limit) { 'UNLIMITED' }
+
+    before do
+      allow(mock_connection).to receive(:execute) do |sql|
+        executed_sql << sql
+        sql.include?('FROM pg_user_info') ? [{ 'useconnlimit' => current_limit }] : []
+      end
+      allow(Rails.logger).to receive(:warn)
+    end
+
+    it 'does nothing when no connection_limit is configured' do
+      sync.send(:sync_connection_limit, 'pii_reader', nil)
+
+      expect(executed_sql).to be_empty
+    end
+
+    it 'sets the configured limit when the current limit differs' do
+      sync.send(:sync_connection_limit, 'pii_reader', 4)
+
+      expect(executed_sql).to include('ALTER USER pii_reader CONNECTION LIMIT 4;')
+    end
+
+    context 'when the current limit already matches' do
+      let(:current_limit) { '4' }
+
+      it 'does not issue an ALTER USER statement' do
+        sync.send(:sync_connection_limit, 'pii_reader', 4)
+
+        expect(executed_sql.grep(/ALTER USER/)).to be_empty
+      end
+    end
+
+    context 'when the kill switch has set the limit to 0' do
+      let(:current_limit) { '0' }
+
+      it 'leaves the limit at 0 and logs a warning' do
+        sync.send(:sync_connection_limit, 'pii_reader', 4)
+
+        expect(executed_sql.grep(/ALTER USER/)).to be_empty
+        expect(Rails.logger).to have_received(:warn).
+          with(/Leaving CONNECTION LIMIT 0 on pii_reader/)
+      end
+    end
+
+    context 'when the user does not exist' do
+      let(:current_limit) { nil }
+
+      before do
+        allow(mock_connection).to receive(:execute) do |sql|
+          executed_sql << sql
+          []
+        end
+      end
+
+      it 'does not issue an ALTER USER statement' do
+        sync.send(:sync_connection_limit, 'pii_reader', 4)
+
+        expect(executed_sql.grep(/ALTER USER/)).to be_empty
+      end
+    end
+
+    it 'records an error and issues no SQL for an invalid limit' do
+      sync.send(:sync_connection_limit, 'pii_reader', 'four')
+
+      expect(executed_sql).to be_empty
+      expect(sync.errors).to include(a_string_matching(/invalid connection_limit "four"/))
+    end
+
+    it 'is called by #sync_cluster with each system user\'s configured limit' do
+      test_redshift_config['cluster']['system_users'].first['connection_limit'] = 4
+      allow(sync).to receive(:create_lambda_user_identity)
+      allow(sync).to receive(:create_system_user_identity)
+      allow(sync).to receive(:sync_connection_limit)
+      allow(sync).to receive(:create_group)
+      allow(sync).to receive(:drop_users)
+      allow(sync).to receive(:create_users).and_return([])
+      allow(sync).to receive(:sync_user_group)
+      allow(sync).to receive(:create_user_role)
+
+      sync.sync_cluster
+
+      expect(sync).to have_received(:sync_connection_limit).with('security_audit', 4)
+      expect(sync).to have_received(:sync_connection_limit).with('rails_worker', nil)
+    end
+  end
+
   describe '#apply_system_user_grants' do
     let(:schemas) do
       [

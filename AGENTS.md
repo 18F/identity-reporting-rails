@@ -219,8 +219,8 @@ target database. Migration linting runs via `scripts/migration_check`.
 Two top-level sections matter:
 
 - `cluster:` — the identities, which are cluster-global: `lambda_users`,
-  `system_users` (name + Secrets Manager `secret_id`), `user_groups`, and
-  `user_roles`.
+  `system_users` (name + Secrets Manager `secret_id`, plus an optional
+  `connection_limit`), `user_groups`, and `user_roles`.
 - `databases.<db>` — the per-database schema/table GRANTs, repeating
   `lambda_users` / `system_users` / `user_groups` by name to carry only
   privileges. Schemas and tables are database-scoped, so this pass runs inside
@@ -229,6 +229,11 @@ Two top-level sections matter:
 `RedshiftSync` (`app/services/redshift_sync.rb`) applies it, driven by
 `RedshiftSyncJob` on a 15-minute cron — so a manual `GRANT`/`CREATE USER` from a
 console can be reverted on the next tick. Make the change in the YAML.
+
+- **`connection_limit` is reconciled on every tick** with `ALTER USER`, on
+  existing users too, except that a current limit of `0` is never raised. `0`
+  is how identity-devops' `bin/break-glass/redshift-user-kill-switch` locks a
+  user out, so restoring access is a manual `ALTER USER … CONNECTION LIMIT`.
 
 - **dbt service users are named after their schemas** (`marts`, `qa_marts`,
   `fraudops_marts`, `fraudops_qa_marts`), hardcoded in `dbt_user?` /
