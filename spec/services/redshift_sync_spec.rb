@@ -788,11 +788,20 @@ RSpec.describe RedshiftSync do
       end
     end
 
-    it 'records an error and issues no SQL for an invalid limit' do
+    it 'records the error when Redshift rejects an invalid limit' do
+      allow(mock_connection).to receive(:execute) do |sql|
+        executed_sql << sql
+        if sql.start_with?('ALTER USER')
+          raise ActiveRecord::StatementInvalid, 'PG::SyntaxError: syntax error at or near "four"'
+        end
+
+        [{ 'useconnlimit' => current_limit }]
+      end
+
       sync.send(:sync_connection_limit, 'pii_reader', 'four')
 
-      expect(executed_sql).to be_empty
-      expect(sync.errors).to include(a_string_matching(/invalid connection_limit "four"/))
+      expect(executed_sql).to include('ALTER USER pii_reader CONNECTION LIMIT four;')
+      expect(sync.errors).to include(a_string_matching(/syntax error at or near "four"/))
     end
 
     it 'is called by #sync_cluster with each system user\'s configured limit' do

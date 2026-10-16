@@ -426,12 +426,6 @@ class RedshiftSync
   def sync_connection_limit(user_name, connection_limit)
     return if connection_limit.nil?
 
-    unless connection_limit.is_a?(Integer) && connection_limit >= 0
-      errors << "database=#{database}: invalid connection_limit " \
-                "#{connection_limit.inspect} for #{user_name}"
-      return
-    end
-
     current_limit = current_connection_limit(user_name)
     return if current_limit.nil? || current_limit == connection_limit.to_s
 
@@ -449,8 +443,7 @@ class RedshiftSync
     execute_query("ALTER USER #{user_name} CONNECTION LIMIT #{connection_limit};")
   end
 
-  # Returns the limit as Redshift reports it ('UNLIMITED', '0', '4', ...), or nil if the user
-  # does not exist or the lookup failed.
+  # Returns the limit as Redshift reports it ('UNLIMITED', '0', '4', ...), or nil
   def current_connection_limit(user_name)
     row = execute_query(
       "SELECT useconnlimit FROM pg_user_info WHERE usename = '#{user_name}'",
