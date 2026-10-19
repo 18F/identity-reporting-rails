@@ -50,6 +50,7 @@ class RedshiftSync
         system_user['secret_id'],
         system_user['syslog_access'],
       )
+      sync_connection_limit(system_user['user_name'], system_user['connection_limit'])
     end
 
     groups.each { |group| create_group(group['name']) }
@@ -419,6 +420,35 @@ class RedshiftSync
       "CREATE USER #{user_name} WITH PASSWORD #{password_option} " \
         "#{syslog_access_option} SESSION TIMEOUT 900;",
     )
+  end
+
+  # Reconciles the user's CONNECTION LIMIT with `connection_limit` from the config
+  def sync_connection_limit(user_name, connection_limit)
+    return if connection_limit.nil?
+
+    current_limit = current_connection_limit(user_name)
+    return if current_limit.nil? || current_limit == connection_limit.to_s
+
+    if current_limit == '0'
+      Rails.logger.warn(
+        "Leaving CONNECTION LIMIT 0 on #{user_name}: locked by the kill switch, " \
+        "restore it manually (configured limit is #{connection_limit})",
+      )
+      return
+    end
+
+    Rails.logger.info(
+      "Setting CONNECTION LIMIT #{connection_limit} on #{user_name} (was #{current_limit})",
+    )
+    execute_query("ALTER USER #{user_name} CONNECTION LIMIT #{connection_limit};")
+  end
+
+  # Returns the limit as Redshift reports it ('UNLIMITED', '0', '4', ...), or nil
+  def current_connection_limit(user_name)
+    row = execute_query(
+      "SELECT useconnlimit FROM pg_user_info WHERE usename = '#{user_name}'",
+    ).to_a.first
+    row && row['useconnlimit'].to_s.strip
   end
 
   def apply_system_user_grants(user_name, schemas)

@@ -37,6 +37,10 @@ RSpec.describe 'config/redshift_config.yaml' do
       end
     end
     boolean = ->(v) { 'must be true or false' unless [true, false].include?(v) }
+    # Pasted into ALTER USER unquoted. 0 is left to the kill switch, since the sync never raises it.
+    connection_limit = lambda do |v|
+      'must be a positive integer' unless v.is_a?(Integer) && v.positive?
+    end
     # `tables: []` grants ALL TABLES, and an empty enabled_aws_groups list drops every IAM user.
     non_empty_list = lambda do |item|
       lambda do |v|
@@ -92,6 +96,7 @@ RSpec.describe 'config/redshift_config.yaml' do
           'user_name' => identifier,
           'secret_id?' => secret_id,
           'syslog_access?' => boolean,
+          'connection_limit?' => connection_limit,
           'feature_flag?' => flag,
         }],
         'user_groups' => [{ 'name' => identifier, 'aws_groups' => env_aws_groups }],
