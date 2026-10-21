@@ -142,23 +142,41 @@ RSpec.describe Reports::PartnerReportDefault do
         expect(job.included_issuers).to eq([issuer1, issuer2])
       end
 
-      it 'returns false and logs when both included and excluded issuers are provided' do
-        expect(Rails.logger).to receive(:error).with(
-          'Failed to generate partner reports: '\
+      it 'logs and raises when both included and excluded issuers are provided' do
+        expect(job).to receive(:log_message).with(
+          :error,
+          'Failed to generate partner default reports',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            error: 'Cannot specify both included_issuers and excluded_issuers',
+            error_class: 'ArgumentError',
+          ),
+        )
+
+        expect do
+          job.perform(nil, 'v2', { included_issuers: [issuer1], excluded_issuers: [issuer2] })
+        end.to raise_error(
+          ArgumentError,
           'Cannot specify both included_issuers and excluded_issuers',
         )
-        expect(Rails.logger).to receive(:error).with(a_string_starting_with('Backtrace:'))
-        expect(
-          job.perform(nil, 'v2', { included_issuers: [issuer1], excluded_issuers: [issuer2] }),
-        ).to eq(false)
       end
 
-      it 'returns false and logs for non-string/array issuer values' do
-        expect(Rails.logger).to receive(:error).with(
-          a_string_matching(/Issuers must be a string or array of strings, got Hash/),
+      it 'logs and raises for non-string/array issuer values' do
+        expect(job).to receive(:log_message).with(
+          :error,
+          'Failed to generate partner default reports',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            error: /Issuers must be a string or array of strings, got Hash/,
+            error_class: 'ArgumentError',
+          ),
         )
-        expect(Rails.logger).to receive(:error).with(a_string_starting_with('Backtrace:'))
-        expect(job.perform(nil, 'v2', { included_issuers: { invalid: 'hash' } })).to eq(false)
+
+        expect do
+          job.perform(nil, 'v2', { included_issuers: { invalid: 'hash' } })
+        end.to raise_error(ArgumentError, /Issuers must be a string or array of strings, got Hash/)
       end
     end
   end
@@ -170,9 +188,13 @@ RSpec.describe Reports::PartnerReportDefault do
       end
 
       it 'logs warning and returns false' do
-        expect(Rails.logger).to receive(:warn).with('Redshift SIA V3 is disabled')
-        # Don't expect any error logs since this should return early
-        expect(Rails.logger).not_to receive(:error)
+        expect(job).to receive(:log_message).with(
+          :warn,
+          'Redshift SIA V3 is disabled',
+          false,
+          hash_including(job_id: job.job_id),
+        )
+        expect(job).not_to receive(:generate_and_upload_reports)
         expect(job.perform(report_date)).to eq(false)
       end
     end
@@ -189,13 +211,22 @@ RSpec.describe Reports::PartnerReportDefault do
     end
 
     context 'with an invalid report_version' do
-      it 'logs error and returns false' do
-        expect(Rails.logger).to receive(:error).with(
-          'Failed to generate partner reports: Invalid report_version: v3. '\
-          'Must be one of: v1, v2',
+      it 'logs and raises an error' do
+        expect(job).to receive(:log_message).with(
+          :error,
+          'Failed to generate partner default reports',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            error: 'Invalid report_version: v3. Must be one of: v1, v2',
+            error_class: 'ArgumentError',
+          ),
         )
-        expect(Rails.logger).to receive(:error).with(a_string_starting_with('Backtrace:'))
-        expect(job.perform(report_date, 'v3')).to eq(false)
+
+        expect { job.perform(report_date, 'v3') }.to raise_error(
+          ArgumentError,
+          'Invalid report_version: v3. Must be one of: v1, v2',
+        )
       end
     end
 
@@ -206,15 +237,19 @@ RSpec.describe Reports::PartnerReportDefault do
           and_raise(StandardError, 'No calendar entry found')
       end
 
-      it 'logs error and backtrace, then returns false' do
-        expect(Rails.logger).to receive(:error).with(
-          'Failed to generate partner reports: No calendar entry found',
+      it 'logs and raises the error' do
+        expect(job).to receive(:log_message).with(
+          :error,
+          'Failed to generate partner default reports',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            error: 'No calendar entry found',
+            error_class: 'StandardError',
+          ),
         )
-        # Also expect backtrace logging
-        expect(Rails.logger).to receive(:error).with(
-          a_string_starting_with('Backtrace:'),
-        )
-        expect(job.perform(report_date)).to eq(false)
+
+        expect { job.perform(report_date) }.to raise_error(StandardError, 'No calendar entry found')
       end
     end
 
@@ -251,20 +286,31 @@ RSpec.describe Reports::PartnerReportDefault do
         job.perform(report_date)
       end
 
-      it 'logs start message with report_date, report_version, and period_date' do
-        allow(Rails.logger).to receive(:info)
-        expect(Rails.logger).to receive(:info).with(
-          "Generating partner default monthly reports "\
-          "(#{described_class::DEFAULT_VERSION} version) "\
-          "for report date: #{report_date} (monthly report period starting on #{period_date})",
+      it 'logs start message with report_date, report_version, period_date, and job_id' do
+        allow(job).to receive(:log_message).and_call_original
+        expect(job).to receive(:log_message).with(
+          :info,
+          'Generating partner default reports',
+          true,
+          hash_including(
+            job_id: job.job_id,
+            report_date: report_date.to_date.to_s,
+            report_version: described_class::DEFAULT_VERSION,
+            period_date: period_date,
+          ),
         )
 
         job.perform(report_date)
       end
 
       it 'logs completion message' do
-        allow(Rails.logger).to receive(:info)
-        expect(Rails.logger).to receive(:info).with('Completed partner default monthly report')
+        allow(job).to receive(:log_message).and_call_original
+        expect(job).to receive(:log_message).with(
+          :info,
+          'Completed partner default report',
+          true,
+          hash_including(job_id: job.job_id),
+        )
 
         job.perform(report_date)
       end
@@ -286,9 +332,14 @@ RSpec.describe Reports::PartnerReportDefault do
 
       it 'logs upload summary' do
         allow(job).to receive(:upload_to_s3)
-        allow(Rails.logger).to receive(:info)
+        allow(job).to receive(:log_message).and_call_original
 
-        expect(Rails.logger).to receive(:info).with('Upload summary: 2 successful, 0 skipped')
+        expect(job).to receive(:log_message).with(
+          :info,
+          'Partner default report upload summary',
+          true,
+          hash_including(job_id: job.job_id, uploaded_count: 2, skipped_upload_count: 0),
+        )
 
         job.perform(report_date)
       end
@@ -344,14 +395,20 @@ RSpec.describe Reports::PartnerReportDefault do
         )
       end
 
-      it 'logs error and returns false' do
-        expect(Rails.logger).to receive(:error).with(
-          "Failed to generate partner reports: #{error_message}",
+      it 'logs and raises the error' do
+        allow(job).to receive(:log_message).and_call_original
+        expect(job).to receive(:log_message).with(
+          :error,
+          'Failed to generate partner default reports',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            error: error_message,
+            error_class: 'StandardError',
+          ),
         )
-        expect(Rails.logger).to receive(:error).with(
-          a_string_starting_with('Backtrace:'),
-        )
-        expect(job.perform(report_date)).to eq(false)
+
+        expect { job.perform(report_date) }.to raise_error(StandardError, error_message)
       end
     end
 
@@ -364,15 +421,21 @@ RSpec.describe Reports::PartnerReportDefault do
         )
       end
 
-      it 'logs error and returns false without generating reports' do
-        expect(Rails.logger).to receive(:error).with(
-          "Failed to generate partner reports: #{error_message}",
-        )
-        expect(Rails.logger).to receive(:error).with(
-          a_string_starting_with('Backtrace:'),
+      it 'logs and raises without generating reports' do
+        allow(job).to receive(:log_message).and_call_original
+        expect(job).to receive(:log_message).with(
+          :error,
+          'Failed to generate partner default reports',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            error: error_message,
+            error_class: 'StandardError',
+          ),
         )
         expect(mock_partner_report).not_to receive(:generate_reports)
-        expect(job.perform(report_date)).to eq(false)
+
+        expect { job.perform(report_date) }.to raise_error(StandardError, error_message)
       end
     end
 
@@ -384,15 +447,25 @@ RSpec.describe Reports::PartnerReportDefault do
       end
 
       it 'skips nil issuer reports and logs warnings' do
-        allow(Rails.logger).to receive(:info)
-        allow(Rails.logger).to receive(:warn)
+        allow(job).to receive(:log_message).and_call_original
 
-        expect(Rails.logger).to receive(:info).with('Upload summary: 1 successful, 2 skipped')
-
-        expect(Rails.logger).to receive(:warn).with(
-          "Skipped uploads:\n" \
-          "- #{issuer2}: report generation failed and returned nil\n" \
-          "- #{issuer3}: report generation failed and returned nil",
+        expect(job).to receive(:log_message).with(
+          :info,
+          'Partner default report upload summary',
+          true,
+          hash_including(job_id: job.job_id, uploaded_count: 1, skipped_upload_count: 2),
+        )
+        expect(job).to receive(:log_message).with(
+          :warn,
+          'Skipped partner default report uploads',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            skipped_uploads: [
+              "#{issuer2}: report generation failed and returned nil",
+              "#{issuer3}: report generation failed and returned nil",
+            ],
+          ),
         )
 
         # Should only upload issuer1
@@ -422,15 +495,39 @@ RSpec.describe Reports::PartnerReportDefault do
         )
       end
 
-      it 'skips upload and logs error when service_provider_id is missing' do
-        allow(Rails.logger).to receive(:info)
-        expect(Rails.logger).to receive(:info).with('Upload summary: 0 successful, 1 skipped')
-        expect(Rails.logger).to receive(:warn).with(
-          "Skipped uploads:\n" \
-          "- #{issuer1}: missing service_provider_id",
+      it 'logs and raises when every issuer upload is skipped' do
+        allow(job).to receive(:log_message).and_call_original
+        expect(job).to receive(:log_message).with(
+          :info,
+          'Partner default report upload summary',
+          true,
+          hash_including(job_id: job.job_id, uploaded_count: 0, skipped_upload_count: 1),
+        )
+        expect(job).to receive(:log_message).with(
+          :warn,
+          'Skipped partner default report uploads',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            skipped_uploads: ["#{issuer1}: missing service_provider_id"],
+          ),
+        )
+        expect(job).to receive(:log_message).with(
+          :error,
+          'Failed to generate partner default reports',
+          false,
+          hash_including(
+            job_id: job.job_id,
+            error: 'Partner default report failed because no issuer reports were uploaded',
+            error_class: 'StandardError',
+          ),
         )
         expect(job).not_to receive(:upload_to_s3)
-        job.perform(report_date)
+
+        expect { job.perform(report_date) }.to raise_error(
+          StandardError,
+          'Partner default report failed because no issuer reports were uploaded',
+        )
       end
     end
 
@@ -463,27 +560,36 @@ RSpec.describe Reports::PartnerReportDefault do
       end
 
       it 'logs included issuers when provided' do
-        allow(Rails.logger).to receive(:info)
-        expect(Rails.logger).to receive(:info).with(
-          "Filtering to include only issuers: #{issuer1}, #{issuer2}",
+        allow(job).to receive(:log_message).and_call_original
+        expect(job).to receive(:log_message).with(
+          :info,
+          'Filtering partner default report to included issuers',
+          true,
+          hash_including(job_id: job.job_id, included_issuers: [issuer1, issuer2]),
         )
         job.perform(report_date, 'v2', { included_issuers: [issuer1, issuer2] })
       end
 
       it 'logs excluded issuers when provided' do
-        allow(Rails.logger).to receive(:info)
-        expect(Rails.logger).to receive(:info).with(
-          "Filtering to exclude issuers: #{issuer3}",
+        allow(job).to receive(:log_message).and_call_original
+        expect(job).to receive(:log_message).with(
+          :info,
+          'Filtering partner default report to exclude issuers',
+          true,
+          hash_including(job_id: job.job_id, excluded_issuers: [issuer3]),
         )
         job.perform(report_date, 'v2', { excluded_issuers: [issuer3] })
       end
       it 'warns about requested issuers not found in report data' do
-        allow(Rails.logger).to receive(:warn)
+        allow(job).to receive(:log_message).and_call_original
         allow(mock_partner_report).to receive(:generate_reports).and_return(
           { issuer1 => sample_report_data[issuer1] },
         )
-        expect(Rails.logger).to receive(:warn).with(
-          "Requested issuers not found in report data: #{issuer2}",
+        expect(job).to receive(:log_message).with(
+          :warn,
+          'Requested issuers not found in partner default report data',
+          false,
+          hash_including(job_id: job.job_id, missing_issuers: [issuer2]),
         )
         job.perform(report_date, 'v2', { included_issuers: [issuer1, issuer2] })
       end
@@ -619,7 +725,7 @@ RSpec.describe Reports::PartnerReportDefault do
 
     context 'when all service provider IDs exist in mapping' do
       it 'does not log any warnings' do
-        expect(Rails.logger).not_to receive(:warn)
+        expect(job).not_to receive(:log_message)
         job.send(:validate_service_provider_ids, sample_report_data, complete_mapping)
       end
     end
@@ -633,8 +739,11 @@ RSpec.describe Reports::PartnerReportDefault do
       end
 
       it 'logs warning for missing service provider IDs' do
-        expect(Rails.logger).to receive(:warn).with(
-          "Service provider ID 456 for issuer '#{issuer2}' not found in issuer mapping",
+        expect(job).to receive(:log_message).with(
+          :warn,
+          'Service provider ID for issuer not found in issuer mapping',
+          false,
+          hash_including(job_id: job.job_id, issuer: issuer2, service_provider_id: 456),
         )
         job.send(:validate_service_provider_ids, sample_report_data, incomplete_mapping)
       end
@@ -652,7 +761,7 @@ RSpec.describe Reports::PartnerReportDefault do
         # Note - this is logged at the data fetch/format level when data is missing/corrupted
         # We are not logging it again during the validate_service_provider_ids method, which has a
         # different scope
-        expect(Rails.logger).not_to receive(:warn)
+        expect(job).not_to receive(:log_message)
         job.send(:validate_service_provider_ids, report_data_with_nils, complete_mapping)
       end
     end
@@ -671,7 +780,7 @@ RSpec.describe Reports::PartnerReportDefault do
       end
 
       it 'skips entries with missing service_provider_id' do
-        expect(Rails.logger).not_to receive(:warn)
+        expect(job).not_to receive(:log_message)
         job.send(:validate_service_provider_ids, report_data_missing_id, complete_mapping)
       end
     end
@@ -697,8 +806,11 @@ RSpec.describe Reports::PartnerReportDefault do
     end
 
     it 'logs successful upload' do
-      expect(Rails.logger).to receive(:info).with(
-        'Uploaded issuer mapping to S3: issuers_service_provider_id.json',
+      expect(job).to receive(:log_message).with(
+        :info,
+        'Uploaded issuer mapping to S3',
+        true,
+        hash_including(job_id: job.job_id, s3_path: 'issuers_service_provider_id.json'),
       )
       job.send(:upload_issuer_mapping_to_s3, mapping_data)
     end

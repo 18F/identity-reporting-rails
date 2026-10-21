@@ -47,42 +47,73 @@ module Reports
       end
 
       unless IdentityConfig.store.redshift_sia_v3_enabled
-        Rails.logger.warn 'Redshift SIA V3 is disabled'
+        log_message(:warn, 'Redshift SIA V3 is disabled', false, log_context)
         return false
       end
       unless IdentityConfig.store.s3_reports_enabled
-        Rails.logger.warn 'S3 reports are disabled'
+        log_message(:warn, 'S3 reports are disabled', false, log_context)
         return false
       end
 
       @report_date = report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
 
-      Rails.logger.info "Generating partner default #{REPORT_CADENCE} reports (#{@report_version} "\
-                        "version) for report date: #{@report_date} (#{REPORT_CADENCE} "\
-                        "report period starting on #{period_date})"
+      log_message(
+        :info,
+        'Generating partner default reports',
+        true,
+        log_context(period_date: period_date),
+      )
 
       # Wait 10 seconds to allow user to cancel job if they realize they ran it with the wrong date
       # This hopefully prevents accidental population of reports manually for wrong dates
-      Rails.logger.info 'Waiting 10 seconds before generating reports... (cancel if date is wrong)'
+      log_message(
+        :info,
+        'Waiting before generating reports so manual runs can be canceled if needed',
+        true,
+        log_context(wait_seconds: 10),
+      )
       sleep 10
 
       if @included_issuers&.any?
-        Rails.logger.info "Filtering to include only issuers: #{@included_issuers.join(', ')}"
+        log_message(
+          :info,
+          'Filtering partner default report to included issuers',
+          true,
+          log_context(included_issuers: @included_issuers),
+        )
       elsif @excluded_issuers&.any?
-        Rails.logger.info "Filtering to exclude issuers: #{@excluded_issuers.join(', ')}"
+        log_message(
+          :info,
+          'Filtering partner default report to exclude issuers',
+          true,
+          log_context(excluded_issuers: @excluded_issuers),
+        )
       end
 
       generate_and_upload_reports(@report_date)
-      Rails.logger.info "Completed partner default #{REPORT_CADENCE} report"
+      log_message(:info, 'Completed partner default report', true, log_context)
 
       true
     rescue StandardError => e
-      Rails.logger.error "Failed to generate partner reports: #{e.message}"
-      Rails.logger.error "Backtrace: #{e.backtrace.join("\n")}"
-      false
+      log_message(
+        :error,
+        'Failed to generate partner default reports',
+        false,
+        log_context(error: e.message, error_class: e.class.name),
+      )
+      raise
     end
 
     private
+
+    def log_context(extra = {})
+      {
+        job_id: job_id,
+        report_cadence: REPORT_CADENCE,
+        report_version: @report_version,
+        report_date: @report_date&.to_date&.to_s,
+      }.merge(extra)
+    end
 
     def generate_and_upload_reports(report_date)
       reporter_class = case @report_version
@@ -108,7 +139,12 @@ module Reports
       if @included_issuers&.any?
         missing = @included_issuers - issuer_reports.keys
         if missing.any?
-          Rails.logger.warn "Requested issuers not found in report data: #{missing.join(', ')}"
+          log_message(
+            :warn,
+            'Requested issuers not found in partner default report data',
+            false,
+            log_context(missing_issuers: missing),
+          )
         end
       end
 
@@ -146,13 +182,24 @@ module Reports
         end
       end
 
-      Rails.logger.info(
-        "Upload summary: #{uploaded_count} successful, #{skipped_uploads.count} skipped",
+      log_message(
+        :info,
+        'Partner default report upload summary',
+        true,
+        log_context(uploaded_count: uploaded_count, skipped_upload_count: skipped_uploads.count),
       )
 
       if skipped_uploads.any?
-        Rails.logger.warn "Skipped uploads:\n"\
-                          "#{skipped_uploads.map { |skip| "- #{skip}" }.join("\n")}"
+        log_message(
+          :warn,
+          'Skipped partner default report uploads',
+          false,
+          log_context(skipped_uploads: skipped_uploads),
+        )
+      end
+
+      if uploaded_count.zero?
+        raise StandardError, 'Partner default report failed because no issuer reports were uploaded'
       end
     end
 
@@ -201,8 +248,12 @@ module Reports
         next if service_provider_id.nil?
 
         unless mapping_ids.include?(Integer(service_provider_id, exception: false))
-          Rails.logger.warn "Service provider ID #{service_provider_id} for issuer "\
-                            "'#{issuer}' not found in issuer mapping"
+          log_message(
+            :warn,
+            'Service provider ID for issuer not found in issuer mapping',
+            false,
+            log_context(issuer: issuer, service_provider_id: service_provider_id),
+          )
         end
       end
     end
@@ -218,7 +269,12 @@ module Reports
           content_type: 'application/json',
           bucket: bucket_name,
         )
-        Rails.logger.info "Uploaded issuer mapping to S3: #{path}"
+        log_message(
+          :info,
+          'Uploaded issuer mapping to S3',
+          true,
+          log_context(s3_path: path),
+        )
       end
     end
 
