@@ -29,7 +29,7 @@ module Reports
     def perform(perform_run_date = nil, perform_days_back_for_time_period = nil,
                 perform_time_frame = nil)
       unless IdentityConfig.store.redshift_sia_v3_enabled
-        Rails.logger.warn 'Redshift SIA V3 is disabled'
+        log_message(:warn, 'Redshift SIA V3 is disabled', false, log_context)
         return false
       end
 
@@ -43,13 +43,21 @@ module Reports
 
       issuer_strings = report_configs
       if issuer_strings.nil? || issuer_strings.empty?
-        Rails.logger.error 'demographics_metrics_s3_report_configs is empty or nil - no work to do'
+        log_message(
+          :error,
+          'demographics_metrics_s3_report_configs is empty or nil - no work to do',
+          false,
+          log_context,
+        )
         raise ArgumentError, 'No issuer configurations found in'\
                              ' demographics_metrics_s3_report_configs'
       end
-      Rails.logger.info "Starting #{report_type}-facing #{@time_frame} demographics metrics "\
-                        "report generation for #{issuer_strings.length} issuers "\
-                        "#{report_time_range.begin.to_date} to #{report_time_range.end.to_date}"
+      log_message(
+        :info,
+        'Starting demographics metrics report generation',
+        true,
+        log_context(issuer_count: issuer_strings.length),
+      )
 
       failed_issuers = []
       issuer_strings.each do |issuer_config|
@@ -57,22 +65,66 @@ module Reports
           generate_and_upload_report_for_issuer(issuer_config)
         rescue StandardError => err
           issuer_string = issuer_config['issuer_string']
-          Rails.logger.error "Failed to generate demographics report for issuer"\
-                             " #{issuer_string}: #{err.message}"
+          log_message(
+            :error,
+            'Failed to generate demographics report for issuer',
+            false,
+            log_context(
+              issuer: issuer_string,
+              error: err.message,
+              error_class: err.class.name,
+            ),
+          )
           failed_issuers << issuer_string
         end
       end
 
-      if failed_issuers.any?
-        Rails.logger.warn "Demographics report generation completed with #{failed_issuers.length}"\
-                          " failures: #{failed_issuers.join(', ')}"
+      if failed_issuers.length == issuer_strings.length
+        log_message(
+          :error,
+          'Demographics report generation failed for all issuers',
+          false,
+          log_context(
+            issuer_count: issuer_strings.length,
+            failed_issuer_count: failed_issuers.length,
+            failed_issuers: failed_issuers,
+          ),
+        )
+        raise StandardError,
+              "Demographics metrics report failed for all #{issuer_strings.length} issuer(s): "\
+              "#{failed_issuers.join(', ')}"
+      elsif failed_issuers.any?
+        log_message(
+          :warn,
+          'Demographics report generation completed with failures',
+          false,
+          log_context(
+            issuer_count: issuer_strings.length,
+            failed_issuer_count: failed_issuers.length,
+            failed_issuers: failed_issuers,
+          ),
+        )
       else
-        Rails.logger.info 'Completed demographics metrics report generation'\
-                          ' for all issuers successfully'
+        log_message(
+          :info,
+          'Completed demographics metrics report generation for all issuers successfully',
+          true,
+          log_context(issuer_count: issuer_strings.length),
+        )
       end
     end
 
     private
+
+    def log_context(extra = {})
+      {
+        job_id: job_id,
+        time_frame: @time_frame,
+        report_type: report_type,
+        period_start: report_time_range.begin.to_date.to_s,
+        period_end: report_time_range.end.to_date.to_s,
+      }.merge(extra)
+    end
 
     def assign_parameters(run_date, days_back, time_frame)
       @run_date = run_date || Time.zone.now
@@ -91,16 +143,28 @@ module Reports
                             "greater than 90 days."
       end
       if run_date.to_date < SCHEMA_CUTOFF_DATE
-        Rails.logger.warn "Running demographics report for #{run_date.to_date}, which is before "\
-                          "#{SCHEMA_CUTOFF_DATE}. App log data schema assumptions may be invalid "\
-                          "before this date."
+        log_message(
+          :warn,
+          'Running demographics report before schema cutoff date',
+          false,
+          {
+            job_id: respond_to?(:job_id) ? job_id : nil,
+            run_date: run_date.to_date.to_s,
+            schema_cutoff_date: SCHEMA_CUTOFF_DATE.to_s,
+          },
+        )
       end
     end
 
     def generate_and_upload_report_for_issuer(issuer_config)
       issuer_string = issuer_config['issuer_string']
 
-      Rails.logger.info "Generating demographics report for issuer: #{issuer_string}"
+      log_message(
+        :info,
+        'Generating demographics report for issuer',
+        true,
+        log_context(issuer: issuer_string),
+      )
 
       # Get service provider ID for this issuer (from IssuerStringToSpIdHelper)
       sp_id = get_sp_id_for_issuer(issuer_string)
@@ -117,7 +181,12 @@ module Reports
         upload_to_s3(table, sp_id: sp_id, filename: filename)
       end
 
-      Rails.logger.info "Completed demographics report for issuer: #{issuer_string}"
+      log_message(
+        :info,
+        'Completed demographics report for issuer',
+        true,
+        log_context(issuer: issuer_string, sp_id: sp_id, report_count: reports.length),
+      )
     end
 
     def demographics_reports_for_issuer(issuer_string)
@@ -207,7 +276,12 @@ module Reports
             content_type: 'text/csv',
             bucket: bucket_name,
           )
-          Rails.logger.info "Uploaded #{generated_filename} to S3: #{full_path}"
+          log_message(
+            :info,
+            'Uploaded demographics report to S3',
+            true,
+            log_context(sp_id: sp_id, filename: generated_filename, s3_path: full_path),
+          )
         end
       end
     end

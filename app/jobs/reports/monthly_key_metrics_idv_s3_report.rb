@@ -19,12 +19,12 @@ module Reports
 
     def perform(perform_report_date = nil)
       unless IdentityConfig.store.redshift_sia_v3_enabled
-        Rails.logger.warn "#{REPORT_NAME}: Redshift SIA V3 is disabled"
+        log_message(:warn, 'Redshift SIA V3 is disabled', false, log_context)
         return false
       end
 
       unless IdentityConfig.store.s3_reports_enabled
-        Rails.logger.warn "#{REPORT_NAME}: S3 reports are disabled"
+        log_message(:warn, 'S3 reports are disabled', false, log_context)
         return false
       end
 
@@ -42,8 +42,11 @@ module Reports
       # local timestamps rolling into the next UTC day.
       @report_date = @report_date.to_date.in_time_zone('UTC')
 
-      Rails.logger.info(
-        "#{REPORT_NAME}: generating IDV key metrics reports for #{report_date.to_date}",
+      log_message(
+        :info,
+        'Generating IDV key metrics reports',
+        true,
+        log_context,
       )
 
       upload_to_s3(
@@ -56,10 +59,17 @@ module Reports
         filename: PROOFING_RATE_FILENAME,
       )
 
-      Rails.logger.info("#{REPORT_NAME}: finished uploading reports to S3")
+      log_message(:info, 'Finished uploading IDV key metrics reports to S3', true, log_context)
     end
 
     private
+
+    def log_context(extra = {})
+      {
+        job_id: job_id,
+        report_date: @report_date&.to_date&.to_s,
+      }.merge(extra)
+    end
 
     def condensed_idv_table
       report = monthly_idv_report
@@ -136,7 +146,12 @@ module Reports
 
     def upload_to_s3(report_body, filename:)
       unless bucket_name.present?
-        Rails.logger.warn "#{REPORT_NAME}: bucket_name is blank, skipping upload"
+        log_message(
+          :warn,
+          'Bucket name is blank, skipping IDV key metrics report upload',
+          false,
+          log_context(filename: filename),
+        )
         return
       end
 
@@ -148,7 +163,12 @@ module Reports
           bucket: bucket_name,
         )
 
-        Rails.logger.info "#{REPORT_NAME}: uploaded #{filename} to #{path}"
+        log_message(
+          :info,
+          'Uploaded IDV key metrics report to S3',
+          true,
+          log_context(filename: filename, s3_path: path),
+        )
       end
     end
 

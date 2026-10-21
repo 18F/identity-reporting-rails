@@ -98,7 +98,12 @@ RSpec.describe Reports::DemographicsMetricsReport do
 
     it 'logs warning for dates before schema cutoff' do
       old_date = Time.zone.parse('2025-09-15')
-      expect(Rails.logger).to receive(:warn).with(/Running demographics report for 2025-09-15/)
+      expect_any_instance_of(described_class).to receive(:log_message).with(
+        :warn,
+        'Running demographics report before schema cutoff date',
+        false,
+        hash_including(run_date: '2025-09-15', schema_cutoff_date: '2025-10-01'),
+      )
       described_class.new(old_date, 4, 'quarterly')
     end
   end
@@ -110,7 +115,12 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'logs warning and returns false' do
-        expect(Rails.logger).to receive(:warn).with('Redshift SIA V3 is disabled')
+        expect(report).to receive(:log_message).with(
+          :warn,
+          'Redshift SIA V3 is disabled',
+          false,
+          hash_including(job_id: report.job_id),
+        )
         expect(report.perform).to eq(false)
       end
     end
@@ -134,8 +144,11 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'logs error and raises ArgumentError' do
-        expect(Rails.logger).to receive(:error).with(
+        expect(report).to receive(:log_message).with(
+          :error,
           'demographics_metrics_s3_report_configs is empty or nil - no work to do',
+          false,
+          hash_including(job_id: report.job_id),
         )
 
         expect { report.perform }.to raise_error(
@@ -233,22 +246,39 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'logs start and completion messages' do
-        allow(Rails.logger).to receive(:info)
+        allow(report).to receive(:log_message).and_call_original
 
-        # Internal because current date is May 20th, which is in the middle of Q2
-        expect(Rails.logger).to receive(:info).with(
-          /Starting internal-facing quarterly demographics/,
+        expect(report).to receive(:log_message).with(
+          :info,
+          'Starting demographics metrics report generation',
+          true,
+          hash_including(job_id: report.job_id, issuer_count: 2),
         )
-        expect(Rails.logger).to receive(:info).with(
-          'Generating demographics report for issuer: '\
-          'urn:gov:gsa:openidconnect.profiles:sp:sso:ssa:sample_app',
+        expect(report).to receive(:log_message).with(
+          :info,
+          'Generating demographics report for issuer',
+          true,
+          hash_including(
+            job_id: report.job_id,
+            issuer: 'urn:gov:gsa:openidconnect.profiles:sp:sso:ssa:sample_app',
+          ),
         )
-        expect(Rails.logger).to receive(:info).with(
-          'Completed demographics report for issuer: '\
-          'urn:gov:gsa:openidconnect.profiles:sp:sso:ssa:sample_app',
+        expect(report).to receive(:log_message).with(
+          :info,
+          'Completed demographics report for issuer',
+          true,
+          hash_including(
+            job_id: report.job_id,
+            issuer: 'urn:gov:gsa:openidconnect.profiles:sp:sso:ssa:sample_app',
+            sp_id: 123,
+            report_count: 4,
+          ),
         )
-        expect(Rails.logger).to receive(:info).with(
+        expect(report).to receive(:log_message).with(
+          :info,
           'Completed demographics metrics report generation for all issuers successfully',
+          true,
+          hash_including(job_id: report.job_id, issuer_count: 2),
         )
 
         report.perform(report_date, days_back, time_frame)
@@ -284,13 +314,25 @@ RSpec.describe Reports::DemographicsMetricsReport do
       end
 
       it 'logs error and continues processing other issuers' do
-        expect(Rails.logger).to receive(:error).with(
-          /Failed to generate demographics report for issuer.*ssa:sample_app/,
+        allow(report).to receive(:log_message).and_call_original
+        expect(report).to receive(:log_message).with(
+          :error,
+          'Failed to generate demographics report for issuer',
+          false,
+          hash_including(
+            job_id: report.job_id,
+            issuer: 'urn:gov:gsa:openidconnect.profiles:sp:sso:ssa:sample_app',
+            error: error_message,
+            error_class: 'StandardError',
+          ),
         )
-        expect(Rails.logger).to receive(:warn).with(
-          /Demographics report generation completed with 1 failures/,
+        expect(report).to receive(:log_message).with(
+          :warn,
+          'Demographics report generation completed with failures',
+          false,
+          hash_including(job_id: report.job_id, failed_issuer_count: 1),
         )
-        # Should not raise error
+
         expect { report.perform(report_date) }.not_to raise_error
       end
     end
@@ -302,15 +344,53 @@ RSpec.describe Reports::DemographicsMetricsReport do
         ).and_return(nil)
       end
 
-      it 'raises StandardError and logs failure' do
-        expect(Rails.logger).to receive(:error).with(
-          /Failed to generate demographics report for issuer.*No service provider ID found/,
+      it 'logs the issuer failure and continues when another issuer succeeds' do
+        allow(report).to receive(:log_message).and_call_original
+        expect(report).to receive(:log_message).with(
+          :error,
+          'Failed to generate demographics report for issuer',
+          false,
+          hash_including(
+            job_id: report.job_id,
+            issuer: 'urn:gov:gsa:openidconnect.profiles:sp:sso:ssa:sample_app',
+            error: /No service provider ID found/,
+            error_class: 'StandardError',
+          ),
+        )
+        expect(report).to receive(:log_message).with(
+          :warn,
+          'Demographics report generation completed with failures',
+          false,
+          hash_including(job_id: report.job_id, failed_issuer_count: 1),
         )
 
-        expect(Rails.logger).to receive(:warn).with(
-          /Demographics report generation completed with 1 failures/,
+        expect { report.perform(report_date) }.not_to raise_error
+      end
+    end
+
+    context 'when all configured issuers fail' do
+      before do
+        allow(report).to receive(:get_sp_id_for_issuer).and_return(nil)
+      end
+
+      it 'logs and raises so GoodJob records the failure' do
+        allow(report).to receive(:log_message).and_call_original
+        expect(report).to receive(:log_message).with(
+          :error,
+          'Demographics report generation failed for all issuers',
+          false,
+          hash_including(
+            job_id: report.job_id,
+            issuer_count: 2,
+            failed_issuer_count: 2,
+            failed_issuers: mock_report_configs.map { |config| config['issuer_string'] },
+          ),
         )
-        report.perform(report_date)
+
+        expect { report.perform(report_date) }.to raise_error(
+          StandardError,
+          /Demographics metrics report failed for all 2 issuer\(s\)/,
+        )
       end
     end
   end

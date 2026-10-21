@@ -68,8 +68,11 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
       end
 
       it 'logs a warning and returns false' do
-        expect(Rails.logger).to receive(:warn).with(
-          "#{described_class::REPORT_NAME}: Redshift SIA V3 is disabled",
+        expect(report).to receive(:log_message).with(
+          :warn,
+          'Redshift SIA V3 is disabled',
+          false,
+          hash_including(job_id: report.job_id),
         )
         expect(report.perform(report_date)).to eq(false)
       end
@@ -86,8 +89,11 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
       end
 
       it 'logs a warning and returns false' do
-        expect(Rails.logger).to receive(:warn).with(
-          "#{described_class::REPORT_NAME}: S3 reports are disabled",
+        expect(report).to receive(:log_message).with(
+          :warn,
+          'S3 reports are disabled',
+          false,
+          hash_including(job_id: report.job_id),
         )
         expect(report.perform(report_date)).to eq(false)
       end
@@ -180,10 +186,19 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
       end
 
       it 'logs start and completion messages' do
-        allow(Rails.logger).to receive(:info)
+        allow(report).to receive(:log_message).and_call_original
 
-        expect(Rails.logger).to receive(:info).with(
-          "#{described_class::REPORT_NAME}: finished uploading reports to S3",
+        expect(report).to receive(:log_message).with(
+          :info,
+          'Generating IDV key metrics reports',
+          true,
+          hash_including(job_id: report.job_id, report_date: report_date.to_date.to_s),
+        )
+        expect(report).to receive(:log_message).with(
+          :info,
+          'Finished uploading IDV key metrics reports to S3',
+          true,
+          hash_including(job_id: report.job_id, report_date: report_date.to_date.to_s),
         )
 
         report.perform(report_date)
@@ -193,9 +208,25 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
         before { allow(report).to receive(:bucket_name).and_return(nil) }
 
         it 'logs a warning and skips upload' do
-          expect(Rails.logger).to receive(:warn).with(
-            "#{described_class::REPORT_NAME}: bucket_name is blank, skipping upload",
-          ).twice
+          allow(report).to receive(:log_message).and_call_original
+          expect(report).to receive(:log_message).with(
+            :warn,
+            'Bucket name is blank, skipping IDV key metrics report upload',
+            false,
+            hash_including(
+              job_id: report.job_id,
+              filename: described_class::CONDENSED_IDV_FILENAME,
+            ),
+          )
+          expect(report).to receive(:log_message).with(
+            :warn,
+            'Bucket name is blank, skipping IDV key metrics report upload',
+            false,
+            hash_including(
+              job_id: report.job_id,
+              filename: described_class::PROOFING_RATE_FILENAME,
+            ),
+          )
           expect(report).not_to receive(:upload_file_to_s3_bucket)
 
           report.perform(report_date)
