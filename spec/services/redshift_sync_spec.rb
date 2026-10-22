@@ -575,19 +575,35 @@ RSpec.describe RedshiftSync do
       expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA idp TO marts')
     end
 
-    it 'grants quicksight_connector access to existing and future marts tables' do
-      allow(sync).to receive(:user_exists?).with('marts').and_return(true)
+    it 'grants quicksight_connector access to existing and future intended marts tables' do
+      %w[marts qa_marts].each do |schema_name|
+        allow(sync).to receive(:user_exists?).with(schema_name).and_return(true)
+        sql = sync.send(
+          :create_system_user_privileges, 'quicksight_connector', schema_name, 'USAGE',
+          'SELECT', nil
+        )
+
+        expect(sql).to include(
+          "GRANT SELECT ON ALL TABLES IN SCHEMA #{schema_name} TO quicksight_connector",
+        )
+        default_privilege_sql = format(
+          'ALTER DEFAULT PRIVILEGES FOR USER %<schema>s IN SCHEMA %<schema>s ' \
+          'GRANT SELECT ON TABLES TO quicksight_connector',
+          schema: schema_name,
+        )
+        expect(sql).to include(default_privilege_sql)
+      end
+    end
+
+    it 'does not grant quicksight_connector access to existing fraudops marts tables' do
+      allow(sync).to receive(:user_exists?).with('fraudops_marts').and_return(true)
       sql = sync.send(
-        :create_system_user_privileges, 'quicksight_connector', 'marts', 'USAGE',
+        :create_system_user_privileges, 'quicksight_connector', 'fraudops_marts', 'USAGE',
         'SELECT', nil
       )
 
-      expect(sql).to include(
-        'GRANT SELECT ON ALL TABLES IN SCHEMA marts TO quicksight_connector',
-      )
-      expect(sql).to include(
-        'ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts ' \
-        'GRANT SELECT ON TABLES TO quicksight_connector',
+      expect(sql).not_to include(
+        'GRANT SELECT ON ALL TABLES IN SCHEMA fraudops_marts TO quicksight_connector',
       )
     end
 
