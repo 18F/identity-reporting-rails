@@ -575,7 +575,23 @@ RSpec.describe RedshiftSync do
       expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA idp TO marts')
     end
 
-    it 'uses ALTER DEFAULT PRIVILEGES for a non-DBT user reading a DBT schema when owner exists' do
+    it 'grants quicksight_connector access to existing and future marts tables' do
+      allow(sync).to receive(:user_exists?).with('marts').and_return(true)
+      sql = sync.send(
+        :create_system_user_privileges, 'quicksight_connector', 'marts', 'USAGE',
+        'SELECT', nil
+      )
+
+      expect(sql).to include(
+        'GRANT SELECT ON ALL TABLES IN SCHEMA marts TO quicksight_connector',
+      )
+      expect(sql).to include(
+        'ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts ' \
+        'GRANT SELECT ON TABLES TO quicksight_connector',
+      )
+    end
+
+    it 'uses ALTER DEFAULT PRIVILEGES for other non-DBT users reading a DBT schema' do
       allow(sync).to receive(:user_exists?).with('marts').and_return(true)
       sql = sync.send(
         :create_system_user_privileges, 'rails_worker', 'marts', 'USAGE',
