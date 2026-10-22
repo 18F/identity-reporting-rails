@@ -507,7 +507,7 @@ class RedshiftSync
     return sql if tables.blank? && dbt_user?(user_name) && user_name == schema_name
 
     if tables.blank? && dbt_user_schema?(schema_name) && user_exists?(schema_name)
-      if user_name == 'quicksight_connector' && schema_name == 'marts'
+      if user_name == 'quicksight_connector' && %w[marts qa_marts].include?(schema_name)
         sql += <<~SQL
           GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO #{user_name};
         SQL
