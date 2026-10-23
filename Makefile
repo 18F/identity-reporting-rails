@@ -81,7 +81,7 @@ lint_migrations:
 
 lint_gemfile_lock: Gemfile Gemfile.lock ## Lints the Gemfile and its lockfile
 	@bundle check
-	@git diff --quiet HEAD -- Gemfile.lock || (echo "Error: There are uncommitted changes after running 'bundle install'"; exit 1)
+	@(git diff --cached --quiet HEAD -- Gemfile.lock && git diff --quiet -- Gemfile.lock) || (echo "Error: There are uncommitted changes after running 'bundle install'"; exit 1)
 
 lint_lockfiles: lint_gemfile_lock ## Lints to ensure lockfiles are in sync
 
