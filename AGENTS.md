@@ -27,7 +27,8 @@ The canonical development environment is managed by
 - `.envrc` runs `use devenv`, so entering the repo directory activates the
   environment automatically (`direnv allow` on first use). Without direnv, run
   `devenv shell` manually.
-- `devenv.nix` provisions Ruby (from `.ruby-version`), Bundler, PostgreSQL 16,
+- `devenv.nix` provisions Ruby (nixpkgs' `ruby_3_4`, whose patch level follows
+  `devenv.lock` rather than `.ruby-version`), Bundler, PostgreSQL 16,
   Redis, and CLI tools (`glab`, `gnumake`, `detect-secrets`, `foreman`). A
   `bundle install` task runs on shell entry.
 - A **`detect-secrets` pre-commit git hook** is configured in `devenv.nix`. It

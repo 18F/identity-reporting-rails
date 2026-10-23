@@ -5,7 +5,9 @@
     ruby = {
       enable = true;
       bundler.enable = true;
-      versionFile = ./.ruby-version;
+      # nixpkgs' Ruby is binary-cached; its patch level follows devenv.lock,
+      # so it can differ from .ruby-version within the same minor.
+      package = pkgs.ruby_3_4;
       # The default-enabled solargraph LSP fails to build (nokogiri native
       # extension), breaking `devenv shell` entirely. Gems come from bundler.
       lsp.enable = false;

@@ -9,9 +9,4 @@ inputs:
     follows: git-hooks
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling
-  nixpkgs-ruby:
-    url: github:bobvanderlinden/nixpkgs-ruby
-    inputs:
-      nixpkgs:
-        follows: nixpkgs
 backend: nix
