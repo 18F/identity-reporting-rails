@@ -5,12 +5,12 @@
 On the devenv path (`devenv.nix`), PostgreSQL and Redis run as devenv services.
 They do **not** start on shell entry — start them with `devenv up`, or
 `devenv up -d` in a terminal without a TTY (plain `devenv up` fails there with
-`open /dev/tty: no such device`). Stop them with `devenv processes stop`.
+`open /dev/tty: no such device`). Stop them with `devenv processes down`.
 
 - **`Redis::CannotConnectError` on every spec**: the Redis service is not
   running — `devenv up -d`.
 - **Postgres refuses to start after a crash** (`lock file "postmaster.pid"
-  already exists`): run `devenv processes stop`, then
+  already exists`): run `devenv processes down`, then
   `kill "$(head -1 .devenv/state/postgres/postmaster.pid)"` if that process is
   still alive, remove `.devenv/state/postgres/postmaster.pid`, and run
   `devenv up -d` again.

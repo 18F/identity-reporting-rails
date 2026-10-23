@@ -1,5 +1,5 @@
 devenv-test:
-  image: $ECR_REGISTRY/github/cachix/devenv/devenv:v1.10
+  image: $ECR_REGISTRY/github/cachix/devenv/devenv:v2.4.0
   variables:
     # Saving new nix store paths to the cache can exceed the default 5m
     RUNNER_AFTER_SCRIPT_TIMEOUT: 30m
@@ -63,7 +63,7 @@ devenv-test:
   needs: []
   # We are caching built binaries from devenv in s3 to reduce execution time per job.
   cache:
-    key: devenv-cache
+    key: devenv-v2-cache
     paths:
       - .nix-cache
   tags:

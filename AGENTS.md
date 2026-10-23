@@ -57,7 +57,8 @@ whatever answers on those ports.
   run everything through `devenv shell -- <cmd>` so Ruby/Bundler resolve.
 - `devenv up` uses a TUI that needs a real terminal; when headless it fails
   with `open /dev/tty: no such device` — use `devenv up -d` (detached) instead.
-  `devenv processes stop` stops the services.
+  `devenv processes down` stops the services. `devenv test` refuses to run
+  while they are up — stop them first.
 - Service recovery (stale `postmaster.pid` after a crash,
   `Redis::CannotConnectError`, stale native gems after a `devenv.lock` update):
   see the Devenv section of `docs/troubleshooting.md`.
