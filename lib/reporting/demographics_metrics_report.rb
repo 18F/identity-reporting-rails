@@ -62,10 +62,16 @@ module Reporting
 
     def overview_table
       [
-        ['Report Timeframe', "#{time_range.begin} to #{time_range.end}"],
+        ['Report Timeframe',
+         "#{format_timeframe(time_range.begin)} to #{format_timeframe(time_range.end)}"],
         ['Report Generated', Date.current.to_s],
         ['Issuer', issuer_string.to_s],
       ]
+    end
+
+    # Date + hour/minute only; seconds and zone add noise to the emailed table
+    def format_timeframe(time)
+      time.strftime('%Y-%m-%d %H:%M')
     end
 
     def age_metrics_table
@@ -220,11 +226,11 @@ module Reporting
     end
 
     def formatted_start_time
-      time_range.begin.strftime('%Y-%m-%dT%H:%M:%SZ')
+      time_range.begin.beginning_of_day.strftime('%Y-%m-%dT%H:%M:%SZ')
     end
 
     def formatted_end_time
-      time_range.end.strftime('%Y-%m-%dT%H:%M:%SZ')
+      time_range.end.end_of_day.strftime('%Y-%m-%dT%H:%M:%SZ')
     end
   end
 end
