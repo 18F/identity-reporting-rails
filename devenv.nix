@@ -18,6 +18,8 @@
     glab
     gnumake
     libyaml
+    # Native extension of the pg gem
+    libpq
     # prek (the git-hooks runner) needs uv for python hooks; without one on
     # PATH it downloads a binary that cannot execute in Nix-only environments.
     uv
