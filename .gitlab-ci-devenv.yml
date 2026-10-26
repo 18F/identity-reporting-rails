@@ -4,10 +4,12 @@ devenv-test:
     # Saving new nix store paths to the cache can exceed the default 5m
     RUNNER_AFTER_SCRIPT_TIMEOUT: 30m
   before_script:
+    # The image runs as a non-root user that doesn't own the checkout
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
     # Set up a local cache directory for Nix
     - export CACHEDIR="$(pwd)/.nix-cache"
-    # If the cache directory exists, add it as an extra substituter in the Nix configuration
-    - if [ -d "$CACHEDIR" ]; then echo "extra-substituters = file://$CACHEDIR?priority=10&trusted=true" >>/etc/nix/nix.conf ; fi
+    # If the cache directory exists, add it as an extra substituter (/etc/nix/nix.conf is read-only for the image's user)
+    - if [ -d "$CACHEDIR" ]; then export NIX_CONFIG="extra-substituters = file://$CACHEDIR?priority=10&trusted=true"; fi
     # Remove orphaned narinfo files if they exist.
     - |
       if [ -d "$CACHEDIR" ]; then
