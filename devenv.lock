@@ -151,7 +151,10 @@
         "devenv": "devenv",
         "git-hooks": "git-hooks",
         "nixpkgs": "nixpkgs",
-        "nixpkgs-ruby": "nixpkgs-ruby"
+        "nixpkgs-ruby": "nixpkgs-ruby",
+        "pre-commit-hooks": [
+          "git-hooks"
+        ]
       }
     },
     "systems": {

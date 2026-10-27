@@ -12,4 +12,7 @@ inputs:
     inputs:
       nixpkgs:
         follows: nixpkgs
+  # Keeps devenv.lock stable for developers still on devenv 1.x
+  pre-commit-hooks:
+    follows: git-hooks
 backend: nix
