@@ -6,12 +6,20 @@ RSpec.describe Reports::IdvLegacyConversionSupplementReport do
 
   before do
     ServiceProvider.delete_all
-    allow(report).to receive(:upload_file_to_s3_bucket) { |path:, body:, **| body }
   end
 
   describe '#perform' do
+    it 'uploads the generated CSV to S3' do
+      expect(report).to receive(:upload_file_to_s3_bucket).
+        with(hash_including(content_type: 'text/csv')).twice
+
+      report.perform(Time.zone.today)
+    end
+  end
+
+  describe '#build_csv' do
     it 'is empty with no data' do
-      csv = CSV.parse(report.perform(Time.zone.today), headers: true)
+      csv = CSV.parse(report.build_csv, headers: true)
       expect(csv).to be_empty
     end
 
@@ -49,7 +57,7 @@ RSpec.describe Reports::IdvLegacyConversionSupplementReport do
 
         let(:user1) { create(:user, uuid: uuid) }
 
-        let(:csv) { CSV.parse(report.perform(Time.zone.today), headers: true) }
+        let(:csv) { CSV.parse(report.build_csv, headers: true) }
 
         before do
           iaa_order1.integrations << build_integration(
@@ -125,7 +133,7 @@ RSpec.describe Reports::IdvLegacyConversionSupplementReport do
         let(:inside_iaa2) { iaa2_range.begin + 1.day }
         let(:user1) { create(:user, uuid: uuid) }
         let(:user2) { create(:user, uuid: uuid) }
-        let(:csv) { CSV.parse(report.perform(Time.zone.today), headers: true) }
+        let(:csv) { CSV.parse(report.build_csv, headers: true) }
 
         before do
           iaa_order2.integrations << build_integration(
@@ -230,7 +238,7 @@ RSpec.describe Reports::IdvLegacyConversionSupplementReport do
 
         let(:user1) { create(:user, uuid: uuid) }
         let(:user2) { create(:user, uuid: uuid) }
-        let(:csv) { CSV.parse(report.perform(Time.zone.today), headers: true) }
+        let(:csv) { CSV.parse(report.build_csv, headers: true) }
 
         before do
           iaa_order3.integrations << integration_1
