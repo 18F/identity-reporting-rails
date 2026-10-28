@@ -7,7 +7,7 @@ variables:
   GITLAB_CI: 'true'
   ECR_REGISTRY: '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
   SECURE_ANALYZERS_PREFIX: "$ECR_REGISTRY/gitlab/security-products"
-  IDP_CI_SHA: 'sha256:787f58c3d7e0899d7a622202aa21a9ead24a3fc160d1b158160429bdcc33e4fe'
+  IDP_CI_SHA: 'sha256:d2d6eadc592e682a4022183ffdeb71156d8842a9e7db065a995848403b6b399c'
   JUNIT_OUTPUT: 'true'
   DS_IMAGE_SUFFIX: "-fips"
 

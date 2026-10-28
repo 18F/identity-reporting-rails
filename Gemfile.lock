@@ -538,7 +538,7 @@ DEPENDENCIES
   zonebie
 
 RUBY VERSION
-   ruby 3.4.5p51
+   ruby 3.4.10p104
 
 BUNDLED WITH
    2.7.2
