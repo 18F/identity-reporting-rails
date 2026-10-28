@@ -13,7 +13,7 @@ warehouse. Its primary responsibilities are:
 - Managing data warehouse migrations in source code.
 
 Ruby on Rails 8.1 app. Ruby version is pinned in `.ruby-version` (currently
-3.4.5). Background jobs use ActiveJob + GoodJob.
+3.4.10). Background jobs use ActiveJob + GoodJob.
 
 See also: `docs/jobs.md` (job/sync architecture),
 `docs/local-development.md` (local setup).
