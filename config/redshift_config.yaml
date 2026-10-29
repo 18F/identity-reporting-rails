@@ -135,6 +135,9 @@ cluster:
         - fraudops_qa_marts
       assigned_roles:
         - "sys:secadmin"
+      feature_flag:
+        - fraud_ops_tracker_enabled
+        - dw_fraudops_email_enabled
 
 # Database-level GRANTs.
 #
