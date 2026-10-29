@@ -20,8 +20,10 @@
     glab
     gnumake
     libyaml
-    # Native extension of the pg gem
+    # Native extension of the pg gem. Its pg_config must shadow any Homebrew
+    # one on PATH, which the pg gem's build would otherwise pick up.
     libpq
+    libpq.pg_config
     # prek (the git-hooks runner) needs uv for python hooks; without one on
     # PATH it downloads a binary that cannot execute in Nix-only environments.
     uv
