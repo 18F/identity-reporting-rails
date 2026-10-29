@@ -218,40 +218,14 @@ class LogsColumnExtractorJob < ApplicationJob
     @source_table_name_temp = "#{@source_table_name}_temp_#{@temp_table_suffix}"
     vars = build_merge_variables(@source_table_name_temp, @column_map)
 
-    if using_redshift_adapter?
-      format(<<~SQL, build_params)
-        MERGE INTO %{schema_name}.%{target_table_name}
-        USING %{source_table_name_temp}
-        ON %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
-        WHEN MATCHED THEN
-          UPDATE SET
-            #{vars[:update_set]}
-        WHEN NOT MATCHED THEN
-          INSERT (#{vars[:insert_columns]})
-          VALUES (#{vars[:insert_values]} )
-          ;
-      SQL
-    else
-      # PostgreSQL < 15 does not support MERGE and the target tables have no unique
-      # constraint, so ON CONFLICT cannot be used either. Use a CTE-based upsert:
-      # first UPDATE matched rows, then INSERT unmatched rows.
-      format(<<~SQL, build_params)
-        WITH updated AS (
-          UPDATE %{schema_name}.%{target_table_name}
-          SET #{vars[:update_set]}
-          FROM %{source_table_name_temp}
-          WHERE %{schema_name}.%{target_table_name}.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
-          RETURNING %{schema_name}.%{target_table_name}.#{@merge_key}
-        )
-        INSERT INTO %{schema_name}.%{target_table_name} (#{vars[:insert_columns]})
-        SELECT #{vars[:insert_values]}
-        FROM %{source_table_name_temp}
-        WHERE NOT EXISTS (
-          SELECT 1 FROM updated
-          WHERE updated.#{@merge_key} = %{source_table_name_temp}.#{@merge_key}
-        );
-      SQL
-    end
+    # Logs are insert-only (no updates). Use direct INSERT instead of MERGE
+    # to avoid scanning the entire target table (19B+ records in production).
+    # Deduplication happens in create_temp_source_table_without_dups_query.
+    format(<<~SQL, build_params)
+      INSERT INTO %{schema_name}.%{target_table_name} (#{vars[:insert_columns]})
+      SELECT #{vars[:insert_values]}
+      FROM %{source_table_name_temp};
+    SQL
   end
 
   def drop_merged_records_from_source_table_query
@@ -261,21 +235,12 @@ class LogsColumnExtractorJob < ApplicationJob
       type: 'VARCHAR',
       keep_parenthesis: false,
     )
+    # Delete records from source that were just inserted.
+    # Join against temp table instead of target to avoid scanning 19B+ record target table.
     format(<<~SQL, build_params)
       DELETE FROM %{schema_name}.%{source_table_name}
-      USING %{schema_name}.%{target_table_name}
-      WHERE %{schema_name}.%{source_table_name}.#{merge_key_from_json} = %{schema_name}.%{target_table_name}.%{merge_key}
-      AND %{schema_name}.%{target_table_name}.cloudwatch_timestamp BETWEEN 
-        (
-          SELECT MIN(cloudwatch_timestamp)
-          FROM %{source_table_name_temp}
-        ) 
-        AND
-        (
-          SELECT MAX(cloudwatch_timestamp)
-          FROM %{source_table_name_temp}
-        )
-      ;
+      USING %{source_table_name_temp}
+      WHERE %{schema_name}.%{source_table_name}.#{merge_key_from_json} = %{source_table_name_temp}.#{@merge_key};
     SQL
   end
 
@@ -286,17 +251,6 @@ class LogsColumnExtractorJob < ApplicationJob
       merge_temp_with_target_query,
       drop_merged_records_from_source_table_query,
     ]
-  end
-
-  def conflict_update_set
-    match_column_mappings = @column_map.map do |c|
-      "#{c[:column]} = EXCLUDED.#{c[:column]}"
-    end.join(' ,')
-    <<~SQL.chomp
-      ON CONFLICT (#{@merge_key})
-      DO UPDATE SET
-          message = EXCLUDED.message ,cloudwatch_timestamp = EXCLUDED.cloudwatch_timestamp ,#{match_column_mappings}
-    SQL
   end
 
   def source_table_count_query
