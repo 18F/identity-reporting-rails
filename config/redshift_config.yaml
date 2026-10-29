@@ -129,6 +129,13 @@ cluster:
         - quicksight_connector
       feature_flag: redshift_quicksight_connector_enabled
 
+    - role_name: dbt_fraudops
+      member_users:
+        - fraudops_marts
+        - fraudops_qa_marts
+      assigned_roles:
+        - "sys:secadmin"
+
 # Database-level GRANTs.
 #
 # Iterated once per database. The `user_groups`, `system_users`, and
