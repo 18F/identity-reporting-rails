@@ -129,10 +129,10 @@ cluster:
         - quicksight_connector
       feature_flag: redshift_quicksight_connector_enabled
 
-    - role_name: dbt_fraudops
+    - role_name: fraudops_worker
       member_users:
         - fraudops_marts
-        - fraudops_qa_marts
+        - fraudops_qa_marts        
       assigned_roles:
         - "sys:secadmin"
       feature_flag:
