@@ -221,14 +221,6 @@ RSpec.describe LogsColumnExtractorJob, type: :job do
       end
     end
 
-    # Cross-batch duplicate behavior (not tested):
-    # In production Redshift, PRIMARY KEY constraints are NOT enforced - they are
-    # informational only for the query optimizer. This means:
-    # - Same 'id' can appear across multiple job runs → multiple records in logs.events
-    # - This is intentional for append-only log ingestion (no cross-batch deduplication)
-    # - Within-batch deduplication (tested above) prevents duplicates in a single batch
-    # - This behavior cannot be reliably tested in local PostgreSQL (enforces PRIMARY KEY)
-
     context 'when verifying source table cleanup' do
       before do
         uuids.each do |uuid|
