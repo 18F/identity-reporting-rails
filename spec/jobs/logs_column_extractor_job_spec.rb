@@ -168,5 +168,117 @@ RSpec.describe LogsColumnExtractorJob, type: :job do
         logs_job.perform('events')
       end
     end
+
+    context 'when source table has duplicate ids (within-batch deduplication)' do
+      let(:duplicate_id) { '07324b45-e043-45cd-8d17-33e8cc8c54e0' }
+
+      before do
+        # Create 3 records with the same id in unextracted_events
+        3.times do |i|
+          FactoryBot.create(
+            :unextracted_event,
+            cloudwatch_timestamp: "2024-05-29T20:34:#{10 + i}.933Z",
+            message: {
+              name: "Event #{i}",
+              properties: {
+                new_event: true,
+                path: "/path#{i}",
+                user_id: "user-#{i}",
+                locale: 'en',
+                user_ip: '50.116.19.65',
+                hostname: 'idp.agnes.identitysandbox.gov',
+                pid: 10330 + i,
+              },
+              time: "2024-05-29T20:34:#{10 + i}.334Z",
+              id: duplicate_id,
+              visitor_id: 'c41b33a5-f48b-42b9-aabd-617cec0db776',
+              visit_id: '4f67f9da-2dc3-4049-86ce-49f005441091',
+              log_filename: 'events.log',
+            },
+          )
+        end
+      end
+
+      it 'inserts only one record when multiple records have the same id' do
+        logs_job.perform('events')
+
+        query = "SELECT * FROM logs.events WHERE id = '#{duplicate_id}';"
+        query_results = DataWarehouseApplicationRecord.connection.execute(query).to_a
+
+        # Should only insert the first occurrence (row_num = 1)
+        expect(query_results.length).to eq(1)
+        expect(query_results.first['id']).to eq(duplicate_id)
+      end
+
+      it 'deletes all duplicate records from source table after processing' do
+        logs_job.perform('events')
+
+        query = 'SELECT COUNT(*) as count FROM logs.unextracted_events;'
+        count = DataWarehouseApplicationRecord.connection.exec_query(query).first['count']
+
+        # All 3 duplicate records should be deleted from source
+        expect(count).to eq(0)
+      end
+    end
+
+    # Cross-batch duplicate behavior (not tested):
+    # In production Redshift, PRIMARY KEY constraints are NOT enforced - they are
+    # informational only for the query optimizer. This means:
+    # - Same 'id' can appear across multiple job runs → multiple records in logs.events
+    # - This is intentional for append-only log ingestion (no cross-batch deduplication)
+    # - Within-batch deduplication (tested above) prevents duplicates in a single batch
+    # - This behavior cannot be reliably tested in local PostgreSQL (enforces PRIMARY KEY)
+
+    context 'when verifying source table cleanup' do
+      before do
+        uuids.each do |uuid|
+          FactoryBot.create(
+            :unextracted_event,
+            cloudwatch_timestamp: '2024-05-29T20:34:17.933Z',
+            message: {
+              name: 'Test event',
+              properties: {
+                new_event: true,
+                path: '/',
+                locale: 'en',
+                user_ip: '50.116.19.65',
+                hostname: 'idp.agnes.identitysandbox.gov',
+                pid: 10330,
+              },
+              time: '2024-05-29T20:34:13.334Z',
+              id: uuid,
+              visitor_id: 'c41b33a5-f48b-42b9-aabd-617cec0db776',
+              visit_id: '4f67f9da-2dc3-4049-86ce-49f005441091',
+              log_filename: 'events.log',
+            },
+          )
+        end
+      end
+
+      it 'removes processed records from unextracted_events table' do
+        # Verify records exist before processing
+        before_count = DataWarehouseApplicationRecord.connection.exec_query(
+          'SELECT COUNT(*) as count FROM logs.unextracted_events;',
+        ).first['count']
+        expect(before_count).to eq(2)
+
+        logs_job.perform('events')
+
+        # Verify records removed after processing
+        after_count = DataWarehouseApplicationRecord.connection.exec_query(
+          'SELECT COUNT(*) as count FROM logs.unextracted_events;',
+        ).first['count']
+        expect(after_count).to eq(0)
+      end
+
+      it 'inserts the correct number of records into target table' do
+        logs_job.perform('events')
+
+        target_count = DataWarehouseApplicationRecord.connection.exec_query(
+          'SELECT COUNT(*) as count FROM logs.events;',
+        ).first['count']
+        expect(target_count).to eq(2)
+      end
+    end
   end
 end
