@@ -7,11 +7,6 @@ module Reports
     REPORT_NAME = 'idv-legacy-conversion-supplement-report'
 
     def perform(_date)
-      unless IdentityConfig.store.redshift_sia_v3_enabled
-        Rails.logger.warn 'Redhsift SIA V3 is disabled'
-        return false
-      end
-
       csv = build_csv
       save_report(REPORT_NAME, csv, extension: 'csv')
     end

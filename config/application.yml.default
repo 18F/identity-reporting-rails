@@ -38,7 +38,6 @@ unload_line_count_threshold: 10000
 s3_report_public_bucket_prefix: login-gov-pubdata
 report_timeout: 0
 redshift_database_zero_etl_name: 'analytics_zetl'
-s3_reports_enabled: false
 s3_report_bucket_prefix: login-gov-dw-reports
 fraud_ops_private_key: ''
 fraud_ops_tracker_enabled: false
@@ -64,7 +63,6 @@ development:
   redshift/local-analytics-superuser: '{"username":"","password":""}'
   s3_report_public_bucket_prefix: ''
   s3_report_bucket_prefix: ''
-  redshift_sia_v3_enabled: true
 
 # These values serve as defaults for all production-like environments
 production:
@@ -83,8 +81,6 @@ production:
   redshift_database_name: ''
   redshift_host: ''
   report_timeout: 1_000_000
-  s3_reports_enabled: false
-  redshift_sia_v3_enabled: false
 
 test:
   database_host: ''
@@ -105,5 +101,4 @@ test:
   redshift/local-analytics-superuser: '{"username":"","password":""}'
   s3_report_public_bucket_prefix: ''
   s3_report_bucket_prefix: ''
-  redshift_sia_v3_enabled: true
   fraud_ops_tracker_enabled: true

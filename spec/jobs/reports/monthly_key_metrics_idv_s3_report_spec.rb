@@ -47,9 +47,6 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
   end
 
   before do
-    allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(true)
-    allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(true)
-
     allow(report).to receive(:bucket_name).and_return('test-bucket')
     allow(report).to receive(:generate_base_s3_path).and_return('s3-base-path/')
     allow(report).to receive(:upload_file_to_s3_bucket)
@@ -62,42 +59,6 @@ RSpec.describe Reports::MonthlyKeyMetricsIdvS3Report do
   end
 
   describe '#perform' do
-    context 'when redshift_sia_v3 is disabled' do
-      before do
-        allow(IdentityConfig.store).to receive(:redshift_sia_v3_enabled).and_return(false)
-      end
-
-      it 'logs a warning and returns false' do
-        expect(Rails.logger).to receive(:warn).with(
-          "#{described_class::REPORT_NAME}: Redshift SIA V3 is disabled",
-        )
-        expect(report.perform(report_date)).to eq(false)
-      end
-
-      it 'does not upload anything' do
-        expect(report).not_to receive(:upload_file_to_s3_bucket)
-        report.perform(report_date)
-      end
-    end
-
-    context 'when s3_reports is disabled' do
-      before do
-        allow(IdentityConfig.store).to receive(:s3_reports_enabled).and_return(false)
-      end
-
-      it 'logs a warning and returns false' do
-        expect(Rails.logger).to receive(:warn).with(
-          "#{described_class::REPORT_NAME}: S3 reports are disabled",
-        )
-        expect(report.perform(report_date)).to eq(false)
-      end
-
-      it 'does not upload anything' do
-        expect(report).not_to receive(:upload_file_to_s3_bucket)
-        report.perform(report_date)
-      end
-    end
-
     context 'when report_date is blank' do
       it 'raises an ArgumentError' do
         allow(Time.zone).to receive(:yesterday).and_return(nil)

@@ -15,11 +15,6 @@ module Reports
     end
 
     def perform(date = Time.zone.yesterday.end_of_day)
-      unless IdentityConfig.store.redshift_sia_v3_enabled
-        Rails.logger.warn 'Redhsift SIA V3 is disabled'
-        return false
-      end
-
       @report_date = date
 
       reports.each do |report|
