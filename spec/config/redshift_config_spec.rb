@@ -84,6 +84,10 @@ RSpec.describe 'config/redshift_config.yaml' do
         'name' => identifier,
         'schemas' => [schema_grant.merge('restricted_tables?' => tables)],
       }],
+      'user_roles' => [{
+        'role_name' => identifier,
+        'schemas' => [schema_grant.merge('restricted_tables?' => tables)],
+      }],
     }
 
     {
@@ -205,32 +209,13 @@ RSpec.describe 'config/redshift_config.yaml' do
     expect(nested - built_in).to be_empty, "Not Redshift system-defined: #{nested - built_in}"
   end
 
-  it 'gates each role on the feature flags of its flag-gated member users' do
-    # GRANT ROLE aborts the sync if a member was never created because its flag is off.
-    user_flags = real_config['cluster']['system_users'].
-      to_h { |user| [user['user_name'], Array(user['feature_flag'])] }
-
-    ungated = (real_config['cluster']['user_roles'] || []).flat_map do |role|
-      role_flags = Array(role['feature_flag'])
-      role.fetch('member_users', []).filter_map do |name|
-        flags = user_flags.fetch(name, [])
-        next if flags.empty? || (role_flags.any? && (role_flags - flags).empty?)
-
-        "Role '#{role['role_name']}' must be gated on #{flags.join(' or ')}, " \
-          "like its member '#{name}'"
-      end
-    end
-
-    expect(ungated).to be_empty, ungated.join("\n")
-  end
-
   it 'grants only include the identities defined under cluster' do
     # Grants are looked up by cluster name, so an unmatched database entry is never applied and
     # a cluster identity without one gets no new grants (but keeps its old ones).
     cluster = real_config['cluster']
     grants = real_config['databases']
 
-    problems = %w[lambda_users system_users user_groups].flat_map do |section|
+    problems = %w[lambda_users system_users user_groups user_roles].flat_map do |section|
       defined = cluster[section].map { |entry| entry_name(entry) }
       granted = grants.transform_values do |db_config|
         (db_config[section] || []).map { |entry| entry_name(entry) }
@@ -256,7 +241,8 @@ RSpec.describe 'config/redshift_config.yaml' do
     }
 
     unknown = real_config['databases'].flat_map do |db, db_config|
-      entries = db_config.values_at('lambda_users', 'system_users', 'user_groups').compact.flatten
+      entries = db_config.values_at('lambda_users', 'system_users', 'user_groups', 'user_roles').
+        compact.flatten
       entries.flat_map do |entry|
         entry['schemas'].flat_map do |schema|
           name = entry_name(schema) || schema
@@ -274,26 +260,43 @@ RSpec.describe 'config/redshift_config.yaml' do
   end
 
   it 'grants on sync-created schemas only after, and only when, their DBT user creates them' do
-    # Grants run in system_users order, then groups, so on a new cluster a grant before the DBT
-    # user's, or where that user is off, fails because the schema does not exist yet.
+    # Grants run in system_users order, then groups, then roles, so on a new cluster a grant
+    # before the DBT user's, or where that user is off, fails because the schema does not exist.
     users = real_config['cluster']['system_users']
     order = users.map { |user| user['user_name'] }
     user_flags = users.to_h { |user| [user['user_name'], Array(user['feature_flag'])] }
+    roles = real_config['cluster']['user_roles'].index_by { |role| role['role_name'] }
+
+    # A role is skipped once all its static members are disabled, so it only runs while the
+    # creator does if every member is flagged and no member's flags reach beyond the creator's.
+    members_gated = lambda do |role_name, creator_flags|
+      role = roles[role_name]
+      members = role&.fetch('member_users', [])
+      next false if members.blank? || role['aws_groups'].present?
+
+      members.all? do |member|
+        flags = user_flags.fetch(member, [])
+        flags.any? && (flags - creator_flags).empty?
+      end
+    end
 
     problems = real_config['databases'].flat_map do |db, db_config|
-      grantees = db_config['system_users'] + db_config['user_groups']
+      grantees = db_config['system_users'] + db_config['user_groups'] +
+                 (db_config['user_roles'] || [])
       grantees.flat_map do |grantee|
         name = entry_name(grantee)
-        # Groups are not in order, so they sort after every system user.
+        # Groups and roles are not in order, so they sort after every system user.
         position = order.index(name) || order.size
         grantee['schemas'].filter_map do |schema|
           creator = schema['schema_name']
           next if sync_created_schemas.exclude?(creator) || name == creator
 
+          own_flags = user_flags.fetch(name) { Array(roles.dig(name, 'feature_flag')) }
           creator_flags = user_flags.fetch(creator, [])
           gated = creator_flags.empty? ||
-                  [user_flags.fetch(name, []), Array(schema['feature_flag'])].
-                    any? { |flags| flags.any? && (flags - creator_flags).empty? }
+                  [own_flags, Array(schema['feature_flag'])].
+                    any? { |flags| flags.any? && (flags - creator_flags).empty? } ||
+                  members_gated.call(name, creator_flags)
           if (order.index(creator) || order.size) >= position
             "databases.#{db}.#{name} grants on #{creator} before its DBT user creates it"
           elsif !gated
@@ -314,7 +317,7 @@ RSpec.describe 'config/redshift_config.yaml' do
     sections['cluster.system_users secret_id'] =
       real_config['cluster']['system_users'].filter_map { |user| user['secret_id'] }
     real_config['databases'].each do |db, db_config|
-      %w[lambda_users system_users user_groups].each do |section|
+      %w[lambda_users system_users user_groups user_roles].each do |section|
         sections["databases.#{db}.#{section}"] = db_config[section]
         (db_config[section] || []).each do |entry|
           sections["databases.#{db}.#{section}[#{entry_name(entry)}].schemas"] = entry['schemas']

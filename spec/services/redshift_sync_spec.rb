@@ -1536,6 +1536,265 @@ RSpec.describe RedshiftSync do
     end
   end
 
+  describe 'role members and role schema grants' do
+    # In test_redshift_config, marts is on (dbt_enabled), security_audit and rails_worker have no
+    # flag, and a role gated on redshift_quicksight_connector_enabled is off.
+    let(:disabled_user_config) do
+      test_redshift_config.deep_merge(
+        'cluster' => {
+          'system_users' => test_redshift_config['cluster']['system_users'] + [
+            { 'user_name' => 'qa_marts',
+              'secret_id' => 'x',
+              'feature_flag' => 'fraud_ops_tracker_enabled' },
+            { 'user_name' => 'fraudops_marts',
+              'secret_id' => 'y',
+              'feature_flag' => 'fraud_ops_tracker_enabled' },
+          ],
+        },
+      )
+    end
+
+    describe '#role_enabled?' do
+      before { allow(sync).to receive(:redshift_config).and_return(disabled_user_config) }
+
+      it 'is true when the role has an enabled member' do
+        role = { 'role_name' => 'r', 'member_users' => ['qa_marts', 'rails_worker'] }
+
+        expect(sync.send(:role_enabled?, role)).to be true
+      end
+
+      it 'is false when every member is a disabled system user' do
+        role = { 'role_name' => 'r', 'member_users' => ['qa_marts', 'fraudops_marts'] }
+
+        expect(sync.send(:role_enabled?, role)).to be false
+      end
+
+      it 'treats a member that is not a system user as defined' do
+        role = { 'role_name' => 'r', 'member_users' => ['qa_marts', 'superuser'] }
+
+        expect(sync.send(:role_enabled?, role)).to be true
+      end
+
+      it 'is false when the role feature flag is off even if members are enabled' do
+        role = { 'role_name' => 'r',
+                 'member_users' => ['rails_worker'],
+                 'feature_flag' => 'redshift_quicksight_connector_enabled' }
+
+        expect(sync.send(:role_enabled?, role)).to be false
+      end
+
+      it 'is false when the role is flagged off and its members are all disabled' do
+        role = { 'role_name' => 'r',
+                 'member_users' => ['qa_marts'],
+                 'feature_flag' => 'redshift_quicksight_connector_enabled' }
+
+        expect(sync.send(:role_enabled?, role)).to be false
+      end
+
+      it 'is true when the role has no static members' do
+        role = { 'role_name' => 'dw_admin', 'assigned_roles' => ['sys:monitor'] }
+
+        expect(sync.send(:role_enabled?, role)).to be true
+      end
+
+      it 'is true when the role draws members from aws_groups' do
+        role = { 'role_name' => 'r',
+                 'member_users' => ['qa_marts'],
+                 'aws_groups' => { 'sandbox' => ['dwuser'] } }
+
+        expect(sync.send(:role_enabled?, role)).to be true
+      end
+    end
+
+    describe '#sync_user_role' do
+      let(:executed_sql) { [] }
+
+      before do
+        allow(sync).to receive(:redshift_config).and_return(disabled_user_config)
+        allow(mock_connection).to receive(:execute) do |sql|
+          executed_sql << sql
+          []
+        end
+      end
+
+      it 'does not grant the role to a member whose system user is disabled' do
+        role = { 'role_name' => 'r', 'member_users' => ['rails_worker', 'qa_marts'] }
+
+        sync.send(:sync_user_role, role)
+
+        sql = executed_sql.join("\n")
+        expect(sql).to include('GRANT ROLE r TO "rails_worker"')
+        expect(sql).not_to include('qa_marts')
+      end
+    end
+
+    describe '#sync_cluster' do
+      let(:created_roles) { [] }
+
+      before do
+        config = disabled_user_config.deep_merge(
+          'cluster' => { 'user_roles' => [
+            { 'role_name' => 'live', 'member_users' => ['rails_worker', 'qa_marts'] },
+            { 'role_name' => 'all_disabled', 'member_users' => ['qa_marts', 'fraudops_marts'] },
+          ] },
+        )
+        allow(sync).to receive(:redshift_config).and_return(config)
+        allow(sync).to receive(:create_lambda_user_identity)
+        allow(sync).to receive(:create_system_user_identity)
+        allow(sync).to receive(:sync_connection_limit)
+        allow(sync).to receive(:create_group)
+        allow(sync).to receive(:drop_users)
+        allow(sync).to receive(:create_users).and_return([])
+        allow(sync).to receive(:sync_user_group)
+        allow(sync).to receive(:create_user_role) { |role| created_roles << role['role_name'] }
+      end
+
+      it 'creates a role with a defined member and skips one whose members are all disabled' do
+        sync.sync_cluster
+
+        expect(created_roles).to eq(['live'])
+      end
+    end
+
+    describe '#sync_database_grants' do
+      let(:applied) { {} }
+      let(:grants_config) do
+        disabled_user_config.deep_merge(
+          'cluster' => { 'user_roles' => [
+            { 'role_name' => 'reader', 'member_users' => ['rails_worker'] },
+            { 'role_name' => 'no_grants', 'member_users' => ['rails_worker'] },
+            { 'role_name' => 'all_disabled', 'member_users' => ['qa_marts', 'fraudops_marts'] },
+          ] },
+          'databases' => { 'analytics' => { 'user_roles' => [
+            { 'role_name' => 'reader',
+              'schemas' => [{ 'schema_name' => 'idp',
+                              'schema_privileges' => 'USAGE',
+                              'table_privileges' => 'SELECT' }] },
+            { 'role_name' => 'all_disabled',
+              'schemas' => [{ 'schema_name' => 'idp',
+                              'schema_privileges' => 'USAGE',
+                              'table_privileges' => 'SELECT' }] },
+          ] } },
+        )
+      end
+
+      before do
+        allow(sync).to receive(:redshift_config).and_return(grants_config)
+        allow(sync).to receive(:apply_lambda_user_grants)
+        allow(sync).to receive(:apply_system_user_grants)
+        allow(sync).to receive(:apply_group_grants)
+        allow(sync).to receive(:apply_role_grants) { |role, schemas|
+          applied[role['role_name']] = schemas
+        }
+      end
+
+      it 'applies grants to roles with an entry and a defined member' do
+        sync.sync_database_grants
+
+        expect(applied.keys).to eq(['reader'])
+        expect(applied['reader'].first['schema_name']).to eq('idp')
+      end
+
+      it 'leaves a role with no database entry alone' do
+        sync.sync_database_grants
+
+        expect(applied).not_to have_key('no_grants')
+      end
+
+      it 'does not grant on a role whose members are all disabled' do
+        sync.sync_database_grants
+
+        expect(applied).not_to have_key('all_disabled')
+      end
+
+      it 'applies role grants after group grants' do
+        order = []
+        allow(sync).to receive(:apply_group_grants) { order << :group }
+        allow(sync).to receive(:apply_role_grants) { order << :role }
+
+        sync.sync_database_grants
+
+        expect(order).to eq(%i[group role])
+      end
+    end
+
+    describe '#create_schema_privileges_for_role' do
+      let(:role) { { 'role_name' => 'reader' } }
+      let(:schemas) do
+        [
+          { 'schema_name' => 'idp',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT' },
+          { 'schema_name' => 'logs',
+            'schema_privileges' => 'USAGE',
+            'table_privileges' => 'SELECT',
+            'restricted_tables' => ['unextracted_events'] },
+        ]
+      end
+      let(:executed_sql) { [] }
+
+      before do
+        allow(sync).to receive(:get_existing_configured_schemas).and_return(%w[idp logs marts])
+        allow(mock_connection).to receive(:execute) do |sql|
+          executed_sql << sql
+          double(any?: true)
+        end
+      end
+
+      it 'grants schema and table privileges to the role' do
+        sync.send(:create_schema_privileges_for_role, role, schemas)
+
+        sql = executed_sql.join("\n")
+        expect(sql).to include('GRANT USAGE ON SCHEMA idp TO ROLE reader')
+        expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA idp TO ROLE reader')
+        expect(sql).not_to include('GROUP reader')
+      end
+
+      it 'revokes restricted tables and configured schemas the role no longer lists' do
+        sync.send(:create_schema_privileges_for_role, role, schemas)
+
+        sql = executed_sql.join("\n")
+        expect(sql).to include(
+          'REVOKE ALL PRIVILEGES ON TABLE logs.unextracted_events FROM ROLE reader',
+        )
+        expect(sql).to include('REVOKE ALL ON SCHEMA marts FROM ROLE reader')
+      end
+
+      it 'skips a schema whose feature flag is off' do
+        flagged = [schemas.first.merge('feature_flag' => 'fraud_ops_tracker_enabled')]
+
+        sync.send(:create_schema_privileges_for_role, role, flagged)
+
+        expect(executed_sql.join("\n")).not_to include('GRANT USAGE ON SCHEMA idp')
+      end
+
+      it 'uses default privileges for a dbt schema whose user exists' do
+        allow(sync).to receive(:user_exists?).with('marts').and_return(true)
+        dbt = [{ 'schema_name' => 'marts',
+                 'schema_privileges' => 'USAGE',
+                 'table_privileges' => 'SELECT' }]
+
+        sync.send(:create_schema_privileges_for_role, role, dbt)
+
+        expect(executed_sql.join("\n")).to include(
+          'ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts ' \
+          'GRANT SELECT ON TABLES TO ROLE reader',
+        )
+      end
+
+      it 'does nothing when the role does not exist yet' do
+        allow(mock_connection).to receive(:execute) do |sql|
+          executed_sql << sql
+          double(any?: false)
+        end
+
+        sync.send(:create_schema_privileges_for_role, role, schemas)
+
+        expect(executed_sql.join("\n")).not_to include('GRANT')
+      end
+    end
+  end
+
   describe 'redshift_config.yaml validation' do
     let(:real_config) do
       YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))
