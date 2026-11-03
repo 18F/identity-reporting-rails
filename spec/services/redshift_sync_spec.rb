@@ -607,7 +607,7 @@ RSpec.describe RedshiftSync do
       )
     end
 
-    it 'uses ALTER DEFAULT PRIVILEGES for other non-DBT users reading a DBT schema' do
+    it 'grants rails_worker access to existing and future marts tables' do
       allow(sync).to receive(:user_exists?).with('marts').and_return(true)
       sql = sync.send(
         :create_system_user_privileges, 'rails_worker', 'marts', 'USAGE',
@@ -619,7 +619,44 @@ RSpec.describe RedshiftSync do
         'ALTER DEFAULT PRIVILEGES FOR USER marts IN SCHEMA marts ' \
         'GRANT SELECT ON TABLES TO rails_worker',
       )
-      expect(sql).not_to include('ON ALL TABLES IN SCHEMA marts TO rails_worker')
+      expect(sql).to include('GRANT SELECT ON ALL TABLES IN SCHEMA marts TO rails_worker')
+    end
+
+    it 'does not grant rails_worker access to existing tables in other DBT schemas' do
+      %w[qa_marts fraudops_marts fraudops_qa_marts].each do |schema_name|
+        allow(sync).to receive(:user_exists?).with(schema_name).and_return(true)
+        sql = sync.send(
+          :create_system_user_privileges, 'rails_worker', schema_name, 'USAGE',
+          'SELECT', nil
+        )
+
+        expect(sql).to include("GRANT USAGE ON SCHEMA #{schema_name} TO rails_worker")
+        default_privilege_sql = format(
+          'ALTER DEFAULT PRIVILEGES FOR USER %<schema>s IN SCHEMA %<schema>s ' \
+          'GRANT SELECT ON TABLES TO rails_worker',
+          schema: schema_name,
+        )
+        expect(sql).to include(default_privilege_sql)
+        expect(sql).not_to include("ON ALL TABLES IN SCHEMA #{schema_name} TO rails_worker")
+      end
+    end
+
+    it 'uses only ALTER DEFAULT PRIVILEGES for other non-DBT users reading DBT schemas' do
+      %w[marts qa_marts fraudops_marts fraudops_qa_marts].each do |schema_name|
+        allow(sync).to receive(:user_exists?).with(schema_name).and_return(true)
+        sql = sync.send(
+          :create_system_user_privileges, 'security_audit', schema_name, 'USAGE',
+          'SELECT', nil
+        )
+
+        default_privilege_sql = format(
+          'ALTER DEFAULT PRIVILEGES FOR USER %<schema>s IN SCHEMA %<schema>s ' \
+          'GRANT SELECT ON TABLES TO security_audit',
+          schema: schema_name,
+        )
+        expect(sql).to include(default_privilege_sql)
+        expect(sql).not_to include("ON ALL TABLES IN SCHEMA #{schema_name} TO security_audit")
+      end
     end
 
     it 'falls back to ALL TABLES for a DBT schema when the owner user does not exist yet' do
@@ -642,6 +679,7 @@ RSpec.describe RedshiftSync do
 
       expect(sql).to include('GRANT SELECT ON marts.some_table TO rails_worker')
       expect(sql).not_to include('ALTER DEFAULT PRIVILEGES')
+      expect(sql).not_to include('ALL TABLES')
     end
 
     it 'still grants ALL TABLES for non-DBT schemas' do
