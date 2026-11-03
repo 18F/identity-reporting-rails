@@ -126,7 +126,6 @@ cluster:
       feature_flag: redshift_quicksight_connector_enabled
 
     - role_name: masking_worker
-    - role_name: masking_worker
       member_users:
         - fraudops_marts
         - fraudops_qa_marts
