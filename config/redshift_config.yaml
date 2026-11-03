@@ -40,10 +40,6 @@ cluster:
       secret_id: "redshift/%{env_name}-analytics-quicksight-connector"
       feature_flag: redshift_quicksight_connector_enabled
 
-    - user_name: idp_connector
-      secret_id: "redshift/%{env_name}-analytics-idp-connector"
-      feature_flag: redshift_idp_connector_enabled
-
     - user_name: marts
       secret_id: "redshift/%{env_name}-analytics-dbt-marts"
       feature_flag: dbt_enabled
@@ -149,6 +145,7 @@ cluster:
           - fraudops_marts
           - fraudops_qa_marts
           - reporting_rails
+      schemas:
         - schema_name: idp
           schema_privileges: USAGE
           table_privileges: SELECT
@@ -168,11 +165,13 @@ cluster:
 
     # gives access to reading our development schemas
     - role_name: qa_reporting_reader
+      feature_flag: dbt_enabled
       member_users:
           - qa_marts
           - quicksight_connector
           - fraudops_qa_marts
           - reporting_rails
+      schemas:
           - schema_name: qa_marts
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -185,25 +184,35 @@ cluster:
         - fraudops_qa_marts     
         - rails_worker   
     - schema_name: pg_catalog
-            schema_privileges: USAGE
-            table_privileges: SELECT              
+      schema_privileges: USAGE
+      table_privileges: SELECT
 
     # gives access to reading our fraudops schemas
     - role_name: fraudops_reporting_reader
+      feature_flag: 
+          - dbt_enabled
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
       member_users:
           - fraudops_marts
-          - fraudops_qa_marts          
+          - fraudops_qa_marts  
+
+      schemas:
           - schema_name: fraudops
             schema_privileges: USAGE
             table_privileges: SELECT
-      schemas:
           - schema_name: fraudops_marts
             schema_privileges: USAGE
             table_privileges: SELECT
       
     - role_name: fraudops_qa_reporting_reader
+      feature_flag: 
+          - dbt_enabled
+          - fraud_ops_tracker_enabled
+          - dw_fraudops_email_enabled
       member_users:
           - fraudops_qa_marts          
+      schemas:
           - schema_name: fraudops_qa_marts
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -253,24 +262,35 @@ databases:
           - schema_name: marts
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
+            feature_flag:
+              - dbt_enabled
 
       - user_name: qa_marts
         schemas:
           - schema_name: qa_marts
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
+            feature_flag:
+              - dbt_enabled
 
       - user_name: fraudops_marts
         schemas:
           - schema_name: fraudops_marts
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
+            feature_flag:
+              - dbt_enabled
+              - fraud_ops_tracker_enabled
+              - dw_fraudops_email_enabled
 
       - user_name: fraudops_qa_marts
         schemas:
           - schema_name: fraudops_qa_marts
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
+            feature_flag:
+              - fraud_ops_tracker_enabled
+              - dw_fraudops_email_enabled
 
       - user_name: rails_worker
         schemas:
