@@ -146,10 +146,11 @@ cluster:
         - fraudops_qa_marts
 
 
-    - role_name: fraudops_worker
+    - role_name: masking_worker
       member_users:
         - fraudops_marts
-        - fraudops_qa_marts        
+        - fraudops_qa_marts
+        - rails_worker    
       assigned_roles:
         - "sys:secadmin"
       feature_flag:
