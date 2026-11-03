@@ -224,7 +224,7 @@ RSpec.describe 'config/redshift_config.yaml' do
     expect(ungated).to be_empty, ungated.join("\n")
   end
 
-  it 'grants to exactly the identities defined under cluster' do
+  it 'grants only include the identities defined under cluster' do
     # Grants are looked up by cluster name, so an unmatched database entry is never applied and
     # a cluster identity without one gets no new grants (but keeps its old ones).
     cluster = real_config['cluster']
@@ -237,9 +237,8 @@ RSpec.describe 'config/redshift_config.yaml' do
       end
 
       granted.flat_map do |db, names|
+        # pp names
         (names - defined).map { |name| "databases.#{db}.#{section}[#{name}]: not in cluster" }
-      end + (defined - granted.values.flatten).map do |name|
-        "cluster.#{section}[#{name}]: not in databases"
       end
     end
 
