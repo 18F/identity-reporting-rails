@@ -130,6 +130,7 @@ cluster:
       feature_flag: redshift_quicksight_connector_enabled
 
     - role_name: masking_worker
+    - role_name: masking_worker
       member_users:
         - fraudops_marts
         - fraudops_qa_marts
@@ -139,6 +140,73 @@ cluster:
       feature_flag:
         - fraud_ops_tracker_enabled
         - dw_fraudops_email_enabled
+
+    # gives access to reading our main schemas
+    - role_name: reporting_reader
+          - marts
+          - qa_marts
+          - quicksight_connector
+          - fraudops_marts
+          - fraudops_qa_marts
+          - reporting_rails
+        - schema_name: idp
+          schema_privileges: USAGE
+          table_privileges: SELECT
+        - schema_name: idp_core
+          schema_privileges: USAGE
+          table_privileges: SELECT
+          feature_flag: idp_zero_etl_enabled
+        - schema_name: logs
+          schema_privileges: USAGE
+          table_privileges: SELECT
+          restricted_tables:
+            - unextracted_events
+            - unextracted_production
+        - schema_name: marts
+          schema_privileges: USAGE
+          table_privileges: SELECT
+
+    # gives access to reading our development schemas
+    - role_name: qa_reporting_reader
+      member_users:
+          - qa_marts
+          - quicksight_connector
+          - fraudops_qa_marts
+          - reporting_rails
+          - schema_name: qa_marts
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
+    - role_name: pg_catalog_user
+      member_users:
+        - marts
+        - qa_marts
+        - fraudops_marts
+        - fraudops_qa_marts     
+        - rails_worker   
+    - schema_name: pg_catalog
+            schema_privileges: USAGE
+            table_privileges: SELECT              
+
+    # gives access to reading our fraudops schemas
+    - role_name: fraudops_reporting_reader
+      member_users:
+          - fraudops_marts
+          - fraudops_qa_marts          
+          - schema_name: fraudops
+            schema_privileges: USAGE
+            table_privileges: SELECT
+      schemas:
+          - schema_name: fraudops_marts
+            schema_privileges: USAGE
+            table_privileges: SELECT
+      
+    - role_name: fraudops_qa_reporting_reader
+      member_users:
+          - fraudops_qa_marts          
+          - schema_name: fraudops_qa_marts
+            schema_privileges: USAGE
+            table_privileges: SELECT
 
 # Database-level GRANTs.
 #
@@ -176,15 +244,6 @@ databases:
 
       - user_name: quicksight_connector
         schemas:
-          - schema_name: idp
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: logs
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            tables:
-              - events
-              - production
           - schema_name: system_tables
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -209,96 +268,30 @@ databases:
 
       - user_name: marts
         schemas:
-          - schema_name: pg_catalog
-            schema_privileges: USAGE
-            table_privileges: SELECT
           - schema_name: marts
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
-          - schema_name: idp
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: logs
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            tables:
-              - events
-              - production
 
       - user_name: qa_marts
         schemas:
-          - schema_name: pg_catalog
-            schema_privileges: USAGE
-            table_privileges: SELECT
           - schema_name: qa_marts
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
-          - schema_name: idp
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: logs
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            tables:
-              - events
-              - production
 
       - user_name: fraudops_marts
         schemas:
-          - schema_name: pg_catalog
-            schema_privileges: USAGE
-            table_privileges: SELECT
           - schema_name: fraudops_marts
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
-          - schema_name: idp
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: logs
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            tables:
-              - events
-              - production
-          - schema_name: fraudops
-            schema_privileges: USAGE
-            table_privileges: SELECT
 
       - user_name: fraudops_qa_marts
         schemas:
-          - schema_name: pg_catalog
-            schema_privileges: USAGE
-            table_privileges: SELECT
           - schema_name: fraudops_qa_marts
             schema_privileges: ALL PRIVILEGES
             table_privileges: ALL PRIVILEGES
-          - schema_name: idp
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: logs
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            tables:
-              - events
-              - production
-          - schema_name: fraudops
-            schema_privileges: USAGE
-            table_privileges: SELECT
 
       - user_name: rails_worker
         schemas:
-          - schema_name: pg_catalog
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            tables:
-              - pg_user
-          - schema_name: idp
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: idp_core
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            feature_flag: idp_zero_etl_enabled
           - schema_name: system_tables
             schema_privileges: USAGE
             table_privileges: SELECT
@@ -308,24 +301,6 @@ databases:
           - schema_name: fraudops
             schema_privileges: USAGE, CREATE
             table_privileges: SELECT, INSERT, UPDATE, DELETE
-            feature_flag:
-              - fraud_ops_tracker_enabled
-              - dw_fraudops_email_enabled
-          - schema_name: marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: qa_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: fraudops_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
-            feature_flag:
-              - fraud_ops_tracker_enabled
-              - dw_fraudops_email_enabled
-          - schema_name: fraudops_qa_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
             feature_flag:
               - fraud_ops_tracker_enabled
               - dw_fraudops_email_enabled
