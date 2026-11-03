@@ -139,12 +139,13 @@ cluster:
 
     # gives access to reading our main schemas
     - role_name: reporting_reader
-          - marts
-          - qa_marts
-          - quicksight_connector
-          - fraudops_marts
-          - fraudops_qa_marts
-          - reporting_rails
+      member_users:
+        - marts
+        - qa_marts
+        - quicksight_connector
+        - fraudops_marts
+        - fraudops_qa_marts
+        - reporting_rails
       schemas:
         - schema_name: idp
           schema_privileges: USAGE
@@ -183,9 +184,10 @@ cluster:
         - fraudops_marts
         - fraudops_qa_marts     
         - rails_worker   
-    - schema_name: pg_catalog
-      schema_privileges: USAGE
-      table_privileges: SELECT
+      schemas: 
+        - schema_name: pg_catalog
+          schema_privileges: USAGE
+          table_privileges: SELECT
 
     # gives access to reading our fraudops schemas
     - role_name: fraudops_reporting_reader
