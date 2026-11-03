@@ -133,7 +133,7 @@ cluster:
       member_users:
         - fraudops_marts
         - fraudops_qa_marts
-        - rails_worker    
+
       assigned_roles:
         - "sys:secadmin"
       feature_flag:
