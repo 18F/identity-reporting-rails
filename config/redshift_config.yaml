@@ -146,7 +146,6 @@ cluster:
         - fraudops_marts
         - fraudops_qa_marts
         - rails_worker
-        - databricks
 
     # gives access to reading our development schemas
     - role_name: qa_reporting_reader
@@ -156,7 +155,6 @@ cluster:
         - quicksight_connector
         - fraudops_qa_marts
         - rails_worker
-        - databricks
 
     - role_name: pg_catalog_user
       member_users:
