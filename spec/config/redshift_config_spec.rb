@@ -228,10 +228,11 @@ RSpec.describe 'config/redshift_config.yaml' do
     # Grants are looked up by cluster name, so an unmatched database entry is never applied and
     # a cluster identity without one gets no new grants (but keeps its old ones).
     cluster = real_config['cluster']
+    grants = real_config['databases']
 
     problems = %w[lambda_users system_users user_groups].flat_map do |section|
       defined = cluster[section].map { |entry| entry_name(entry) }
-      granted = real_config['databases'].transform_values do |db_config|
+      granted = grants.transform_values do |db_config|
         (db_config[section] || []).map { |entry| entry_name(entry) }
       end
 
