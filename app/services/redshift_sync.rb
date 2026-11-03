@@ -209,6 +209,10 @@ class RedshiftSync
     interpolate_config_hash(database_config.fetch('user_groups', []))
   end
 
+  def role_grants
+    interpolate_config_hash(database_config.fetch('user_roles', []))
+  end
+
   def schemas_for(grant_list, key, name)
     entry = grant_list.find { |e| e[key] == name }
     entry && entry['schemas']
