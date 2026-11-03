@@ -99,7 +99,7 @@ class RedshiftSync
       apply_group_grants(group, schemas) if schemas
     end
 
-    roles.each do |group|
+    roles.each do |role|
       schemas = schemas_for(role_grants, 'name', role['name'])
       apply_role_grants(role, schemas) if schemas
     end
