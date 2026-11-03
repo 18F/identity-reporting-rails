@@ -99,6 +99,11 @@ class RedshiftSync
       apply_group_grants(group, schemas) if schemas
     end
 
+    roles.each do |group|
+      schemas = schemas_for(role_grants, 'name', role['name'])
+      apply_role_grants(role, schemas) if schemas
+    end
+
     Rails.logger.info("Redshift grants applied successfully for database=#{database}")
   end
 
@@ -555,6 +560,10 @@ class RedshiftSync
 
   def apply_group_grants(user_group, schemas)
     create_schema_privileges_for_group(user_group, schemas)
+  end
+
+  def apply_role_grants(role, schemas)
+    create_schema_privileges_for_role(role, schemas)
   end
 
   def revoke_all_privileges_for_group(group_name, schema_name)
