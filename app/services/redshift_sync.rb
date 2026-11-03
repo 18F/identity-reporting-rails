@@ -63,7 +63,7 @@ class RedshiftSync
     apply_masking_for_new_users(new_users) if new_users.any? && analytics_database?
 
     roles.each do |role|
-      create_user_role(role) if feature_enabled?(role['feature_flag'])
+      create_user_role(role) if role_enabled?(role)
     end
 
     Rails.logger.info('Redshift cluster-level user sync completed successfully')
@@ -100,7 +100,9 @@ class RedshiftSync
     end
 
     roles.each do |role|
-      schemas = schemas_for(role_grants, 'name', role['name'])
+      next unless role_enabled?(role)
+
+      schemas = schemas_for(role_grants, 'role_name', role['role_name'])
       apply_role_grants(role, schemas) if schemas
     end
 
@@ -199,6 +201,26 @@ class RedshiftSync
 
   def roles
     cluster_config.fetch('user_roles', []).map { |role| interpolate_config_hash(role) }
+  end
+
+  # A system user whose feature flag is off is never created, so it cannot be a role member.
+  def disabled_system_user_names
+    system_users.reject { |user| feature_enabled?(user['feature_flag']) }.
+      map { |user| user['user_name'] }
+  end
+
+  def active_role_members(role)
+    role.fetch('member_users', []).map { |user| interpolate_env_name(user) } -
+      disabled_system_user_names
+  end
+
+  # A role is skipped when its own flag is off, or when it lists static members and every one
+  # of them is disabled. aws_groups membership is resolved at sync time, so it always counts.
+  def role_enabled?(role)
+    return false unless feature_enabled?(role['feature_flag'])
+    return true if role.fetch('member_users', []).empty? || role['aws_groups'].present?
+
+    active_role_members(role).any?
   end
 
   # --- Database-level grant accessors (per database) ---
@@ -300,6 +322,12 @@ class RedshiftSync
 
     system_user_grants.each do |user|
       user['schemas'].each do |schema|
+        all_schemas << schema['schema_name'] if feature_enabled?(schema.fetch('feature_flag', nil))
+      end
+    end
+
+    role_grants.each do |role|
+      role['schemas'].each do |schema|
         all_schemas << schema['schema_name'] if feature_enabled?(schema.fetch('feature_flag', nil))
       end
     end
@@ -567,16 +595,21 @@ class RedshiftSync
   end
 
   def revoke_all_privileges_for_group(group_name, schema_name)
+    revoke_all_privileges("GROUP #{group_name}", schema_name)
+  end
+
+  # grantee is "GROUP <name>" or "ROLE <name>"
+  def revoke_all_privileges(grantee, schema_name)
     sql = <<~SQL
-      REVOKE ALL ON SCHEMA #{schema_name} FROM GROUP #{group_name};
-      REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA #{schema_name} FROM GROUP #{group_name};
+      REVOKE ALL ON SCHEMA #{schema_name} FROM #{grantee};
+      REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA #{schema_name} FROM #{grantee};
     SQL
 
-    # Mirrors create_user_group_privileges: its ALTER DEFAULT PRIVILEGES grant is a
+    # Mirrors create_privileges: its ALTER DEFAULT PRIVILEGES grant is a
     # separate catalog entry, so without this the next dbt-created table re-grants.
     if dbt_user_schema?(schema_name) && user_exists?(schema_name)
       sql += <<~SQL
-        ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} REVOKE ALL ON TABLES FROM GROUP #{group_name};
+        ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} REVOKE ALL ON TABLES FROM #{grantee};
       SQL
     end
 
@@ -593,6 +626,24 @@ class RedshiftSync
     )
     return if !result.any?
 
+    apply_schema_privileges("GROUP #{user_group['name']}", schemas)
+  end
+
+  def create_schema_privileges_for_role(role, schemas)
+    Rails.logger.info(
+      "Updating schema privileges for role #{role['role_name']} on database=#{database}",
+    )
+
+    result = execute_query(
+      "SELECT role_name FROM svv_roles WHERE role_name = #{quote(role['role_name'])}",
+    )
+    return if !result.any?
+
+    apply_schema_privileges("ROLE #{role['role_name']}", schemas)
+  end
+
+  # grantee is "GROUP <name>" or "ROLE <name>"
+  def apply_schema_privileges(grantee, schemas)
     active_schemas = schemas.select do |s|
       feature_enabled?(s.fetch('feature_flag', nil))
     end
@@ -601,12 +652,12 @@ class RedshiftSync
     schemas_to_revoke = get_existing_configured_schemas - active_schema_names
 
     revoke_statements = schemas_to_revoke.map do |schema_name|
-      revoke_all_privileges_for_group(user_group['name'], schema_name)
+      revoke_all_privileges(grantee, schema_name)
     end
 
     grant_statements = active_schemas.map do |schema|
-      create_user_group_privileges(
-        user_group['name'],
+      create_privileges(
+        grantee,
         schema['schema_name'],
         schema['schema_privileges'],
         schema['table_privileges'],
@@ -624,31 +675,36 @@ class RedshiftSync
     execute_query(sql)
 
     active_schemas.each do |schema|
-      Rails.logger.info(
-        "Granted privileges on schema #{schema['schema_name']} to group #{user_group['name']}",
-      )
+      Rails.logger.info("Granted privileges on schema #{schema['schema_name']} to #{grantee}")
     end
   end
 
   def create_user_group_privileges(group_name, schema_name, schema_privileges, table_privileges,
                                    restricted_tables = [])
+    create_privileges(
+      "GROUP #{group_name}", schema_name, schema_privileges, table_privileges, restricted_tables
+    )
+  end
+
+  def create_privileges(grantee, schema_name, schema_privileges, table_privileges,
+                        restricted_tables = [])
     sql = <<~SQL
-      GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO GROUP #{group_name};
+      GRANT #{schema_privileges} ON SCHEMA #{schema_name} TO #{grantee};
     SQL
 
     if dbt_user_schema?(schema_name) && user_exists?(schema_name)
       sql += <<~SQL
-        ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} GRANT #{table_privileges} ON TABLES TO GROUP #{group_name};
+        ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} GRANT #{table_privileges} ON TABLES TO #{grantee};
       SQL
     else
       sql += <<~SQL
-        GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO GROUP #{group_name};
+        GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO #{grantee};
       SQL
     end
 
     restricted_tables.each do |table|
       sql += <<~SQL
-        REVOKE ALL PRIVILEGES ON TABLE #{schema_name}.#{table} FROM GROUP #{group_name};
+        REVOKE ALL PRIVILEGES ON TABLE #{schema_name}.#{table} FROM #{grantee};
       SQL
     end
 
@@ -767,8 +823,7 @@ class RedshiftSync
     current_role_users = result.any? ? result.map { |row| row['user_name'] } : []
     # Static list, aws_groups membership, or both. Users only.
     desired_role_users = (
-      user_role.fetch('member_users', []).map { |user| interpolate_env_name(user) } +
-      users_in_aws_groups(user_role['aws_groups'])
+      active_role_members(user_role) + users_in_aws_groups(user_role['aws_groups'])
     ).uniq
 
     users_to_revoke = current_role_users - desired_role_users
