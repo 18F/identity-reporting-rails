@@ -137,7 +137,7 @@ cluster:
         - fraud_ops_tracker_enabled
         - dw_fraudops_email_enabled
 
-    # gives access to reading our main schemas
+    # gives access to reading our main schemas (grants: databases.*.user_roles)
     - role_name: reporting_reader
       member_users:
         - marts
@@ -148,79 +148,41 @@ cluster:
         - rails_worker
         - databricks
 
-      schemas:
-        - schema_name: idp
-          schema_privileges: USAGE
-          table_privileges: SELECT
-        - schema_name: idp_core
-          schema_privileges: USAGE
-          table_privileges: SELECT
-          feature_flag: idp_zero_etl_enabled
-        - schema_name: logs
-          schema_privileges: USAGE
-          table_privileges: SELECT
-          restricted_tables:
-            - unextracted_events
-            - unextracted_production
-        - schema_name: marts
-          schema_privileges: USAGE
-          table_privileges: SELECT
-
     # gives access to reading our development schemas
     - role_name: qa_reporting_reader
       feature_flag: dbt_enabled
       member_users:
-          - qa_marts
-          - quicksight_connector
-          - fraudops_qa_marts
-          - rails_worker
-          - databricks
-      schemas:
-          - schema_name: qa_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
+        - qa_marts
+        - quicksight_connector
+        - fraudops_qa_marts
+        - rails_worker
+        - databricks
 
     - role_name: pg_catalog_user
       member_users:
         - marts
         - qa_marts
         - fraudops_marts
-        - fraudops_qa_marts     
-        - rails_worker  
-      schemas: 
-        - schema_name: pg_catalog
-          schema_privileges: USAGE
-          table_privileges: SELECT
+        - fraudops_qa_marts
+        - rails_worker
 
     # gives access to reading our fraudops schemas
     - role_name: fraudops_reporting_reader
-      feature_flag: 
-          - dbt_enabled
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
+      feature_flag:
+        - dbt_enabled
+        - fraud_ops_tracker_enabled
+        - dw_fraudops_email_enabled
       member_users:
-          - fraudops_marts
-          - fraudops_qa_marts  
+        - fraudops_marts
+        - fraudops_qa_marts
 
-      schemas:
-          - schema_name: fraudops
-            schema_privileges: USAGE
-            table_privileges: SELECT
-          - schema_name: fraudops_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
-      
     - role_name: fraudops_qa_reporting_reader
-      feature_flag: 
-          - dbt_enabled
-          - fraud_ops_tracker_enabled
-          - dw_fraudops_email_enabled
+      feature_flag:
+        - dbt_enabled
+        - fraud_ops_tracker_enabled
+        - dw_fraudops_email_enabled
       member_users:
-          - fraudops_qa_marts          
-      schemas:
-          - schema_name: fraudops_qa_marts
-            schema_privileges: USAGE
-            table_privileges: SELECT
+        - fraudops_qa_marts
 
 # Database-level GRANTs.
 #
@@ -412,9 +374,57 @@ databases:
               - fraud_ops_tracker_enabled
               - dw_fraudops_email_enabled
 
+    user_roles:
+      - role_name: reporting_reader
+        schemas:
+          - schema_name: idp
+            schema_privileges: USAGE
+            table_privileges: SELECT
+          - schema_name: idp_core
+            schema_privileges: USAGE
+            table_privileges: SELECT
+            feature_flag: idp_zero_etl_enabled
+          - schema_name: logs
+            schema_privileges: USAGE
+            table_privileges: SELECT
+            restricted_tables:
+              - unextracted_events
+              - unextracted_production
+          - schema_name: marts
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
+      - role_name: qa_reporting_reader
+        schemas:
+          - schema_name: qa_marts
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
+      - role_name: pg_catalog_user
+        schemas:
+          - schema_name: pg_catalog
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
+      - role_name: fraudops_reporting_reader
+        schemas:
+          - schema_name: fraudops
+            schema_privileges: USAGE
+            table_privileges: SELECT
+          - schema_name: fraudops_marts
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
+      - role_name: fraudops_qa_reporting_reader
+        schemas:
+          - schema_name: fraudops_qa_marts
+            schema_privileges: USAGE
+            table_privileges: SELECT
+
   # Zero-ETL replica: read-only, schema/table access is granted to only DBT users.
   analytics_zetl:
     feature_flag: idp_zero_etl_enabled
     lambda_users: []
     system_users: []
     user_groups: []
+    user_roles: []
