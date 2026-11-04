@@ -507,6 +507,17 @@ class RedshiftSync
     return sql if tables.blank? && dbt_user?(user_name) && user_name == schema_name
 
     if tables.blank? && dbt_user_schema?(schema_name) && user_exists?(schema_name)
+      # TODO: Extend redshift_config.yaml to configure grants on existing tables
+      # in dbt-owned schemas alongside default privileges for future tables.
+      # Replace this hardcoded user/schema allowlist with explicit configuration,
+      # preserving the intended access boundaries.
+      if (user_name == 'quicksight_connector' && %w[marts qa_marts].include?(schema_name)) ||
+         (user_name == 'rails_worker' && schema_name == 'marts')
+        sql += <<~SQL
+          GRANT #{table_privileges} ON ALL TABLES IN SCHEMA #{schema_name} TO #{user_name};
+        SQL
+      end
+
       sql += <<~SQL
         ALTER DEFAULT PRIVILEGES FOR USER #{schema_name} IN SCHEMA #{schema_name} GRANT #{table_privileges} ON TABLES TO #{user_name};
       SQL
