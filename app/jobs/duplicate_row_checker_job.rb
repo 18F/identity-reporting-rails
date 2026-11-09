@@ -39,12 +39,8 @@ class DuplicateRowCheckerJob < ApplicationJob
     @schema_name = DataWarehouseApplicationRecord.connection.quote_table_name(schema_name)
     uniq_by = determine_unique_identifier(schema_name, table_name)
 
-    log_message(
-      :info,
-      'Checking for duplicate rows',
-      true,
-      log_context,
-    )
+    Rails.logger.info "DuplicateRowCheckerJob: Checking for duplicates in " \
+    "#{@schema_name}.#{@table_name}"
 
     query = build_query(uniq_by)
 
@@ -68,27 +64,11 @@ class DuplicateRowCheckerJob < ApplicationJob
 
   def log_result(duplicates)
     if duplicates.any?
-      log_message(
-        :warn,
-        'Found duplicate rows',
-        false,
-        log_context(duplicate_count: duplicates.count),
-      )
+      Rails.logger.warn "DuplicateRowCheckerJob: Found #{duplicates.count} duplicate(s) in " \
+                        "#{@schema_name}.#{@table_name}"
     else
-      log_message(
-        :info,
-        'No duplicate rows found',
-        true,
-        log_context,
-      )
+      Rails.logger.info "DuplicateRowCheckerJob: No duplicates found in " \
+                        "#{@schema_name}.#{@table_name}"
     end
-  end
-
-  def log_context(extra = {})
-    {
-      job_id: job_id,
-      schema_name: @schema_name,
-      table_name: @table_name,
-    }.merge(extra)
   end
 end

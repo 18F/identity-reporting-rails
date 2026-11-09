@@ -22,18 +22,8 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
       end
 
       it 'logs a warning' do
-        allow(idp_job).to receive(:log_message).and_call_original
-        expect(idp_job).to receive(:log_message).with(
-          :warn,
-          'Found duplicate rows',
-          false,
-          hash_including(
-            job_id: idp_job.job_id,
-            schema_name: '"idp"',
-            table_name: '"articles"',
-            duplicate_count: 1,
-          ),
-        )
+        expected_message = 'DuplicateRowCheckerJob: Found 1 duplicate(s) in "idp"."articles"'
+        expect(Rails.logger).to receive(:warn).with(expected_message)
         idp_job.perform('articles', 'idp')
       end
     end
@@ -46,18 +36,8 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
       end
 
       it 'logs a warning' do
-        allow(logs_job).to receive(:log_message).and_call_original
-        expect(logs_job).to receive(:log_message).with(
-          :warn,
-          'Found duplicate rows',
-          false,
-          hash_including(
-            job_id: logs_job.job_id,
-            schema_name: '"logs"',
-            table_name: '"events"',
-            duplicate_count: 1,
-          ),
-        )
+        expected_message = 'DuplicateRowCheckerJob: Found 1 duplicate(s) in "logs"."events"'
+        expect(Rails.logger).to receive(:warn).with(expected_message)
         logs_job.perform('events', 'logs')
       end
     end
@@ -68,13 +48,7 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
       end
 
       it 'does not log a warning' do
-        allow(idp_job).to receive(:log_message).and_call_original
-        expect(idp_job).not_to receive(:log_message).with(
-          :warn,
-          anything,
-          anything,
-          anything,
-        )
+        expect(Rails.logger).not_to receive(:warn)
         idp_job.perform('articles', 'idp')
       end
     end
@@ -85,13 +59,7 @@ RSpec.describe DuplicateRowCheckerJob, type: :job do
       end
 
       it 'does not log a warning' do
-        allow(logs_job).to receive(:log_message).and_call_original
-        expect(logs_job).not_to receive(:log_message).with(
-          :warn,
-          anything,
-          anything,
-          anything,
-        )
+        expect(Rails.logger).not_to receive(:warn)
         logs_job.perform('events', 'logs')
       end
     end
