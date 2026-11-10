@@ -17,26 +17,49 @@ RSpec.describe LogsColumnExtractorJob, type: :job do
     context 'when target table name is not recognized' do
       it 'confirm the job will not run' do
         allow(Rails.logger).to receive(:info).and_call_original
-        msg = '{"job":"LogsColumnExtractorJob",' \
-              '"success":false,' \
-              '"message":"Invalid table name",' \
-              '"schema_name":"logs",' \
-              '"source_table_name":"unextracted_random_name"}'
+        msg = {
+          job: 'LogsColumnExtractorJob',
+          job_id: logs_job.job_id,
+          success: false,
+          message: 'Invalid table name',
+          schema_name: 'logs',
+          source_table_name: 'unextracted_random_name',
+        }.to_json
         expect(Rails.logger).to receive(:info).with(msg)
         logs_job.perform('random_name')
       end
     end
 
     context 'when no data in tables' do
-      it 'confirm the job does not execute any query' do
-        allow(Rails.logger).to receive(:info).and_call_original
-        msg = '{"job":"LogsColumnExtractorJob",' \
-              '"success":false,' \
-              '"message":"Missing data in source table",' \
-              '"schema_name":"logs",' \
-              '"source_table_name":"unextracted_events"}'
-        expect(Rails.logger).to receive(:info).with(msg)
-        logs_job.perform('events')
+      ['events', 'production'].each do |table_name|
+        it "logs a successful no-op with the job ID for #{table_name}" do
+          messages = []
+          allow(Rails.logger).to receive(:info) { |message| messages << JSON.parse(message) }
+          expect(DataWarehouseApplicationRecord.connection).not_to receive(:execute)
+
+          logs_job.perform(table_name)
+
+          expected_messages = [
+            {
+              'job' => 'LogsColumnExtractorJob',
+              'job_id' => logs_job.job_id,
+              'success' => true,
+              'message' => 'Processing records from source to target. Executing queries...',
+              'schema_name' => 'logs',
+              'source_table_name' => "unextracted_#{table_name}",
+              'target_table_name' => table_name,
+            },
+            {
+              'job' => 'LogsColumnExtractorJob',
+              'job_id' => logs_job.job_id,
+              'success' => true,
+              'message' => 'No source records to extract; skipping',
+              'schema_name' => 'logs',
+              'source_table_name' => "unextracted_#{table_name}",
+            },
+          ]
+          expect(messages).to eq(expected_messages)
+        end
       end
     end
 
@@ -85,12 +108,15 @@ RSpec.describe LogsColumnExtractorJob, type: :job do
       end
       it 'confirm the column extraction is successful' do
         allow(Rails.logger).to receive(:info).and_call_original
-        msg = '{"job":"LogsColumnExtractorJob",' \
-              '"success":true,' \
-              '"message":"Query executed successfully",' \
-              '"schema_name":"logs",' \
-              '"source_table_name":"unextracted_events",' \
-              '"target_table_name":"events"}'
+        msg = {
+          job: 'LogsColumnExtractorJob',
+          job_id: logs_job.job_id,
+          success: true,
+          message: 'Query executed successfully',
+          schema_name: 'logs',
+          source_table_name: 'unextracted_events',
+          target_table_name: 'events',
+        }.to_json
         expect(Rails.logger).to receive(:info).with(msg)
         logs_job.perform('events')
         query = 'Select * from logs.events;'
@@ -133,11 +159,15 @@ RSpec.describe LogsColumnExtractorJob, type: :job do
       end
       it 'confirm the column extraction is successful' do
         allow(Rails.logger).to receive(:info).and_call_original
-        msg = '{"job":"LogsColumnExtractorJob",' \
-              '"success":true,"message":"Query executed successfully",' \
-              '"schema_name":"logs",' \
-              '"source_table_name":"unextracted_production",' \
-              '"target_table_name":"production"}'
+        msg = {
+          job: 'LogsColumnExtractorJob',
+          job_id: logs_job.job_id,
+          success: true,
+          message: 'Query executed successfully',
+          schema_name: 'logs',
+          source_table_name: 'unextracted_production',
+          target_table_name: 'production',
+        }.to_json
         expect(Rails.logger).to receive(:info).with(msg)
         logs_job.perform('production')
         query = 'Select * from logs.production;'
@@ -163,8 +193,13 @@ RSpec.describe LogsColumnExtractorJob, type: :job do
       end
       it 'confirm the column extraction is unsuccessful' do
         allow(Rails.logger).to receive(:info).and_call_original
-        msg_regex = /"job":"LogsColumnExtractorJob","success":false,"message":"PG::NotNullViolation/
-        expect(Rails.logger).to receive(:info).with(match(msg_regex))
+        expect(Rails.logger).to receive(:info).with(include('PG::NotNullViolation')) do |message|
+          expect(JSON.parse(message)).to include(
+            'job' => 'LogsColumnExtractorJob',
+            'job_id' => logs_job.job_id,
+            'success' => false,
+          )
+        end
         logs_job.perform('events')
       end
     end

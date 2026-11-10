@@ -78,6 +78,7 @@ class LogsColumnExtractorJob < ApplicationJob
       Rails.logger.info(
         {
           job: self.class.name,
+          job_id: job_id,
           success: false,
           message: 'Invalid table name',
           schema_name: @schema_name,
@@ -93,6 +94,7 @@ class LogsColumnExtractorJob < ApplicationJob
     Rails.logger.info(
       {
         job: self.class.name,
+        job_id: job_id,
         success: true,
         message: 'Processing records from source to target. Executing queries...',
         schema_name: @schema_name,
@@ -116,6 +118,7 @@ class LogsColumnExtractorJob < ApplicationJob
         Rails.logger.info(
           {
             job: self.class.name,
+            job_id: job_id,
             success: false,
             message: e.message,
             schema_name: @schema_name,
@@ -128,8 +131,9 @@ class LogsColumnExtractorJob < ApplicationJob
       Rails.logger.info(
         {
           job: self.class.name,
-          success: false,
-          message: 'Missing data in source table',
+          job_id: job_id,
+          success: true,
+          message: 'No source records to extract; skipping',
           schema_name: @schema_name,
           source_table_name: @source_table_name,
         }.to_json,
@@ -139,6 +143,7 @@ class LogsColumnExtractorJob < ApplicationJob
     Rails.logger.info(
       {
         job: self.class.name,
+        job_id: job_id,
         success: true,
         message: 'Query executed successfully',
         schema_name: @schema_name,

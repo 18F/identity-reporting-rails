@@ -1,5 +1,20 @@
 # Jobs
 
+## Logs extraction
+
+`ExtractorRowCheckerEnqueueJob` starts at the configured
+`extractor_row_checker_enqueue_cron` schedule. Every invocation enqueues
+`PiiRowCheckerJob` for each table in the `logs` schema, even if work from a
+previous invocation is still pending. Checks for target tables enqueue
+`LogsColumnExtractorJob`. Per-table concurrency limits apply independently to
+the checker and extractor jobs.
+
+Extractor status messages include `job_id` for correlation. An empty source logs
+`success: true` with `No source records to extract; skipping`. Caught extraction
+errors log `success: false`, which matches the dedicated extractor failure
+metric filter. These caught errors return normally, so inspect the application
+logs rather than relying on GoodJob completion status alone.
+
 ## User Syncs (Redshift & QuickSight)
 
 This app owns the **execution** logic for syncing users into the data
