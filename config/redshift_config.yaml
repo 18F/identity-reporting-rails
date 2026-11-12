@@ -129,16 +129,27 @@ cluster:
         - quicksight_connector
       feature_flag: redshift_quicksight_connector_enabled
 
+    # The maskign_worker role allows the assigned users to create and attach masking policies
     - role_name: masking_worker
-      member_users:
-        - fraudops_marts
-        - fraudops_qa_marts
-
-      assigned_roles:
-        - "sys:secadmin"
       feature_flag:
         - fraud_ops_tracker_enabled
         - dw_fraudops_email_enabled
+      member_users:
+        - fraudops_marts
+        - fraudops_qa_marts
+      assigned_roles:
+        - "sys:secadmin"
+
+    # The pii_viewers role allow the assigned users to unmask pii in the 
+    - role_name: pii_viewers
+      feature_flag:
+        - fraud_ops_tracker_enabled
+        - dw_fraudops_email_enabled
+        - dbt_enabled
+      member_users:
+        - pii_reader
+        - fraudops_marts
+        - fraudops_qa_marts
 
 # Database-level GRANTs.
 #
