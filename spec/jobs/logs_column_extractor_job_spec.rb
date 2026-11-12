@@ -13,6 +13,50 @@ RSpec.describe LogsColumnExtractorJob, type: :job do
     end
   end
 
+  describe 'enqueue concurrency' do
+    before do
+      allow(described_class).to receive(:queue_adapter).
+        and_return(GoodJob::Adapter.new(execution_mode: :external))
+    end
+
+    it 'rejects another job for a table that already has a queued job' do
+      described_class.perform_later('events')
+
+      expect { expect(described_class.perform_later('events')).to eq(false) }.
+        not_to change(GoodJob::Job, :count)
+    end
+
+    it 'rejects another job for a table that already has a running job' do
+      job = described_class.perform_later('events')
+      record = GoodJob::Job.find(job.provider_job_id)
+      record.update!(performed_at: Time.current)
+
+      record.with_advisory_lock do
+        expect { expect(described_class.perform_later('events')).to eq(false) }.
+          not_to change(GoodJob::Job, :count)
+      end
+    end
+
+    it 'allows another table while an extractor is running' do
+      job = described_class.perform_later('events')
+      record = GoodJob::Job.find(job.provider_job_id)
+      record.update!(performed_at: Time.current)
+
+      record.with_advisory_lock do
+        expect { described_class.perform_later('production') }.
+          to change(GoodJob::Job, :count).by(1)
+      end
+    end
+
+    it 'allows the next job for a table after the previous job finishes' do
+      job = described_class.perform_later('events')
+      GoodJob::Job.find(job.provider_job_id).update!(finished_at: Time.current)
+
+      expect { described_class.perform_later('events') }.
+        to change(GoodJob::Job, :count).by(1)
+    end
+  end
+
   describe '#perform' do
     context 'when target table name is not recognized' do
       it 'confirm the job will not run' do

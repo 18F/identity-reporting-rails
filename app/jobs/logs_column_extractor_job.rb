@@ -4,7 +4,8 @@ class LogsColumnExtractorJob < ApplicationJob
   queue_as :default
 
   good_job_control_concurrency_with(
-    perform_limit: 1,
+    # The next scheduled run will pick up new logs; do not queue duplicate work.
+    total_limit: 1,
     key: -> { "#{self.class.name}-#{queue_name}-logs-#{arguments.first}" },
   )
 
