@@ -52,8 +52,8 @@ module RedshiftMasking
       sql = <<~SQL
         SELECT policy_name, schema_name, table_name,
                JSON_EXTRACT_ARRAY_ELEMENT_TEXT(input_columns, 0) AS column_name,
-               grantee, priority
-        FROM svv_attached_masking_policy
+               grantor, grantee, priority
+        FROM svv_attached_masking_policy        
       SQL
 
       connection.execute(sql).to_a.map do |row|
@@ -63,6 +63,7 @@ module RedshiftMasking
           table: row['table_name'],
           column: row['column_name'],
           grantee: row['grantee'],
+          grantor: row['grantor'],
           priority: row['priority'].to_i,
         )
       end
