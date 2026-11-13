@@ -1376,11 +1376,95 @@ RSpec.describe RedshiftSync do
     end
 
     describe '#sync_user_role' do
+      before { allow(sync).to receive(:user_exists?).and_return(true) }
+
       let(:user_role) do
         {
           'role_name' => 'dw_ingestion',
           'member_users' => ['rails_worker', 'IAMR:testenv_db_consumption'],
         }
+      end
+
+      context 'with independently gated system users' do
+        let(:user_role) do
+          {
+            'role_name' => 'dbt_workers',
+            'member_users' => %w[marts fraudops_marts],
+          }
+        end
+
+        before do
+          test_redshift_config['cluster']['system_users'] << {
+            'user_name' => 'fraudops_marts',
+            'feature_flag' => %w[fraud_ops_tracker_enabled dw_fraudops_email_enabled],
+          }
+        end
+
+        it 'grants only ordinary dbt users when only dbt is enabled' do
+          expect(sync).not_to receive(:user_exists?).with('fraudops_marts')
+          expect(mock_connection).to receive(:execute).with(/GRANT ROLE/) do |sql|
+            expect(sql).to include('GRANT ROLE dbt_workers TO "marts";')
+            expect(sql).not_to include('fraudops_marts')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'grants only FraudOps users when only a FraudOps flag is enabled' do
+          allow(sync).to receive(:config_file).and_return('dw_fraudops_email_enabled = true')
+          expect(sync).not_to receive(:user_exists?).with('marts')
+          expect(mock_connection).to receive(:execute).with(/GRANT ROLE/) do |sql|
+            expect(sql).to include('GRANT ROLE dbt_workers TO "fraudops_marts";')
+            expect(sql).not_to include('TO "marts"')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'grants both populations when their flags are enabled' do
+          allow(sync).to receive(:config_file).
+            and_return("dbt_enabled = true\nfraud_ops_tracker_enabled = true")
+          expect(mock_connection).to receive(:execute).with(/GRANT ROLE/) do |sql|
+            expect(sql).to include('TO "marts";', 'TO "fraudops_marts";')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'revokes membership from a disabled user even if the account still exists' do
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/).
+            and_return([{ 'user_name' => 'fraudops_marts' }, { 'user_name' => 'marts' }])
+          expect(mock_connection).to receive(:execute).with(/REVOKE ROLE/) do |sql|
+            expect(sql).to include('REVOKE ROLE dbt_workers FROM "fraudops_marts";')
+            expect(sql).not_to include('GRANT')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'reports an enabled user that was unexpectedly not created' do
+          allow(sync).to receive(:user_exists?).with('marts').and_return(false)
+          expect(mock_connection).not_to receive(:execute).with(/GRANT|REVOKE/)
+
+          expect { sync.send(:sync_user_role, user_role) }.
+            to raise_error(described_class::SyncError, /dbt_workers.*marts.*does not exist/)
+        end
+
+        it 'reports an unknown static member instead of silently skipping it' do
+          user_role['member_users'] = ['misspelled_user']
+          expect(mock_connection).not_to receive(:execute).with(/GRANT|REVOKE/)
+
+          expect { sync.send(:sync_user_role, user_role) }.
+            to raise_error(described_class::SyncError, /dbt_workers.*unknown.*misspelled_user/)
+        end
+
+        it 'makes no membership changes when both populations are disabled' do
+          allow(sync).to receive(:config_file).and_return('')
+          expect(mock_connection).not_to receive(:execute).with(/GRANT|REVOKE/)
+
+          sync.send(:sync_user_role, user_role)
+        end
       end
 
       context 'when role has existing members' do
