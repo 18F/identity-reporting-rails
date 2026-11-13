@@ -82,7 +82,6 @@ cluster:
       feature_flag:
         - dw_fraudops_email_enabled
         - fraud_ops_tracker_enabled    
-      syslog_access: true
       secret_id: "redshift/%{env_name}-analytics-pii-reader"
       connection_limit: 4
 
