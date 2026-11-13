@@ -214,8 +214,7 @@ RSpec.describe 'config/redshift_config.yaml' do
       role_flags = Array(role['feature_flag'])
       role.fetch('member_users', []).filter_map do |name|
         flags = user_flags.fetch(name, [])
-        next if flags.empty? || (role_flags.any? && (role_flags - flags).empty?)
-
+        next if flags.empty? || (role_flags.any? && (role_flags & flags).present?)
         "Role '#{role['role_name']}' must be gated on #{flags.join(' or ')}, " \
           "like its member '#{name}'"
       end
