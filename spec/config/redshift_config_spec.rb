@@ -171,7 +171,7 @@ RSpec.describe 'config/redshift_config.yaml' do
     errors = shape_errors(real_config, config_shape, 'redshift_config.yaml')
 
     expect(errors).to be_empty, [
-      'redshift_config.yaml does not match the shape RedshiftSync expects ' \
+      'redshift_config.yaml does not match the shape RedshiftSync expects' \
         '(see config_shape in this spec):',
       errors.join("\n"),
     ].join("\n")

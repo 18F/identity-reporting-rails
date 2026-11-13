@@ -131,8 +131,17 @@ cluster:
 
     - role_name: quicksight_access
       feature_flag: redshift_quicksight_connector_enabled
-      users:
+      member_users:
         - quicksight_connector
+
+    - role_name: dbt_workers
+      feature_flag: dbt_enabled
+      member_users:
+        - marts
+        - qa_marts
+        - fraudops_marts
+        - fraudops_qa_marts
+
 
 # Database-level GRANTs.
 #
