@@ -1741,8 +1741,6 @@ RSpec.describe RedshiftSync do
           quicksight_connector
           marts
           qa_marts
-          fraudops_marts
-          fraudops_qa_marts
         ]
       end
       let(:expected_idp_core_writers) do
@@ -1780,7 +1778,8 @@ RSpec.describe RedshiftSync do
       it 'checks that expected idp_core users are in config' do
         missing_users = expected_idp_core_users - all_idp_core_user_names
         expect(missing_users).to be_empty,
-                                 "Expected users are missing idp_core access: #{missing_users.join(', ')}"
+                                 "Expected users are missing idp_core access:
+                                 #{missing_users.join(', ')}"
       end
 
       it 'does not grant idp_core access to unexpected users' do
@@ -1815,15 +1814,15 @@ RSpec.describe RedshiftSync do
           table_privileges = idp_core_config['table_privileges']
 
           failure_message = [
-            "Expected #{user_moniker} to have schema privilege #{expected_schema_privileges} on idp_core.",
-            "Got: #{schema_privileges.inspect}",
+            "Expected #{user_moniker} to have schema privilege
+            #{expected_schema_privileges} on idp_core.", "Got: #{schema_privileges.inspect}"
           ].join("\n")
 
           expect(schema_privileges).to eq(expected_schema_privileges), failure_message
 
           failure_message = [
-            "Expected #{user_moniker} to have table privilege #{expected_table_privileges} on idp_core.",
-            "Got: #{table_privileges.inspect}",
+            "Expected #{user_moniker} to have table privilege
+            #{expected_table_privileges} on idp_core.", "Got: #{table_privileges.inspect}"
           ].join("\n")
 
           expect(table_privileges).to eq(expected_table_privileges), failure_message
