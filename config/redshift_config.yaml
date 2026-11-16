@@ -137,8 +137,6 @@ cluster:
     - role_name: dbt_workers
       feature_flag: 
         - dbt_enabled
-        - fraud_ops_tracker_enabled
-        - dw_fraudops_email_enabled
       member_users:
         - marts
         - qa_marts
@@ -151,7 +149,7 @@ cluster:
       feature_flag:
         - fraud_ops_tracker_enabled
         - dw_fraudops_email_enabled
-      member_users:
+      member_users:        
         - fraudops_marts
         - fraudops_qa_marts
       assigned_roles:
