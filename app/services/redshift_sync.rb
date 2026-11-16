@@ -741,6 +741,28 @@ class RedshiftSync
     end
   end
 
+  # Role flags activate the role as a whole; each system member keeps its own gate.
+  # Validate enabled members before changing membership so missing accounts fail closed.
+  def enabled_static_role_members(user_role)
+    configured_users = system_users.index_by { |user| user['user_name'] }
+    other_users = lambda_users.map { |user| user['user_name'] } + canonical_users + ['superuser']
+
+    user_role.fetch('member_users', []).filter_map do |member|
+      name = interpolate_env_name(member)
+      user = configured_users[name]
+      unless user || other_users.include?(name)
+        raise SyncError, "Role #{user_role['role_name']} has unknown member #{name}"
+      end
+      next if user && !feature_enabled?(user['feature_flag'])
+
+      unless user_exists?(name)
+        raise SyncError, "Role #{user_role['role_name']} enabled member #{name} does not exist"
+      end
+
+      name
+    end
+  end
+
   def sync_user_role(user_role)
     Rails.logger.info("Syncing users for role #{user_role['role_name']}")
 
@@ -754,7 +776,7 @@ class RedshiftSync
     current_role_users = result.any? ? result.map { |row| row['user_name'] } : []
     # Static list, aws_groups membership, or both. Users only.
     desired_role_users = (
-      user_role.fetch('member_users', []).map { |user| interpolate_env_name(user) } +
+      enabled_static_role_members(user_role) +
       users_in_aws_groups(user_role['aws_groups'])
     ).uniq
 

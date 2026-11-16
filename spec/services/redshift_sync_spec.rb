@@ -179,7 +179,7 @@ RSpec.describe RedshiftSync do
       expect(
         sync.send(
           :feature_enabled?,
-          %w[redshift_quicksight_connector_enabled fraud_ops_tracker_enabled],
+          %w[redshift_quicksigs_connector_enabled fraud_ops_tracker_enabled],
         ),
       ).to be false
     end
@@ -1376,11 +1376,95 @@ RSpec.describe RedshiftSync do
     end
 
     describe '#sync_user_role' do
+      before { allow(sync).to receive(:user_exists?).and_return(true) }
+
       let(:user_role) do
         {
           'role_name' => 'dw_ingestion',
           'member_users' => ['rails_worker', 'IAMR:testenv_db_consumption'],
         }
+      end
+
+      context 'with independently gated system users' do
+        let(:user_role) do
+          {
+            'role_name' => 'dbt_workers',
+            'member_users' => %w[marts fraudops_marts],
+          }
+        end
+
+        before do
+          test_redshift_config['cluster']['system_users'] << {
+            'user_name' => 'fraudops_marts',
+            'feature_flag' => %w[fraud_ops_tracker_enabled dw_fraudops_email_enabled],
+          }
+        end
+
+        it 'grants only ordinary dbt users when only dbt is enabled' do
+          expect(sync).not_to receive(:user_exists?).with('fraudops_marts')
+          expect(mock_connection).to receive(:execute).with(/GRANT ROLE/) do |sql|
+            expect(sql).to include('GRANT ROLE dbt_workers TO "marts";')
+            expect(sql).not_to include('fraudops_marts')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'grants only FraudOps users when only a FraudOps flag is enabled' do
+          allow(sync).to receive(:config_file).and_return('dw_fraudops_email_enabled = true')
+          expect(sync).not_to receive(:user_exists?).with('marts')
+          expect(mock_connection).to receive(:execute).with(/GRANT ROLE/) do |sql|
+            expect(sql).to include('GRANT ROLE dbt_workers TO "fraudops_marts";')
+            expect(sql).not_to include('TO "marts"')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'grants both populations when their flags are enabled' do
+          allow(sync).to receive(:config_file).
+            and_return("dbt_enabled = true\nfraud_ops_tracker_enabled = true")
+          expect(mock_connection).to receive(:execute).with(/GRANT ROLE/) do |sql|
+            expect(sql).to include('TO "marts";', 'TO "fraudops_marts";')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'revokes membership from a disabled user even if the account still exists' do
+          allow(mock_connection).to receive(:execute).
+            with(/SELECT user_name\s+FROM svv_user_grants/).
+            and_return([{ 'user_name' => 'fraudops_marts' }, { 'user_name' => 'marts' }])
+          expect(mock_connection).to receive(:execute).with(/REVOKE ROLE/) do |sql|
+            expect(sql).to include('REVOKE ROLE dbt_workers FROM "fraudops_marts";')
+            expect(sql).not_to include('GRANT')
+          end
+
+          sync.send(:sync_user_role, user_role)
+        end
+
+        it 'reports an enabled user that was unexpectedly not created' do
+          allow(sync).to receive(:user_exists?).with('marts').and_return(false)
+          expect(mock_connection).not_to receive(:execute).with(/GRANT|REVOKE/)
+
+          expect { sync.send(:sync_user_role, user_role) }.
+            to raise_error(described_class::SyncError, /dbt_workers.*marts.*does not exist/)
+        end
+
+        it 'reports an unknown static member instead of silently skipping it' do
+          user_role['member_users'] = ['misspelled_user']
+          expect(mock_connection).not_to receive(:execute).with(/GRANT|REVOKE/)
+
+          expect { sync.send(:sync_user_role, user_role) }.
+            to raise_error(described_class::SyncError, /dbt_workers.*unknown.*misspelled_user/)
+        end
+
+        it 'makes no membership changes when both populations are disabled' do
+          allow(sync).to receive(:config_file).and_return('')
+          expect(mock_connection).not_to receive(:execute).with(/GRANT|REVOKE/)
+
+          sync.send(:sync_user_role, user_role)
+        end
       end
 
       context 'when role has existing members' do
@@ -1728,6 +1812,106 @@ RSpec.describe RedshiftSync do
       ].join("\n")
 
       expect(missing_users).to be_empty, error_message
+    end
+
+    describe 'idp core access validation' do
+      let(:real_config) do
+        YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))
+      end
+      let(:expected_idp_core_readers) do
+        %w[
+          lg_users
+          lg_powerusers
+          quicksight_connector
+          marts
+          qa_marts
+        ]
+      end
+      let(:expected_idp_core_writers) do
+        %w[
+          lg_admins
+          rails_worker
+        ]
+      end
+      let(:expected_idp_core_users) { expected_idp_core_readers + expected_idp_core_writers }
+      let(:sys_users) { real_config['databases']['analytics']['system_users'] }
+      let(:human_users) { real_config['databases']['analytics']['user_groups'] }
+      let(:all_users) { sys_users + human_users }
+      let(:all_idp_core_users) do
+        all_users.select do |user_config|
+          user_config.fetch('schemas').any? { |s| s['schema_name'] == 'idp_core' }
+        end
+      end
+      let(:all_idp_core_user_names) do
+        all_idp_core_users.map do |user_config|
+          user_config['name'] || user_config['user_name']
+        end
+      end
+      let(:idp_zero_etl_enabled) { true }
+      let(:zero_etl_flag) { 'idp_zero_etl_enabled' }
+
+      it 'checks that all idp_core access is feature flagged' do
+        all_idp_core_users.flat_map do |user_config|
+          idp_core_config =
+            user_config['schemas'].find { |s| s['schema_name'] == 'idp_core' }
+
+          expect(idp_core_config.fetch('feature_flag')).to eq(zero_etl_flag)
+        end
+      end
+
+      it 'checks that expected idp_core users are in config' do
+        missing_users = expected_idp_core_users - all_idp_core_user_names
+        expect(missing_users).to be_empty,
+                                 "Expected users are missing idp_core access:
+                                 #{missing_users.join(', ')}"
+      end
+
+      it 'does not grant idp_core access to unexpected users' do
+        extra_users = all_idp_core_user_names - expected_idp_core_users
+
+        expect(extra_users).to be_empty,
+                               "Unexpected users have idp_core access: #{extra_users.join(', ')}"
+      end
+
+      it 'checks that expected users have idp_core access' do
+        validated_idp_core_users = all_users.select do |user_config|
+          expected_idp_core_users.include?(user_config['name'] || user_config['user_name'])
+        end
+
+        validated_idp_core_users.each do |user_config|
+          idp_core_config =
+            user_config.fetch('schemas').find { |s| s['schema_name'] == 'idp_core' }
+
+          user_moniker = user_config['name'] || user_config['user_name']
+
+          expect(idp_core_config).not_to be_nil
+
+          if expected_idp_core_readers.include?(user_moniker)
+            expected_schema_privileges = 'USAGE'
+            expected_table_privileges = 'SELECT'
+          elsif expected_idp_core_writers.include?(user_moniker)
+            expected_schema_privileges = 'ALL PRIVILEGES'
+            expected_table_privileges = 'ALL PRIVILEGES'
+          end
+
+          schema_privileges = idp_core_config['schema_privileges']
+          table_privileges = idp_core_config['table_privileges']
+
+          failure_message = [
+            "Expected #{user_moniker} to have schema privilege
+            #{expected_schema_privileges} on idp_core.", "Got: #{schema_privileges.inspect}"
+          ].join("\n")
+
+          expect(schema_privileges).to eq(expected_schema_privileges), failure_message
+
+          failure_message = [
+            "Expected #{user_moniker} to have table privilege
+            #{expected_table_privileges} on idp_core.", "Got: #{table_privileges.inspect}"
+          ].join("\n")
+
+          expect(table_privileges).to eq(expected_table_privileges), failure_message
+        end
+      end
     end
   end
 end

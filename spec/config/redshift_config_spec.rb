@@ -171,7 +171,7 @@ RSpec.describe 'config/redshift_config.yaml' do
     errors = shape_errors(real_config, config_shape, 'redshift_config.yaml')
 
     expect(errors).to be_empty, [
-      'redshift_config.yaml does not match the shape RedshiftSync expects ' \
+      'redshift_config.yaml does not match the shape RedshiftSync expects' \
         '(see config_shape in this spec):',
       errors.join("\n"),
     ].join("\n")
@@ -205,23 +205,22 @@ RSpec.describe 'config/redshift_config.yaml' do
     expect(nested - built_in).to be_empty, "Not Redshift system-defined: #{nested - built_in}"
   end
 
-  it 'gates each role on the feature flags of its flag-gated member users' do
-    # GRANT ROLE aborts the sync if a member was never created because its flag is off.
-    user_flags = real_config['cluster']['system_users'].
-      to_h { |user| [user['user_name'], Array(user['feature_flag'])] }
+  it 'references only known identities in static role membership' do
+    # Mixed feature gates are reconciled individually by RedshiftSync.
+    cluster = real_config['cluster']
+    known_users = %w[system_users lambda_users].flat_map do |section|
+      cluster.fetch(section, []).map { |user| user['user_name'] }
+    end + ['superuser']
 
-    ungated = (real_config['cluster']['user_roles'] || []).flat_map do |role|
-      role_flags = Array(role['feature_flag'])
+    unknown = cluster.fetch('user_roles', []).flat_map do |role|
       role.fetch('member_users', []).filter_map do |name|
-        flags = user_flags.fetch(name, [])
-        next if flags.empty? || (role_flags.any? && (role_flags - flags).empty?)
+        next if known_users.include?(name)
 
-        "Role '#{role['role_name']}' must be gated on #{flags.join(' or ')}, " \
-          "like its member '#{name}'"
+        "Role '#{role['role_name']}' has unknown member '#{name}'"
       end
     end
 
-    expect(ungated).to be_empty, ungated.join("\n")
+    expect(unknown).to be_empty, unknown.join("\n")
   end
 
   it 'grants to exactly the identities defined under cluster' do
