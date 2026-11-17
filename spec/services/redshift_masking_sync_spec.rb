@@ -15,6 +15,19 @@ RSpec.describe RedshiftMasking do
       )
     end
 
+    describe '#grantor' do
+      it 'defaults to nil for expected attachments' do
+        expect(policy.grantor).to be_nil
+      end
+
+      it 'preserves the grantor for existing attachments' do
+        existing_policy = described_class.new(**policy.to_h.merge(grantor: 'fraudops_marts'))
+
+        expect(existing_policy.grantor).to eq('fraudops_marts')
+        expect(existing_policy.to_h[:grantor]).to eq('fraudops_marts')
+      end
+    end
+
     describe '#key' do
       it 'combines column_id and upper-cased grantee' do
         expect(policy.key).to eq('public.users.ssn::IAM:ALICE')
@@ -95,6 +108,7 @@ RSpec.describe RedshiftMasking do
             table: 'users',
             column: 'ssn',
             grantee: 'IAM:alice',
+            grantor: nil,
             priority: 100,
           },
         )

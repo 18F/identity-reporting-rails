@@ -5,7 +5,7 @@ module RedshiftMasking
   class PolicyAttachment
     attr_reader :policy_name, :schema, :table, :column, :grantee, :grantor, :priority
 
-    def initialize(policy_name:, schema:, table:, column:, grantee:, grantor:, priority:)
+    def initialize(policy_name:, schema:, table:, column:, grantee:, priority:, grantor: nil)
       @policy_name = policy_name
       @schema = schema
       @table = table
