@@ -78,18 +78,27 @@ class RedshiftMaskingSync
       "expected: #{expected.size} attachments, actual: #{actual.size} attachments",
     )
 
-    drift = drift_detector.detect(expected, actual, silent: user_filter.present?)
+    drift = drift_detector.detect(expected, actual, silent: true)
+    exclude_protected_attachments(drift, protected_grantors)
+    drift_detector.log_drift(drift) unless user_filter.present?
+    sql_executor.apply_corrections(drift)
 
+    Rails.logger.info('sync completed')
+  end
+
+  def exclude_protected_attachments(drift, protected_grantors)
     excluded_count = 0
 
     drift[:extra].reject! do |attachment|
       excluded = protected_grantors.include?(attachment.grantor&.upcase)
+      log_preserved_attachment(attachment) if excluded
       excluded_count += 1 if excluded
       excluded
     end
 
     drift[:mismatched].reject! do |mismatch|
       excluded = protected_grantors.include?(mismatch[:actual].grantor&.upcase)
+      log_preserved_attachment(mismatch[:actual]) if excluded
       excluded_count += 1 if excluded
       excluded
     end
@@ -100,10 +109,14 @@ class RedshiftMaskingSync
       "[#{protected_grantors.to_a.sort.join(', ')}]. " \
       "These attachments will not be detached or replaced.",
     )
+  end
 
-    sql_executor.apply_corrections(drift)
-
-    Rails.logger.info('sync completed')
+  def log_preserved_attachment(attachment)
+    Rails.logger.info(
+      "Preserving dbt-managed masking attachment: policy=#{attachment.policy_name} " \
+      "column=#{attachment.column_id} grantee=#{attachment.grantee} " \
+      "grantor=#{attachment.grantor} reason=protected_masking_worker_grantor",
+    )
   end
 
   def extract_columns(config)
