@@ -109,4 +109,26 @@ class RedshiftMaskingSync
       entry.keys.filter_map { |id| RedshiftMasking::Column.parse(id) }
     end
   end
+
+  def feature_enabled?(feature_flag)
+    return true if feature_flag.nil?
+
+    flags_to_check = feature_flag.is_a?(Array) ? feature_flag : [feature_flag]
+
+    flags_to_check.any? do |flag|
+      # Check both Terraform config and IdentityConfig.store; flag is enabled if either is true
+      config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m) ||
+        (IdentityConfig.store.respond_to?(flag) && IdentityConfig.store.public_send(flag) == true)
+    end
+  end
+
+  def config_file
+    @config_file ||= begin
+      terraform_config_path = IdentityConfig.local_devops_path(
+        :identity_devops,
+        "terraform/data-warehouse/#{env_name}/main.tf",
+      )
+      File.read(terraform_config_path)
+    end
+  end
 end
