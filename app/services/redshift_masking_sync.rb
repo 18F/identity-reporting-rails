@@ -13,7 +13,9 @@ class RedshiftMaskingSync
     Rails.logger.info('starting data controls sync')
 
     data_controls = YAML.safe_load(File.read(DATA_CONTROLS_PATH))
-    roles_yaml = YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))['cluster']['user_roles']
+    roles_yaml = YAML.safe_load(
+      File.read(Rails.root.join('config/redshift_config.yaml')),
+    )['cluster']['user_roles']
     users_yaml = YAML.safe_load(File.read(IdentityConfig.identity_devops_users_yaml_path))['users']
 
     sync_masking_policies(data_controls, users_yaml, roles_yaml, user_filter: user_filter)
