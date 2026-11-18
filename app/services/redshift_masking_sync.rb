@@ -10,7 +10,7 @@ class RedshiftMaskingSync
     'bin/data-warehouse/mask.yaml',
   )
 
-  def sync(user_filter: nil)
+  def sync_configured_columns(user_filter: nil)
     Rails.logger.info('starting data controls sync')
 
     data_controls = YAML.safe_load(File.read(DATA_CONTROLS_PATH))
@@ -20,6 +20,15 @@ class RedshiftMaskingSync
     users_yaml = YAML.safe_load(File.read(IdentityConfig.identity_devops_users_yaml_path))['users']
 
     sync_masking_policies(data_controls, users_yaml, roles_yaml, user_filter: user_filter)
+  end
+
+  # Retain the existing console API; both paths remain explicitly separate.
+  def sync(user_filter: nil)
+    sync_configured_columns(user_filter: user_filter)
+  end
+
+  def sync_dbt_schema(schema:)
+    RedshiftMasking::DbtSchemaSync.new.sync(schema: schema)
   end
 
   private
@@ -59,6 +68,7 @@ class RedshiftMaskingSync
     end
 
     columns = extract_columns(config)
+    configured_schemas = columns.map(&:schema).to_set
     column_types = db_queries.fetch_column_types(columns)
 
     user_resolver = RedshiftMasking::UserResolver.new(
@@ -73,6 +83,7 @@ class RedshiftMaskingSync
 
     expected = policy_builder.build_expected_state(column_types, db_users_set)
     actual = db_queries.fetch_existing_policies
+    actual = actual.select { |p| configured_schemas.include?(p.schema) }
     actual = actual.select { |p| filter_set.include?(p.grantee.upcase) } if user_filter
 
     Rails.logger.info(

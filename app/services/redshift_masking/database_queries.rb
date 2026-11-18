@@ -52,7 +52,7 @@ module RedshiftMasking
       sql = <<~SQL
         SELECT policy_name, schema_name, table_name,
                JSON_EXTRACT_ARRAY_ELEMENT_TEXT(input_columns, 0) AS column_name,
-               grantor, grantee, priority
+                grantor, grantee, grantee_type, priority
         FROM svv_attached_masking_policy        
       SQL
 
@@ -64,6 +64,7 @@ module RedshiftMasking
           column: row['column_name'],
           grantee: row['grantee'],
           grantor: row['grantor'],
+          grantee_type: row['grantee_type'],
           priority: row['priority'].to_i,
         )
       end

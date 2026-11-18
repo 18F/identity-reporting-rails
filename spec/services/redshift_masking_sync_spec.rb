@@ -5,7 +5,11 @@ require 'rails_helper'
 RSpec.describe RedshiftMasking do
   describe RedshiftMaskingSync do
     let(:sync) { described_class.new }
-    let(:config) { instance_double(RedshiftMasking::Configuration, columns_config: []) }
+    let(:config) do
+      instance_double(
+        RedshiftMasking::Configuration, columns_config: [{ 'public.users.email' => {} }]
+      )
+    end
     let(:queries) { instance_double(RedshiftMasking::DatabaseQueries) }
     let(:builder) { instance_double(RedshiftMasking::PolicyBuilder) }
     let(:executor) { instance_double(RedshiftMasking::SqlExecutor) }
@@ -105,6 +109,25 @@ RSpec.describe RedshiftMasking do
         )
       end
     end
+
+    context 'when an attachment is outside the configured schemas' do
+      let(:grantor) { 'superuser' }
+      let(:attachment) do
+        RedshiftMasking::PolicyAttachment.new(
+          policy_name: 'dbt_mask_varchar_max', schema: 'fraudops_qa_marts',
+          table: 'orphan', column: 'email', grantee: 'PUBLIC', priority: 0,
+          grantor: grantor
+        )
+      end
+
+      it 'does not detach an admin-created dbt repair' do
+        run_masking_sync
+
+        expect(executor).to have_received(:apply_corrections).with(
+          missing: [], extra: [], mismatched: [],
+        )
+      end
+    end
   end
 
   describe RedshiftMasking::PolicyAttachment do
@@ -133,8 +156,8 @@ RSpec.describe RedshiftMasking do
     end
 
     describe '#key' do
-      it 'combines column_id and upper-cased grantee' do
-        expect(policy.key).to eq('public.users.ssn::IAM:ALICE')
+      it 'keeps identifier components and grantee type separate' do
+        expect(policy.key).to eq(['public', 'users', 'ssn', 'user', 'IAM:ALICE'])
       end
 
       it 'converts grantee to uppercase in key' do
@@ -146,7 +169,7 @@ RSpec.describe RedshiftMasking do
           grantee: 'iam:bob',
           priority: 100,
         )
-        expect(policy_lowercase.key).to eq('s.t.c::IAM:BOB')
+        expect(policy_lowercase.key).to eq(['s', 't', 'c', 'user', 'IAM:BOB'])
       end
     end
 
@@ -212,6 +235,7 @@ RSpec.describe RedshiftMasking do
             table: 'users',
             column: 'ssn',
             grantee: 'IAM:alice',
+            grantee_type: 'user',
             grantor: nil,
             priority: 100,
           },

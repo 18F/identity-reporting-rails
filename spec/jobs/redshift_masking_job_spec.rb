@@ -27,7 +27,7 @@ RSpec.describe RedshiftMaskingJob, type: :job do
       end
 
       it 'delegates to RedshiftMaskingSync' do
-        expect(sync).to receive(:sync).with(user_filter: nil)
+        expect(sync).to receive(:sync_configured_columns).with(user_filter: nil)
 
         job.perform
       end
@@ -35,10 +35,18 @@ RSpec.describe RedshiftMaskingJob, type: :job do
       context 'with user_filter' do
         it 'passes user_filter to sync' do
           user_filter = ['IAM:alice', 'IAM:bob']
-          expect(sync).to receive(:sync).with(user_filter: user_filter)
+          expect(sync).to receive(:sync_configured_columns).with(user_filter: user_filter)
 
           job.perform(user_filter: user_filter)
         end
+      end
+
+      it 'propagates repair failures' do
+        allow(sync).to receive(:sync_configured_columns).
+          and_raise(ActiveRecord::StatementInvalid, 'failed')
+
+        expect { job.perform }.
+          to raise_error(ActiveRecord::StatementInvalid)
       end
     end
   end
