@@ -64,7 +64,6 @@ class IdentityConfig
     config.add(:rack_mini_profiler, type: :boolean)
     config.add(:redis_pool_size, type: :integer)
     config.add(:redis_url, type: :string)
-    config.add(:redshift_role_audit_revoke, type: :boolean)
     config.add(:redshift_database_name, type: :string)
     config.add(:redshift_database_zero_etl_name, type: :string)
     config.add(:redshift_host, type: :string)

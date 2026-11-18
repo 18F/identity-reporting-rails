@@ -37,11 +37,9 @@ Refer to the [_Local Development_ documentation](./docs/local-development.md) to
 
 ## Documentation
 
-- [Audit Redshift roles against redshift_config.yaml inside RedshiftSync](docs/decisions/0002-redshift-role-audit.md)
 - [Jobs](docs/jobs.md)
 - [Local Development](docs/local-development.md)
 - [Reuse dbt policies for schema-wide attachment reconciliation](docs/decisions/0001-schema-wide-masking-reconciliation.md)
 - [Security](docs/SECURITY.md)
 - [Troubleshooting Local Development](docs/troubleshooting.md)
 - [Validate schema-wide dbt masking](docs/dbt-masking-validation.md)
-- [Validate the Redshift role audit](docs/role-audit-validation.md)
