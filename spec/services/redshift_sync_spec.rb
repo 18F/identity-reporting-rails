@@ -138,6 +138,9 @@ RSpec.describe RedshiftSync do
     allow(IdentityConfig.store).to receive(:fraud_ops_tracker_enabled).and_return(false)
     allow(IdentityConfig.store).to receive(:dw_fraudops_email_enabled).and_return(false)
     allow(IdentityConfig.store).to receive(:idp_zero_etl_enabled).and_return(false)
+    # The role audit has its own examples; these ones cover the sync's other behavior.
+    allow(sync).to receive(:audit_roles)
+    allow(sync).to receive(:audit_role_privileges)
   end
 
   describe 'environment detection' do
@@ -1321,6 +1324,180 @@ RSpec.describe RedshiftSync do
         sync.sync_cluster
 
         expect(created_roles).to include('dw_ingestion', 'quicksight_access')
+      end
+    end
+
+    describe 'role audit' do
+      let(:audit_roles_config) do
+        [
+          { 'role_name' => 'pii_viewers', 'member_users' => ['rails_worker'] },
+          {
+            'role_name' => 'quicksight_access',
+            'member_users' => ['rails_worker'],
+            'feature_flag' => 'redshift_quicksight_connector_enabled',
+          },
+          { 'role_name' => 'broken_role', 'member_users' => ['ghost_user'] },
+        ]
+      end
+      let(:user_grants) { [{ 'user_name' => 'rails_worker', 'role_name' => 'pii_viewers' }] }
+      let(:role_grants) { [] }
+      let(:privileges) { Hash.new([]) }
+      let(:statements) { [] }
+      let(:revoke_enabled) { false }
+
+      before do
+        audited_config = test_redshift_config.deep_merge(
+          'cluster' => { 'user_roles' => audit_roles_config },
+        )
+        allow(sync).to receive(:redshift_config).and_return(audited_config)
+        allow(sync).to receive(:audit_roles).and_call_original
+        allow(sync).to receive(:audit_role_privileges).and_call_original
+        allow(sync).to receive(:create_lambda_user_identity)
+        allow(sync).to receive(:create_system_user_identity)
+        allow(sync).to receive(:create_group)
+        allow(sync).to receive(:drop_users)
+        allow(sync).to receive(:create_users).and_return([])
+        allow(sync).to receive(:sync_user_group)
+        allow(sync).to receive(:create_user_role)
+        allow(Rails.logger).to receive(:warn)
+        allow(IdentityConfig.store).to receive(:redshift_role_audit_revoke).
+          and_return(revoke_enabled)
+        allow(mock_connection).to receive(:quote) { |value| "'#{value}'" }
+        allow(mock_connection).to receive(:quote_column_name) { |value| %("#{value}") }
+        allow(mock_connection).to receive(:execute) do |sql|
+          statements << sql
+          case sql
+          when /FROM svv_roles/ then [{ 'role_name' => 'pii_viewers' }]
+          when /FROM svv_user_grants/ then user_grants
+          when /FROM svv_role_grants/ then role_grants
+          when /FROM svv_relation_privileges/ then privileges[:relation]
+          when /FROM svv_schema_privileges/ then privileges[:schema]
+          when /FROM svv_database_privileges/ then privileges[:database]
+          when /FROM svv_system_privileges/ then privileges[:system]
+          when /FROM pg_user/ then [{ 'usename' => 'rails_worker' }]
+          else []
+          end
+        end
+      end
+
+      def revoke_statements
+        statements.grep(/\AREVOKE/)
+      end
+
+      it 'logs a clean audit and changes nothing when the cluster matches the config' do
+        sync.sync_cluster
+
+        expect(Rails.logger).to have_received(:info).
+          with(/"name":"RedshiftRoleAudit".*"clean":true/)
+        expect(revoke_statements).to be_empty
+        expect(sync.errors).to be_empty
+      end
+
+      it 'skips a role whose intended state cannot be computed' do
+        sync.sync_cluster
+
+        expect(Rails.logger).to have_received(:warn).
+          with(/"role":"broken_role".*"skipped":"intended state unknown"/)
+      end
+
+      context 'when a user holds a role the config does not give them' do
+        let(:user_grants) do
+          [
+            { 'user_name' => 'rails_worker', 'role_name' => 'pii_viewers' },
+            { 'user_name' => 'IAM:intruder', 'role_name' => 'pii_viewers' },
+          ]
+        end
+
+        it 'logs the finding without revoking while revoke is off' do
+          sync.sync_cluster
+
+          expect(Rails.logger).to have_received(:warn).
+            with(/"finding":"role_member_unexpected".*"IAM:intruder".*"revoke_attempted":false/)
+          expect(Rails.logger).to have_received(:warn).with(/"findings_detected":1/)
+          expect(revoke_statements).to be_empty
+          expect(sync.errors).to be_empty
+        end
+
+        context 'with redshift_role_audit_revoke on' do
+          let(:revoke_enabled) { true }
+
+          it 'revokes the role and still logs the finding' do
+            sync.sync_cluster
+
+            expect(revoke_statements).to eq(['REVOKE ROLE "pii_viewers" FROM "IAM:intruder"'])
+            expect(Rails.logger).to have_received(:warn).
+              with(/"finding":"role_member_unexpected".*"revoke_attempted":true/)
+            expect(sync.errors).to be_empty
+          end
+
+          it 'fails the sync through errors when the revoke fails' do
+            allow(mock_connection).to receive(:execute).with(/\AREVOKE/).
+              and_raise(ActiveRecord::StatementInvalid, 'permission denied')
+
+            expect { sync.sync_cluster }.not_to raise_error
+            expect(sync.errors).to eq(['database=analytics: permission denied'])
+          end
+        end
+      end
+
+      context 'when a role whose feature flag is off still has members' do
+        let(:revoke_enabled) { true }
+        let(:user_grants) do
+          [
+            { 'user_name' => 'rails_worker', 'role_name' => 'pii_viewers' },
+            { 'user_name' => 'rails_worker', 'role_name' => 'quicksight_access' },
+          ]
+        end
+
+        it 'treats the role as intended-empty and revokes the stale member' do
+          sync.sync_cluster
+
+          expect(revoke_statements).
+            to eq(['REVOKE ROLE "quicksight_access" FROM "rails_worker"'])
+        end
+      end
+
+      context 'when a catalog read fails' do
+        before do
+          allow(mock_connection).to receive(:execute).with(/FROM svv_user_grants/).
+            and_raise(ActiveRecord::StatementInvalid, 'catalog unavailable')
+        end
+
+        it 'records the failure instead of reporting a clean audit' do
+          expect { sync.sync_cluster }.not_to raise_error
+
+          expect(sync.errors).to eq(['database=analytics: role audit failed: catalog unavailable'])
+          expect(Rails.logger).not_to have_received(:info).with(/"clean":true/)
+        end
+      end
+
+      context 'when auditing database privileges' do
+        let(:privileges) do
+          {
+            relation: [
+              {
+                'identity_name' => 'pii_viewers',
+                'namespace_name' => 'idp',
+                'relation_name' => 'events',
+                'privilege_type' => 'SELECT',
+              },
+            ],
+          }
+        end
+
+        before do
+          allow(sync).to receive(:apply_group_grants)
+        end
+
+        it 'queries every configured role and logs the privilege findings' do
+          sync.sync_database_grants
+
+          expect(statements.grep(/svv_relation_privileges/).first).
+            to include("'pii_viewers', 'quicksight_access', 'broken_role'")
+          expect(Rails.logger).to have_received(:warn).
+            with(/"scope":"privileges".*"finding":"role_privilege_unexpected"/)
+          expect(revoke_statements).to be_empty
+        end
       end
     end
 

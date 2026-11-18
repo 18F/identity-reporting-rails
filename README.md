@@ -37,7 +37,9 @@ Refer to the [_Local Development_ documentation](./docs/local-development.md) to
 
 ## Documentation
 
+- [Audit Redshift roles against redshift_config.yaml inside RedshiftSync](docs/decisions/0002-redshift-role-audit.md)
 - [Jobs](docs/jobs.md)
 - [Local Development](docs/local-development.md)
 - [Security](docs/SECURITY.md)
 - [Troubleshooting Local Development](docs/troubleshooting.md)
+- [Validate the Redshift role audit](docs/role-audit-validation.md)
