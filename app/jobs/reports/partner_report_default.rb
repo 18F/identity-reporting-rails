@@ -2,10 +2,11 @@
 
 require 'reporting/partner_report_default'
 require 'reporting/partner_report_default_v2'
+require 'reporting/partner_report_period'
 
 module Reports
   class PartnerReportDefault < BaseReport
-    REPORT_CADENCE = 'monthly' # Eventually this will be a parameter, hardcoding monthly for now
+    DEFAULT_CADENCE = 'monthly'
     DEFAULT_VERSION = 'v2'
     VALID_VERSIONS = %w[v1 v2].freeze
 
@@ -28,10 +29,24 @@ module Reports
     # We assume this job runs on the 3rd of the month for Monthly reports
     REPORT_DELAY_DAYS = 4
 
-    attr_reader :report_date, :included_issuers, :excluded_issuers, :report_version
+    attr_reader :report_date, :included_issuers, :excluded_issuers, :report_version,
+                :report_cadence, :result
+
+    # Used by the manual backfill preview. No AWS request is made here.
+    def upload_target
+      { environment: Identity::Hostdata.env,
+        bucket: bucket_name,
+        prefix: generate_base_s3_path(directory: 'portal') }
+    end
 
     def perform(report_date = nil, report_version = nil, options = {})
       options ||= {}
+      @result = nil
+      @period_date = nil
+      @report_cadence = options.fetch(:report_cadence, DEFAULT_CADENCE)
+      unless Reporting::PartnerReportPeriod::CADENCES.include?(@report_cadence)
+        raise ArgumentError, "Invalid report_cadence: #{@report_cadence}"
+      end
 
       @report_version = report_version || DEFAULT_VERSION
       unless VALID_VERSIONS.include?(@report_version)
@@ -47,6 +62,7 @@ module Reports
       end
 
       @report_date = report_date || REPORT_DELAY_DAYS.days.ago.end_of_day
+      @report_date = Date.parse(@report_date) if @report_date.is_a?(String)
 
       log_message(
         :info,
@@ -81,10 +97,10 @@ module Reports
         )
       end
 
-      generate_and_upload_reports(@report_date)
+      @result = generate_and_upload_reports(@report_date)
       log_message(:info, 'Completed partner default report', true, log_context)
 
-      true
+      @result
     rescue StandardError => e
       log_message(
         :error,
@@ -100,7 +116,7 @@ module Reports
     def log_context(extra = {})
       {
         job_id: job_id,
-        report_cadence: REPORT_CADENCE,
+        report_cadence: @report_cadence,
         report_version: @report_version,
         report_date: @report_date&.to_date&.to_s,
       }.merge(extra)
@@ -118,17 +134,31 @@ module Reports
 
       reporter = reporter_class.new(
         report_date: report_date,
-        report_cadence: REPORT_CADENCE,
+        report_cadence: @report_cadence,
         included_issuers: @included_issuers,
         excluded_issuers: @excluded_issuers,
       )
       # Generate issuer mapping to link IDs and issuer strings
       issuer_mapping = reporter.generate_issuer_mapping
       issuer_reports = reporter.generate_reports
+      @result = log_context.merge(
+        period_start_date: period_date,
+        period_end_date: issuer_reports.values.compact.first&.
+          dig(:report_information, :period_end_date) ||
+          Reporting::PartnerReportPeriod.end_date(period_date, @report_cadence).to_s,
+        uploaded_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        failures: [],
+        skipped: [],
+        missing_issuers: [],
+        issuer_mapping_uploaded: false,
+      )
 
       # If included issuers specified, check they were in SQL results
       if @included_issuers&.any?
         missing = @included_issuers - issuer_reports.keys
+        @result[:missing_issuers] = missing
         if missing.any?
           log_message(
             :warn,
@@ -143,6 +173,7 @@ module Reports
       validate_service_provider_ids(issuer_reports, issuer_mapping)
 
       upload_issuer_mapping_to_s3(issuer_mapping)
+      @result[:issuer_mapping_uploaded] = true
 
       # Upload individual reports
       uploaded_count = 0
@@ -151,6 +182,8 @@ module Reports
       issuer_reports.each do |issuer, json_data|
         if json_data.nil?
           skipped_uploads << "#{issuer}: report generation failed and returned nil"
+          @result[:skipped] << { issuer: issuer, reason: 'report generation returned nil' }
+          @result[:skipped_count] += 1
           next
         end
 
@@ -158,6 +191,8 @@ module Reports
 
         if service_provider_id.nil?
           skipped_uploads << "#{issuer}: missing service_provider_id"
+          @result[:skipped] << { issuer: issuer, reason: 'missing service_provider_id' }
+          @result[:skipped_count] += 1
           next
         end
 
@@ -165,11 +200,12 @@ module Reports
           upload_to_s3(
             json_data,
             service_provider_id: service_provider_id,
-            period_date: period_date,
+            period_date: json_data.dig(:report_information, :period_start_date) || period_date,
           )
           uploaded_count += 1
+          @result[:uploaded_count] += 1
         rescue StandardError => e
-          skipped_uploads << "#{issuer} / #{service_provider_id}: upload failed - #{e.message}"
+          skipped_uploads << record_upload_failure(issuer, service_provider_id, e)
         end
       end
 
@@ -192,23 +228,42 @@ module Reports
       if uploaded_count.zero?
         raise StandardError, 'Partner default report failed because no issuer reports were uploaded'
       end
+      @result
+    end
+
+    def record_upload_failure(issuer, service_provider_id, error)
+      @result[:failed_count] += 1
+      @result[:failures] << {
+        issuer: issuer,
+        service_provider_id: service_provider_id,
+        error: error.message,
+        error_class: error.class.name,
+      }
+      "#{issuer} / #{service_provider_id}: upload failed - #{error.message}"
     end
 
     # S3 path structure:
-    # v1: env/v1/service_provider_id/REPORT_CADENCE/2025-01-01.json
-    # v2: env/v2/service_provider_id/REPORT_CADENCE/2025-01-01.json
+    # Monthly/daily: env/portal/version/service_provider_id/cadence/2025-01-01.json
+    # Weekly: env/portal/version/service_provider_id/weekly/2025-01-06_2025-01-12.json
     def upload_to_s3(json_data, service_provider_id:, period_date:)
       base_path = generate_base_s3_path(directory: 'portal')
+      cadence = @report_cadence || DEFAULT_CADENCE
+      filename = period_date.to_s
+      if cadence == 'weekly'
+        end_date = json_data.dig(:report_information, :period_end_date) ||
+                   Reporting::PartnerReportPeriod.end_date(period_date, cadence).to_s
+        filename = "#{period_date}_#{end_date}"
+      end
 
       path = case @report_version
              when 'v1', 'v2'
                "#{base_path}#{@report_version}/#{service_provider_id}"\
-                 "/#{REPORT_CADENCE}/#{period_date}.json"
+                  "/#{cadence}/#{filename}.json"
              else
                raise ArgumentError, "Unsupported report_version: #{@report_version}"
              end
 
-      return unless bucket_name.present?
+      raise ArgumentError, 'Partner report bucket must be configured' unless bucket_name.present?
 
       upload_file_to_s3_bucket(
         path: path,
@@ -250,6 +305,7 @@ module Reports
     end
 
     def upload_issuer_mapping_to_s3(mapping_data)
+      raise ArgumentError, 'Partner report bucket must be configured' unless bucket_name.present?
       base_path = generate_base_s3_path(directory: 'portal')
       path = "#{base_path}issuers_service_provider_id.json"
 
@@ -275,9 +331,9 @@ module Reports
 
     def period_date
       raise ArgumentError, 'report_date must be set before calling period_date' if @report_date.nil?
-      reporter_class_for(@report_version).get_period_date_from_report_date(
+      @period_date ||= reporter_class_for(@report_version).get_period_date_from_report_date(
         report_date: @report_date,
-        cadence: REPORT_CADENCE,
+        cadence: @report_cadence || DEFAULT_CADENCE,
       )
     end
 

@@ -89,7 +89,7 @@ RSpec.describe Reports::PartnerReportDefault do
   describe 'argument handling in #perform' do
     before do
       allow(job).to receive(:period_date).and_return(period_date)
-      allow(job).to receive(:generate_and_upload_reports)
+      allow(job).to receive(:generate_and_upload_reports).and_return({ uploaded_count: 2 })
     end
 
     context 'report_version' do
@@ -98,12 +98,12 @@ RSpec.describe Reports::PartnerReportDefault do
       end
 
       it 'accepts v1' do
-        expect(job.perform(nil, 'v1')).to eq(true)
+        expect(job.perform(nil, 'v1')).to eq(uploaded_count: 2)
         expect(job.report_version).to eq('v1')
       end
 
       it 'accepts v2' do
-        expect(job.perform(nil, 'v2')).to eq(true)
+        expect(job.perform(nil, 'v2')).to eq(uploaded_count: 2)
         expect(job.report_version).to eq('v2')
       end
     end
@@ -634,12 +634,14 @@ RSpec.describe Reports::PartnerReportDefault do
         allow(job).to receive(:bucket_name).and_return(nil)
       end
 
-      it 'skips upload without error' do
+      it 'raises rather than reporting a nonexistent upload as successful' do
         expect(job).not_to receive(:upload_file_to_s3_bucket)
-        job.send(
-          :upload_to_s3, sample_json_data, service_provider_id: 123,
-                                           period_date: period_date
-        )
+        expect do
+          job.send(
+            :upload_to_s3, sample_json_data, service_provider_id: 123,
+                                             period_date: period_date
+          )
+        end.to raise_error(ArgumentError, /bucket must be configured/)
       end
     end
     context 'with report_version v1' do
@@ -673,6 +675,46 @@ RSpec.describe Reports::PartnerReportDefault do
   end
 
   describe '#json_file' do
+    it 'uses weekly date ranges and daily single dates in upload keys' do
+      job.instance_variable_set(:@report_version, 'v2')
+      job.instance_variable_set(:@report_cadence, 'weekly')
+      json = { report_information: { period_end_date: '2026-04-12' } }
+      expect(job).to receive(:upload_file_to_s3_bucket).with(
+        hash_including(path: 'v2/123/weekly/2026-04-06_2026-04-12.json'),
+      )
+      job.send(:upload_to_s3, json, service_provider_id: 123, period_date: '2026-04-06')
+      job.instance_variable_set(:@report_cadence, 'daily')
+      expect(job).to receive(:upload_file_to_s3_bucket).with(
+        hash_including(path: 'v2/123/daily/2026-04-06.json'),
+      )
+      job.send(:upload_to_s3, json, service_provider_id: 123, period_date: '2026-04-06')
+    end
+
+    it 'returns upload counts and failure details' do
+      allow(job).to receive(:upload_to_s3).and_raise(StandardError, 'S3 unavailable')
+      allow(job).to receive(:upload_to_s3).with(
+        sample_report_data[issuer1], service_provider_id: 123, period_date: period_date
+      )
+      result = job.perform(report_date)
+      expect(result).to include(uploaded_count: 1, failed_count: 1, skipped_count: 0)
+      expect(result[:failures].first).to include(issuer: issuer2, error: 'S3 unavailable')
+    end
+
+    it 'passes weekly cadence to the reporter and logging context' do
+      allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
+        with(report_date: anything, cadence: 'weekly').and_return('2026-04-13')
+      expect(Reporting::PartnerReportDefaultV2).to receive(:new).with(
+        report_date: report_date, report_cadence: 'weekly',
+        included_issuers: nil, excluded_issuers: nil
+      ).and_return(mock_partner_report)
+      expect(
+        job.perform(
+          report_date, 'v2',
+          report_cadence: 'weekly'
+        )[:report_cadence],
+      ).to eq('weekly')
+    end
+
     let(:test_data) { { test: 'data', number: 123 } }
 
     it 'converts data to pretty JSON' do
@@ -790,9 +832,11 @@ RSpec.describe Reports::PartnerReportDefault do
         allow(job).to receive(:bucket_name).and_return(nil)
       end
 
-      it 'skips upload without error' do
+      it 'raises when the mapping cannot be uploaded' do
         expect(job).not_to receive(:upload_file_to_s3_bucket)
-        job.send(:upload_issuer_mapping_to_s3, mapping_data)
+        expect do
+          job.send(:upload_issuer_mapping_to_s3, mapping_data)
+        end.to raise_error(ArgumentError, /bucket must be configured/)
       end
     end
   end

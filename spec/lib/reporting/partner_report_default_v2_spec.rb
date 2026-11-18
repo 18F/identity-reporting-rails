@@ -149,6 +149,31 @@ RSpec.describe Reporting::PartnerReportDefaultV2 do
   end
 
   describe '.get_period_date_from_report_date' do
+    context 'JSON period end dates' do
+      it 'includes the inclusive monthly end date' do
+        expect(
+          report.send(:format_row_as_json, complete_row_data).
+                    dig(:report_information, :period_end_date),
+        ).to eq('2026-03-31')
+      end
+
+      it 'includes the weekly end date derived from the row start' do
+        weekly = described_class.new(report_date: report_date, report_cadence: 'weekly')
+        expect(
+          weekly.send(:format_row_as_json, complete_row_data.merge('period_date' => '2026-03-09')).
+                    dig(:report_information, :period_end_date),
+        ).to eq('2026-03-15')
+      end
+
+      it 'uses the same start and end date for daily reports' do
+        daily = described_class.new(report_date: report_date, report_cadence: 'daily')
+        expect(
+          daily.send(:format_row_as_json, complete_row_data.merge('period_date' => report_date)).
+                    dig(:report_information, :period_end_date),
+        ).to eq(report_date)
+      end
+    end
+
     let(:calendar_query_result) do
       double('query_result', first: { 'period_date_actual' => period_date })
     end

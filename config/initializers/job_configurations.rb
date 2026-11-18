@@ -15,6 +15,7 @@ cron_24h_and_a_bit = '12 0 * * *' # 0000 UTC + 12 min, staggered from whatever e
 cron_1st_of_month_6am = '0 6 1 * *' # 6 AM UTC on the 1st of each month
 cron_3rd_of_month_6am = '0 6 3 * *' # 6 AM UTC on the 3rd of each month
 cron_weekly_monday_6am = '0 6 * * 1' # 6 AM UTC every Monday
+cron_weekly_wednesday_6am = '0 6 * * 3' # 6 AM UTC every Wednesday
 
 extractor_row_checker_enqueue_cron_config =
   Fugit.parse_cron(IdentityConfig.store.extractor_row_checker_enqueue_cron).presence&.original
@@ -118,6 +119,13 @@ else
         class: 'Reports::PartnerReportDefault',
         cron: cron_3rd_of_month_6am,
         args: -> { [4.days.ago, 'v2'] },
+      },
+      # Wednesday minus four days selects Saturday of the previous Monday-Sunday week.
+      # Wednesday allows approximately three days for Sunday's ingestion/modeling lag.
+      partner_report_default_v2_weekly: {
+        class: 'Reports::PartnerReportDefault',
+        cron: cron_weekly_wednesday_6am,
+        args: -> { [4.days.ago, 'v2', { report_cadence: 'weekly' }] },
       },
       # Partner report v1 (deprecating soon)
       partner_report_default_v1: {

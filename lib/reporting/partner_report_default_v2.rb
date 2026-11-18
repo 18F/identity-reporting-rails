@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'reporting/partner_report_period'
+
 module Reporting
   # Generates partner reports for all relevant/active service providers for single reporting period
   # Uses marts.calendar table to determine reporting period start date given report_date and cadence
@@ -188,6 +190,7 @@ module Reporting
         },
         report_information: {
           period_start_date: row['period_date'],
+          period_end_date: PartnerReportPeriod.end_date(row['period_date'], report_cadence).to_s,
           period_calendar_id: row['period_date_id'],
           report_cadence: report_cadence,
           report_generated_at: Time.zone.now,
@@ -293,7 +296,7 @@ module Reporting
     end
 
     def period_date
-      self.class.get_period_date_from_report_date(
+      @period_date ||= self.class.get_period_date_from_report_date(
         report_date: @report_date,
         cadence: @report_cadence,
       )
