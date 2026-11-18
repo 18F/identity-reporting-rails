@@ -97,6 +97,35 @@ The service specs stub `Aws::QuickSight::Client`, `Aws::STS::Client`, and
   loader) so there is a single source of truth. Verify all `UserResolver`
   consumers and the redshift masking specs when doing this.
 
+### Redshift role audit
+
+`RedshiftSync` compares role state with `config/redshift_config.yaml` at the end
+of each pass (`RedshiftRoleAudit`, no separate job). `sync_cluster` checks the
+cluster-wide views (`svv_roles`, `svv_user_grants`, `svv_role_grants`);
+`sync_database_grants` checks object privileges per database, because
+`svv_*_privileges` only show the current database. Findings: unmanaged roles,
+unexpected members, `ADMIN OPTION`, nested roles, inheritors, users who reach a
+managed role through a chain (report only), and any object privilege on a
+managed role.
+
+- Findings are always logged as JSON with `name: "RedshiftRoleAudit"`. A summary
+  line carries `findings_detected`, which is what alerting matches.
+- Redshift has no DENY and grants add up, so the audit can only `REVOKE` from a
+  managed role. That is off unless `redshift_role_audit_revoke` is `true`
+  (default `false`, set in deployed config).
+- A failed revoke, or a failed catalog read, is added to `RedshiftSync#errors`
+  and fails the sync like any other statement failure.
+- A role whose feature flag is off is intended to have no members and no nested
+  roles; its stale members are now found (and revoked when revoke is on). A role
+  whose intended state cannot be computed (`SyncError`) is skipped and logged.
+- It never drops a role, changes `sys:` roles' own grants, users' direct
+  privileges or groups, or anything for roles outside the config.
+
+Rollout: deploy with revoke off, read one run's `RedshiftRoleAudit` logs, decide,
+then set `redshift_role_audit_revoke: true`. See the [decision
+record](decisions/0002-redshift-role-audit.md) and the [human validation
+queries](role-audit-validation.md).
+
 ## Backfilling flattened frd_events columns
 
 `FraudOpsPiiDecryptJob` populates the flattened event columns (`event_type`,

@@ -66,6 +66,8 @@ class RedshiftSync
       create_user_role(role) if feature_enabled?(role['feature_flag'])
     end
 
+    audit_roles
+
     Rails.logger.info('Redshift cluster-level user sync completed successfully')
   end
 
@@ -98,6 +100,8 @@ class RedshiftSync
       schemas = schemas_for(group_grants, 'name', group['name'])
       apply_group_grants(group, schemas) if schemas
     end
+
+    audit_role_privileges
 
     Rails.logger.info("Redshift grants applied successfully for database=#{database}")
   end
@@ -739,6 +743,64 @@ class RedshiftSync
     else
       Rails.logger.info("Assigned roles for role #{user_role['role_name']} are already in sync")
     end
+  end
+
+  # Detects (and, when redshift_role_audit_revoke is on, reverts) role membership,
+  # inheritance and object privileges that redshift_config.yaml does not intend.
+  # A failure here is recorded rather than raised so the remaining passes still run,
+  # then fails the sync through `errors`.
+  def audit_roles
+    role_audit.audit_roles(intended_role_state)
+  rescue StandardError => e
+    record_audit_failure(e)
+  end
+
+  def audit_role_privileges
+    role_audit.audit_privileges(roles.map { |role| role['role_name'] })
+  rescue StandardError => e
+    record_audit_failure(e)
+  end
+
+  def role_audit
+    RedshiftRoleAudit.new(
+      connection: connection,
+      execute: ->(sql) { connection.execute(sql) },
+      on_error: ->(error) { errors << "database=#{database}: #{error.message}" },
+      revoke: IdentityConfig.store.redshift_role_audit_revoke,
+      logger: IdentityJobLogSubscriber.new.logger,
+    )
+  end
+
+  def record_audit_failure(error)
+    IdentityJobLogSubscriber.new.logger.error(
+      { name: RedshiftRoleAudit::NAME, error: error.message, database: database }.to_json,
+    )
+    errors << "database=#{database}: role audit failed: #{error.message}"
+  end
+
+  # A role whose feature flag is off is intended to have no members and no nested
+  # roles. A role whose intended state cannot be computed is skipped (nil).
+  def intended_role_state
+    roles.to_h { |role| [role['role_name'], intended_state_for(role)] }
+  end
+
+  def intended_state_for(role)
+    return { members: [], assigned_roles: [] } unless feature_enabled?(role['feature_flag'])
+
+    {
+      members: (enabled_static_role_members(role) + users_in_aws_groups(role['aws_groups'])).uniq,
+      assigned_roles: role.fetch('assigned_roles', []).uniq,
+    }
+  rescue SyncError => e
+    IdentityJobLogSubscriber.new.logger.warn(
+      {
+        name: RedshiftRoleAudit::NAME,
+        role: role['role_name'],
+        skipped: 'intended state unknown',
+        message: e.message,
+      }.to_json,
+    )
+    nil
   end
 
   # Role flags activate the role as a whole; each system member keeps its own gate.
