@@ -105,19 +105,17 @@ class RedshiftMaskingSync
     end
 
     Rails.logger.info(
-      "Skipping #{excluded_count} masking correction(s): existing attachments were " \
-      "created by configured masking_worker grantors " \
-      "[#{protected_grantors.to_a.sort.join(', ')}]. " \
-      "These attachments will not be detached or replaced.",
+      "Preserved #{excluded_count} dbt-managed masking attachments; " \
+      "excluded from detach/replace corrections.",
     )
   end
 
   def log_preserved_attachment(attachment)
-    Rails.logger.info(
+    Rails.logger.debug do
       "Preserving dbt-managed masking attachment: policy=#{attachment.policy_name} " \
       "column=#{attachment.column_id} grantee=#{attachment.grantee} " \
-      "grantor=#{attachment.grantor} reason=protected_masking_worker_grantor",
-    )
+      "grantor=#{attachment.grantor} reason=protected_masking_worker_grantor"
+    end
   end
 
   def extract_columns(config)

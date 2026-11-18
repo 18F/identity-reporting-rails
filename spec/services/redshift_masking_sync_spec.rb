@@ -15,6 +15,7 @@ RSpec.describe RedshiftMasking do
     let(:expected) { [] }
     let(:actual) { [attachment] }
     let(:grantor) { 'FRAUDOPS_MARTS' }
+    let(:preservation_details) { [] }
     let(:attachment) do
       RedshiftMasking::PolicyAttachment.new(
         policy_name: 'dbt_mask', schema: 'public', table: 'users', column: 'email',
@@ -24,6 +25,9 @@ RSpec.describe RedshiftMasking do
 
     before do
       allow(Rails.logger).to receive(:info)
+      allow(Rails.logger).to receive(:debug) do |&message|
+        preservation_details << message.call if message
+      end
       allow(Rails.logger).to receive(:warn)
       allow(sync).to receive(:feature_enabled?).and_return(true)
       allow(RedshiftMasking::Configuration).to receive(:new).and_return(config)
@@ -47,10 +51,14 @@ RSpec.describe RedshiftMasking do
       run_masking_sync
 
       expect(Rails.logger).not_to have_received(:warn)
-      expect(Rails.logger).to have_received(:info).with(
+      expect(preservation_details).to contain_exactly(
         'Preserving dbt-managed masking attachment: policy=dbt_mask ' \
         'column=public.users.email grantee=IAM:alice grantor=FRAUDOPS_MARTS ' \
         'reason=protected_masking_worker_grantor',
+      )
+      expect(Rails.logger).not_to have_received(:info).with(/Preserving dbt-managed/)
+      expect(Rails.logger).to have_received(:info).with(
+        'Preserved 1 dbt-managed masking attachments; excluded from detach/replace corrections.',
       )
       expect(executor).to have_received(:apply_corrections).with(
         missing: [], extra: [], mismatched: [],
@@ -66,7 +74,8 @@ RSpec.describe RedshiftMasking do
         run_masking_sync
 
         expect(Rails.logger).not_to have_received(:warn)
-        expect(Rails.logger).to have_received(:info).with(/Preserving dbt-managed/)
+        expect(preservation_details).to contain_exactly(a_string_matching(/Preserving dbt-managed/))
+        expect(Rails.logger).not_to have_received(:info).with(/Preserving dbt-managed/)
         expect(executor).to have_received(:apply_corrections).with(
           missing: [], extra: [], mismatched: [],
         )
@@ -81,6 +90,7 @@ RSpec.describe RedshiftMasking do
 
         expect(Rails.logger).to have_received(:warn).with('EXTRA: IAM:alice on public.users.email')
         expect(Rails.logger).not_to have_received(:info).with(/Preserving dbt-managed/)
+        expect(preservation_details).to be_empty
         expect(executor).to have_received(:apply_corrections).with(
           missing: [], extra: [attachment], mismatched: [],
         )
