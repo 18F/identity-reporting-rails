@@ -4,6 +4,7 @@ require 'yaml'
 
 # Service for syncing Redshift masking policies based on configuration files
 class RedshiftMaskingSync
+  include UserSyncConfig
   DATA_CONTROLS_PATH = IdentityConfig.local_devops_path(
     :identity_devops,
     'bin/data-warehouse/mask.yaml',
@@ -134,16 +135,6 @@ class RedshiftMaskingSync
       # Check both Terraform config and IdentityConfig.store; flag is enabled if either is true
       config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m) ||
         (IdentityConfig.store.respond_to?(flag) && IdentityConfig.store.public_send(flag) == true)
-    end
-  end
-
-  def config_file
-    @config_file ||= begin
-      terraform_config_path = IdentityConfig.local_devops_path(
-        :identity_devops,
-        "terraform/data-warehouse/#{env_name}/main.tf",
-      )
-      File.read(terraform_config_path)
     end
   end
 end
