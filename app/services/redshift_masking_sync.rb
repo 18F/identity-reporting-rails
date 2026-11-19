@@ -83,7 +83,8 @@ class RedshiftMaskingSync
 
     expected = policy_builder.build_expected_state(column_types, db_users_set)
     actual = db_queries.fetch_existing_policies
-    actual = actual.select { |p| configured_schemas.include?(p.schema) }
+    # Other schemas have separate masking owners, including dbt-managed marts.
+    actual = actual.select { |policy| configured_schemas.include?(policy.schema) }
     actual = actual.select { |p| filter_set.include?(p.grantee.upcase) } if user_filter
 
     Rails.logger.info(

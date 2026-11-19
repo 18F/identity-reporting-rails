@@ -3,6 +3,103 @@
 require 'rails_helper'
 
 RSpec.describe RedshiftMasking do
+  describe 'configured schema boundary' do
+    let(:sync) { RedshiftMaskingSync.new }
+    let(:config) do
+      instance_double(
+        RedshiftMasking::Configuration, columns_config: [{ 'public.users.email' => {} }]
+      )
+    end
+    let(:queries) { instance_double(RedshiftMasking::DatabaseQueries) }
+    let(:builder) { instance_double(RedshiftMasking::PolicyBuilder) }
+    let(:executor) { instance_double(RedshiftMasking::SqlExecutor) }
+    let(:expected) { [] }
+    let(:actual) { [outside] }
+    let(:outside) { boundary_attachment(schema: 'fraudops_qa_marts') }
+    let(:inside) { boundary_attachment(schema: 'public') }
+
+    def boundary_attachment(schema:, policy_name: 'mask_email')
+      RedshiftMasking::PolicyAttachment.new(
+        policy_name: policy_name, schema: schema, table: 'users', column: 'email',
+        grantee: 'IAM:alice', priority: 100
+      )
+    end
+
+    before do
+      allow(Rails.logger).to receive(:info)
+      allow(Rails.logger).to receive(:warn)
+      allow(RedshiftMasking::Configuration).to receive(:new).and_return(config)
+      allow(RedshiftMasking::DatabaseQueries).to receive(:new).and_return(queries)
+      allow(queries).to receive_messages(
+        fetch_users: ['IAM:alice'], fetch_column_types: {}, fetch_existing_policies: actual,
+      )
+      allow(RedshiftMasking::UserResolver).to receive(:new).and_return(nil)
+      allow(RedshiftMasking::PolicyBuilder).to receive(:new).and_return(builder)
+      allow(builder).to receive(:build_expected_state).and_return(expected)
+      allow(RedshiftMasking::SqlExecutor).to receive(:new).and_return(executor)
+      allow(executor).to receive(:create_masking_policies)
+      allow(executor).to receive(:apply_corrections)
+    end
+
+    def run_boundary_sync(user_filter: nil)
+      sync.send(:sync_masking_policies, {}, {}, [], user_filter: user_filter)
+    end
+
+    it 'leaves attachments outside configured schemas untouched' do
+      run_boundary_sync
+
+      expect(executor).to have_received(:apply_corrections).with(
+        missing: [], extra: [], mismatched: [],
+      )
+      expect(Rails.logger).not_to have_received(:warn)
+    end
+
+    it 'keeps the schema boundary when a user filter is supplied' do
+      run_boundary_sync(user_filter: ['IAM:alice'])
+
+      expect(executor).to have_received(:apply_corrections).with(
+        missing: [], extra: [], mismatched: [],
+      )
+    end
+
+    context 'with an extra in-scope attachment' do
+      let(:actual) { [outside, inside] }
+
+      it 'still removes the in-scope extra attachment' do
+        run_boundary_sync
+
+        expect(executor).to have_received(:apply_corrections).with(
+          missing: [], extra: [inside], mismatched: [],
+        )
+      end
+    end
+
+    context 'with a missing in-scope attachment' do
+      let(:expected) { [inside] }
+
+      it 'still creates the missing attachment' do
+        run_boundary_sync
+
+        expect(executor).to have_received(:apply_corrections).with(
+          missing: [inside], extra: [], mismatched: [],
+        )
+      end
+    end
+
+    context 'with a mismatched in-scope attachment' do
+      let(:expected) { [boundary_attachment(schema: 'public', policy_name: 'expected_mask')] }
+      let(:actual) { [outside, inside] }
+
+      it 'still replaces the in-scope mismatch' do
+        run_boundary_sync
+
+        expect(executor).to have_received(:apply_corrections).with(
+          missing: [], extra: [], mismatched: [{ expected: expected.first, actual: inside }],
+        )
+      end
+    end
+  end
+
   describe RedshiftMaskingSync do
     let(:sync) { described_class.new }
     let(:config) do
