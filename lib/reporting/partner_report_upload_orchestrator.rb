@@ -121,7 +121,8 @@ module Reporting
         Date.parse(period[:period_end_date]), @report_version,
         { report_cadence: @report_cadence,
           included_issuers: @included_issuers,
-          excluded_issuers: @excluded_issuers }
+          excluded_issuers: @excluded_issuers,
+          skip_confirmation_delay: true }
       )
       result = job.perform_now
       raise StandardError, 'Upload job did not return a structured result' unless result.is_a?(Hash)

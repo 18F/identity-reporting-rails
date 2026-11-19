@@ -73,13 +73,15 @@ module Reports
 
       # Wait 10 seconds to allow user to cancel job if they realize they ran it with the wrong date
       # This hopefully prevents accidental population of reports manually for wrong dates
-      log_message(
-        :info,
-        'Waiting before generating reports so manual runs can be canceled if needed',
-        true,
-        log_context(wait_seconds: 10),
-      )
-      sleep 10
+      unless options[:skip_confirmation_delay] == true
+        log_message(
+          :info,
+          'Waiting before generating reports so manual runs can be canceled if needed',
+          true,
+          log_context(wait_seconds: 10),
+        )
+        sleep 10
+      end
 
       if @included_issuers&.any?
         log_message(
