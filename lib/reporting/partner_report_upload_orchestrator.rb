@@ -1,11 +1,21 @@
 # frozen_string_literal: true
 
 require 'reporting/partner_report_period'
-require 'reporting/partner_report_default_v2'
 
 module Reporting
   # Manual coordinator for partner report, not an ActiveJob
   # A date range includes every period it intersects
+
+  # Steps: First, confirms the overwrite, then uploads periods sequentially with next/all/stop prompts.
+  # All mode continues through issuer failures but pauses on period-level errors.
+  # Canceling or stopping leaves completed uploads intact and returns a progress summary.
+
+  # Example: October 2025 through the latest completed month (all issuers):
+  # Reporting::PartnerReportUploadOrchestrator.run_interactively(
+  #   start_date: '2025-10-01', end_date: Date.current.beginning_of_month - 1,
+  #   report_cadence: 'monthly', report_version: 'v2',
+  # )
+
   class PartnerReportUploadOrchestrator
     MAX_PERIODS = 366
 
@@ -73,7 +83,7 @@ module Reporting
     def periods
       @periods ||= begin
         first = Date.parse(
-          PartnerReportDefaultV2.get_period_date_from_report_date(
+          PartnerReportPeriod.start_date(
             report_date: @start_date, cadence: @report_cadence,
           ),
         )
@@ -143,7 +153,7 @@ module Reporting
 
     def read_choice(input, output)
       loop do
-        output.puts 'Type next for the next period, all for remaining periods, or stop:'
+        output.puts 'Type "next" for the next period, "all" for remaining periods, or "stop":'
         choice = input.gets&.strip
         return 'stop' if choice.nil?
         return choice if %w[next all stop].include?(choice)

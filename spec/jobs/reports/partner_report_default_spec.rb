@@ -75,7 +75,7 @@ RSpec.describe Reports::PartnerReportDefault do
     allow_any_instance_of(described_class).to receive(:bucket_name).and_return(bucket_name)
     allow_any_instance_of(described_class).to receive(:upload_file_to_s3_bucket)
     allow(job).to receive(:generate_base_s3_path).with(directory: 'portal').and_return('')
-    allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
+    allow(Reporting::PartnerReportPeriod).to receive(:start_date).
       with(report_date: anything, cadence: 'monthly').
       and_return(period_date)
     allow(Reporting::PartnerReportDefaultV2).to receive(:new).and_return(mock_partner_report)
@@ -202,7 +202,7 @@ RSpec.describe Reports::PartnerReportDefault do
 
     context 'when period_date cannot be retrieved' do
       before do
-        allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
+        allow(Reporting::PartnerReportPeriod).to receive(:start_date).
           with(report_date: report_date, cadence: 'monthly').
           and_raise(StandardError, 'No calendar entry found')
       end
@@ -593,7 +593,7 @@ RSpec.describe Reports::PartnerReportDefault do
       before do
         job.instance_variable_set(:@report_date, report_date)
         job.instance_variable_set(:@report_version, 'v2')
-        allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
+        allow(Reporting::PartnerReportPeriod).to receive(:start_date).
           with(report_date: report_date, cadence: 'monthly').
           and_raise(StandardError, 'No calendar entry found')
       end
@@ -701,7 +701,7 @@ RSpec.describe Reports::PartnerReportDefault do
     end
 
     it 'passes weekly cadence to the reporter and logging context' do
-      allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
+      allow(Reporting::PartnerReportPeriod).to receive(:start_date).
         with(report_date: anything, cadence: 'weekly').and_return('2026-04-13')
       expect(Reporting::PartnerReportDefaultV2).to receive(:new).with(
         report_date: report_date, report_cadence: 'weekly',
@@ -852,11 +852,11 @@ RSpec.describe Reports::PartnerReportDefault do
       job.perform(report_date)
     end
 
-    it 'calls get_period_date_from_report_date with correct parameters' do
+    it 'calls the shared period lookup with correct parameters' do
       job.instance_variable_set(:@report_date, report_date)
       job.instance_variable_set(:@report_version, 'v2')
 
-      expect(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).with(
+      expect(Reporting::PartnerReportPeriod).to receive(:start_date).with(
         report_date: report_date,
         cadence: 'monthly',
       )

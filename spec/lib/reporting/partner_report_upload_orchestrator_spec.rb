@@ -31,7 +31,7 @@ RSpec.describe Reporting::PartnerReportUploadOrchestrator do
       { environment: 'agnes', bucket: 'reports', prefix: 'agnes/portal/' },
     )
     allow(upload_job).to receive(:perform_now).and_return(result)
-    allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date) do |args|
+    allow(Reporting::PartnerReportPeriod).to receive(:start_date) do |args|
       date = Date.parse(args[:report_date].to_s)
       Date.new(date.year, date.month, 1).to_s
     end
@@ -68,7 +68,7 @@ RSpec.describe Reporting::PartnerReportUploadOrchestrator do
     expect(summary[:status]).to eq('completed')
     expect(summary[:failed_count]).to eq(6)
     expect(summary[:failed_period_count]).to eq(0)
-    expect(output.string.scan('Type next').length).to eq(1)
+    expect(output.string.scan('Type "next"').length).to eq(1)
   end
 
   it 'stops safely on end of input between periods' do
@@ -80,7 +80,7 @@ RSpec.describe Reporting::PartnerReportUploadOrchestrator do
   it 'asks again after an invalid continuation choice' do
     summary = run_with("yes\ninvalid\nnext\nstop\n")
     expect(summary[:results].length).to eq(2)
-    expect(output.string.scan('Type next').length).to eq(3)
+    expect(output.string.scan('Type "next"').length).to eq(3)
   end
 
   it 'retains partial progress when a period raises' do
@@ -110,7 +110,7 @@ RSpec.describe Reporting::PartnerReportUploadOrchestrator do
     expect(summary[:status]).to eq('completed')
     expect(summary[:results].length).to eq(3)
     expect(summary[:failed_period_count]).to eq(1)
-    expect(output.string.scan('Type next').length).to eq(2)
+    expect(output.string.scan('Type "next"').length).to eq(2)
   end
 
   it 'allows stopping on a period error after all' do
@@ -126,7 +126,7 @@ RSpec.describe Reporting::PartnerReportUploadOrchestrator do
   end
 
   it 'includes cross-year weekly periods using warehouse-resolved starts' do
-    allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date).
+    allow(Reporting::PartnerReportPeriod).to receive(:start_date).
       with(report_date: Date.new(2025, 12, 31), cadence: 'weekly').and_return('2025-12-29')
     summary = run_with(
       "yes\nall\n", start_date: '2025-12-31', end_date: '2026-01-06', report_cadence: 'weekly'
@@ -142,7 +142,7 @@ RSpec.describe Reporting::PartnerReportUploadOrchestrator do
   end
 
   it 'runs each day in an inclusive daily range' do
-    allow(Reporting::PartnerReportDefaultV2).to receive(:get_period_date_from_report_date) do |args|
+    allow(Reporting::PartnerReportPeriod).to receive(:start_date) do |args|
       args[:report_date].to_s
     end
     summary = run_with("yes\nall\n", report_cadence: 'daily', end_date: '2026-01-03')
@@ -157,7 +157,7 @@ RSpec.describe Reporting::PartnerReportUploadOrchestrator do
     expect(summary[:planned_count]).to eq(1)
     expect(summary[:status]).to eq('completed')
     expect(summary[:failed_period_count]).to eq(0)
-    expect(output.string).not_to include('Type next')
+    expect(output.string).not_to include('Type "next"')
   end
 
   it 'warns when selecting all eligible issuers' do

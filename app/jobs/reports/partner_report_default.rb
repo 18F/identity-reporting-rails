@@ -143,16 +143,14 @@ module Reports
       issuer_reports = reporter.generate_reports
       @result = log_context.merge(
         period_start_date: period_date,
-        period_end_date: issuer_reports.values.compact.first&.
-          dig(:report_information, :period_end_date) ||
-          Reporting::PartnerReportPeriod.end_date(period_date, @report_cadence).to_s,
+        period_end_date: Reporting::PartnerReportPeriod.end_date(period_date, @report_cadence).to_s,
         uploaded_count: 0,
         failed_count: 0,
         skipped_count: 0,
         failures: [],
         skipped: [],
         missing_issuers: [],
-        issuer_mapping_uploaded: false,
+        issuer_mapping_uploaded: false, # flips to true after successful upload
       )
 
       # If included issuers specified, check they were in SQL results
@@ -200,7 +198,7 @@ module Reports
           upload_to_s3(
             json_data,
             service_provider_id: service_provider_id,
-            period_date: json_data.dig(:report_information, :period_start_date) || period_date,
+            period_date: period_date,
           )
           uploaded_count += 1
           @result[:uploaded_count] += 1
@@ -250,8 +248,7 @@ module Reports
       cadence = @report_cadence || DEFAULT_CADENCE
       filename = period_date.to_s
       if cadence == 'weekly'
-        end_date = json_data.dig(:report_information, :period_end_date) ||
-                   Reporting::PartnerReportPeriod.end_date(period_date, cadence).to_s
+        end_date = Reporting::PartnerReportPeriod.end_date(period_date, cadence).to_s
         filename = "#{period_date}_#{end_date}"
       end
 
@@ -331,18 +328,11 @@ module Reports
 
     def period_date
       raise ArgumentError, 'report_date must be set before calling period_date' if @report_date.nil?
-      @period_date ||= reporter_class_for(@report_version).get_period_date_from_report_date(
+      @period_date ||= Reporting::PartnerReportPeriod.start_date(
         report_date: @report_date,
         cadence: @report_cadence || DEFAULT_CADENCE,
       )
     end
 
-    def reporter_class_for(version)
-      case version
-      when 'v1' then Reporting::PartnerReportDefault
-      when 'v2' then Reporting::PartnerReportDefaultV2
-      else raise ArgumentError, "Unsupported report_version: #{version}"
-      end
-    end
   end
 end

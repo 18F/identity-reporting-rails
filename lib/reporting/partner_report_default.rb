@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'reporting/partner_report_period'
+
 module Reporting
   # Generates partner reports for all relevant/active service providers for single reporting period
   # Uses marts.calendar table to determine reporting period start date given report_date and cadence
@@ -58,45 +60,7 @@ module Reporting
     end
 
     def self.get_period_date_from_report_date(report_date:, cadence: 'monthly')
-      # Given a date, retrieves the corresponding date for the start of its month/week/day
-      # Returns string in format 'YYYY-MM-DD', raises on failure
-      unless ['monthly', 'weekly', 'daily'].include?(cadence)
-        raise ArgumentError, "Invalid cadence: #{cadence}"
-      end
-
-      begin
-        Date.parse(report_date.to_s)
-      rescue ArgumentError => e
-        raise ArgumentError, "Invalid date format for report_date: #{report_date} - #{e.message}"
-      end
-
-      query = <<~SQL
-        SELECT 
-          CASE 
-            WHEN $1 = 'monthly' THEN TO_CHAR(month_start_date_actual, 'YYYY-MM-DD')
-            WHEN $1 = 'weekly' THEN TO_CHAR(week_start_date_actual, 'YYYY-MM-DD')
-            WHEN $1 = 'daily' THEN TO_CHAR(cal.date_actual, 'YYYY-MM-DD')
-          END AS period_date_actual
-        FROM marts.calendar cal
-        WHERE cal.calendar_id = TO_CHAR($2::date, 'YYYYMMDD')::int;
-      SQL
-
-      result = DataWarehouseApplicationRecord.connection.exec_query(
-        query,
-        'get_period_date',
-        [cadence, report_date],
-      ).first
-
-      if result.nil?
-        raise StandardError, "No calendar entry found for report_date: #{report_date}"
-      end
-
-      period_date = result['period_date_actual']
-      if period_date.nil?
-        raise StandardError, "No period_date_actual found for report_date: #{report_date}"
-      end
-
-      period_date
+      PartnerReportPeriod.start_date(report_date: report_date, cadence: cadence)
     end
 
     def generate_issuer_mapping
