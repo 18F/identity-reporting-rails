@@ -51,7 +51,8 @@ RSpec.describe Reporting::PartnerReportUploadOrchestrator do
     summary = run_with("yes\nnext\nstop\n")
     expect(Reports::PartnerReportDefault).to have_received(:new).with(
       Date.new(2026, 1, 31), 'v2',
-      { report_cadence: 'monthly', included_issuers: ['issuer1'], excluded_issuers: nil }
+      { report_cadence: 'monthly', included_issuers: ['issuer1'], excluded_issuers: nil,
+        skip_confirmation_delay: true }
     )
     expect(upload_job).to have_received(:perform_now).twice
     expect(summary).to include(
