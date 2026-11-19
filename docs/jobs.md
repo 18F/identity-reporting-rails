@@ -109,3 +109,35 @@ for events ingested going forward. To populate historical rows from the retained
 
 It only updates rows where `event_type IS NULL`, so it is safe to re-run and to
 run while ingestion continues. No ingestion pause is required.
+
+## Redshift masking reconciliation
+
+Two admin-queue jobs run every five minutes behind the existing fraudops feature
+gate (either fraudops flag enabled):
+
+- `RedshiftMaskingJob` calls `sync_configured_columns(user_filter: nil)` using
+  identity-devops `mask.yaml`. Actual attachments are compared only in schemas
+  listed in that configuration, preserving `idp`, `fraudops`, and `system_tables`
+  while leaving dbt marts outside that scope. `sync` remains a compatibility wrapper.
+- `RedshiftMaskingSchemaReconcileJob` explicitly invokes `sync_dbt_schema(schema:)` for each
+  schema in `config/dbt_masking.yaml`. A manual single-schema invocation never
+  expands to both schemas. The mapping references existing dbt-created policies;
+  Rails performs no policy-definition DDL.
+
+The dbt path discovers every physical table and column, including orphan tables,
+and expects PUBLIC masking at priority 0 plus ROLE `pii_viewers` unmasking at `dbt_unmask_priority` (default 100).
+Direct-user attachments are left untouched during their separate transition.
+Views are excluded with warnings; unsupported stored relations or type/size
+mappings fail preflight. Existing policy names and the role must be visible.
+
+Only tables with discovered drift receive an explicit lock. Inside a per-table
+transaction, reconciliation sets a bounded per-statement timeout, locks the table,
+rechecks metadata, then applies fresh corrections. Healthy tables are not explicitly
+locked. Repairs remain expected on subsequent runs regardless of their grantor.
+Failures propagate instead of logging successful completion; earlier committed
+table repairs may remain after a later failure. GoodJob limits overlapping
+scheduled executions of each job class.
+
+See [human-only QA validation](dbt-masking-validation.md) before deploying; live
+Redshift catalog decoding, compatibility, and transaction/locking behavior have
+not been established by the mocked specs.

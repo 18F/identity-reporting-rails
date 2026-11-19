@@ -39,5 +39,7 @@ Refer to the [_Local Development_ documentation](./docs/local-development.md) to
 
 - [Jobs](docs/jobs.md)
 - [Local Development](docs/local-development.md)
+- [Reuse dbt policies for schema-wide attachment reconciliation](docs/decisions/0001-schema-wide-masking-reconciliation.md)
 - [Security](docs/SECURITY.md)
 - [Troubleshooting Local Development](docs/troubleshooting.md)
+- [Validate schema-wide dbt masking](docs/dbt-masking-validation.md)
