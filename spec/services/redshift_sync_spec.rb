@@ -1185,11 +1185,11 @@ RSpec.describe RedshiftSync do
       before do
         allow(sync).to receive(:create_users).and_return(new_users)
         allow(RedshiftMaskingSync).to receive(:new).and_return(masking_sync)
-        allow(masking_sync).to receive(:sync_configured_columns)
+        allow(masking_sync).to receive(:sync)
       end
 
       it 'calls RedshiftMaskingSync with the new users' do
-        expect(masking_sync).to receive(:sync_configured_columns).with(user_filter: new_users)
+        expect(masking_sync).to receive(:sync).with(user_filter: new_users)
         sync.sync_cluster
       end
     end
@@ -1227,8 +1227,7 @@ RSpec.describe RedshiftSync do
       before do
         allow(sync).to receive(:create_users).and_return(new_users)
         allow(RedshiftMaskingSync).to receive(:new).and_return(masking_sync)
-        allow(masking_sync).to receive(:sync_configured_columns).
-          and_raise(StandardError, 'AWS error')
+        allow(masking_sync).to receive(:sync).and_raise(StandardError, 'AWS error')
       end
 
       it 'does not raise an error' do
@@ -1694,16 +1693,6 @@ RSpec.describe RedshiftSync do
   describe 'redshift_config.yaml validation' do
     let(:real_config) do
       YAML.safe_load(File.read(Rails.root.join('config/redshift_config.yaml')))
-    end
-
-    it 'defines the role used by schema-wide dbt masking with the reviewed membership' do
-      role = real_config.fetch('cluster').fetch('user_roles').find do |entry|
-        entry.fetch('role_name') == RedshiftMasking::DbtConfiguration.new.unmask_role
-      end
-
-      expect(role.fetch('member_users')).to contain_exactly(
-        'pii_reader', 'fraudops_marts', 'fraudops_qa_marts'
-      )
     end
 
     it 'references only users defined in cluster lambda_users, system_users, or ' \

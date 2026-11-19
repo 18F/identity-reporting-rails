@@ -11,46 +11,39 @@ module RedshiftMasking
 
       drift = { missing: [], extra: [], mismatched: [] }
 
-      find_missing_and_mismatched(expected_map, actual_map, drift)
-      find_extra(expected_map, actual_map, drift)
-      log_drift(drift) unless silent
+      find_missing_and_mismatched(expected_map, actual_map, drift, silent: silent)
+      find_extra(expected_map, actual_map, drift, silent: silent)
 
       drift
     end
 
-    def log_drift(drift)
-      drift[:missing].each do |policy|
-        Rails.logger.warn("MISSING: #{policy.grantee} on #{policy.column_id}")
-      end
-      drift[:mismatched].each do |mismatch|
-        expected = mismatch[:expected]
-        Rails.logger.warn(
-          "MISMATCH: #{expected.grantee} on #{expected.column_id} " \
-          "(Expected #{expected.policy_name} Priority #{expected.priority})",
-        )
-      end
-      drift[:extra].each do |policy|
-        Rails.logger.warn("EXTRA: #{policy.grantee} on #{policy.column_id}")
-      end
-    end
-
     private
 
-    def find_missing_and_mismatched(expected_map, actual_map, drift)
+    def find_missing_and_mismatched(expected_map, actual_map, drift, silent: false)
       expected_map.each do |key, expected|
         actual = actual_map[key]
         if actual.nil?
           drift[:missing] << expected
+          unless silent
+            Rails.logger.warn("MISSING: #{expected.grantee} on #{expected.column_id}")
+          end
         elsif !expected.matches?(actual)
           drift[:mismatched] << { expected: expected, actual: actual }
+          unless silent
+            Rails.logger.warn(
+              "MISMATCH: #{expected.grantee} on #{expected.column_id} " \
+              "(Expected #{expected.policy_name} Priority #{expected.priority})",
+            )
+          end
         end
       end
     end
 
-    def find_extra(expected_map, actual_map, drift)
+    def find_extra(expected_map, actual_map, drift, silent: false)
       actual_map.each do |key, actual|
         unless expected_map.key?(key)
           drift[:extra] << actual
+          Rails.logger.warn("EXTRA: #{actual.grantee} on #{actual.column_id}") unless silent
         end
       end
     end

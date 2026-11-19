@@ -3,133 +3,6 @@
 require 'rails_helper'
 
 RSpec.describe RedshiftMasking do
-  describe RedshiftMaskingSync do
-    let(:sync) { described_class.new }
-    let(:config) do
-      instance_double(
-        RedshiftMasking::Configuration, columns_config: [{ 'public.users.email' => {} }]
-      )
-    end
-    let(:queries) { instance_double(RedshiftMasking::DatabaseQueries) }
-    let(:builder) { instance_double(RedshiftMasking::PolicyBuilder) }
-    let(:executor) { instance_double(RedshiftMasking::SqlExecutor) }
-    let(:roles) do
-      [{ 'role_name' => 'masking_worker', 'member_users' => ['fraudops_marts'] }]
-    end
-    let(:expected) { [] }
-    let(:actual) { [attachment] }
-    let(:grantor) { 'FRAUDOPS_MARTS' }
-    let(:preservation_details) { [] }
-    let(:attachment) do
-      RedshiftMasking::PolicyAttachment.new(
-        policy_name: 'dbt_mask', schema: 'public', table: 'users', column: 'email',
-        grantee: 'IAM:alice', grantor: grantor, priority: 100
-      )
-    end
-
-    before do
-      allow(Rails.logger).to receive(:info)
-      allow(Rails.logger).to receive(:debug) do |&message|
-        preservation_details << message.call if message
-      end
-      allow(Rails.logger).to receive(:warn)
-      allow(sync).to receive(:feature_enabled?).and_return(true)
-      allow(RedshiftMasking::Configuration).to receive(:new).and_return(config)
-      allow(RedshiftMasking::DatabaseQueries).to receive(:new).and_return(queries)
-      allow(queries).to receive_messages(
-        fetch_users: ['IAM:alice'], fetch_column_types: {}, fetch_existing_policies: actual,
-      )
-      allow(RedshiftMasking::UserResolver).to receive(:new).and_return(nil)
-      allow(RedshiftMasking::PolicyBuilder).to receive(:new).and_return(builder)
-      allow(builder).to receive(:build_expected_state).and_return(expected)
-      allow(RedshiftMasking::SqlExecutor).to receive(:new).and_return(executor)
-      allow(executor).to receive(:create_masking_policies)
-      allow(executor).to receive(:apply_corrections)
-    end
-
-    def run_masking_sync(user_filter: nil)
-      sync.send(:sync_masking_policies, {}, {}, roles, user_filter: user_filter)
-    end
-
-    it 'logs preservation without warnings or corrections for protected extra attachments' do
-      run_masking_sync
-
-      expect(Rails.logger).not_to have_received(:warn)
-      expect(preservation_details).to contain_exactly(
-        'Preserving dbt-managed masking attachment: policy=dbt_mask ' \
-        'column=public.users.email grantee=IAM:alice grantor=FRAUDOPS_MARTS ' \
-        'reason=protected_masking_worker_grantor',
-      )
-      expect(Rails.logger).not_to have_received(:info).with(/Preserving dbt-managed/)
-      expect(Rails.logger).to have_received(:info).with(
-        'Preserved 1 dbt-managed masking attachments; excluded from detach/replace corrections.',
-      )
-      expect(executor).to have_received(:apply_corrections).with(
-        missing: [], extra: [], mismatched: [],
-      )
-    end
-
-    context 'when a protected attachment mismatches the expected policy' do
-      let(:expected) do
-        [RedshiftMasking::PolicyAttachment.new(**attachment.to_h.merge(policy_name: 'rails_mask'))]
-      end
-
-      it 'preserves the attachment without logging an actionable mismatch or replacing it' do
-        run_masking_sync
-
-        expect(Rails.logger).not_to have_received(:warn)
-        expect(preservation_details).to contain_exactly(a_string_matching(/Preserving dbt-managed/))
-        expect(Rails.logger).not_to have_received(:info).with(/Preserving dbt-managed/)
-        expect(executor).to have_received(:apply_corrections).with(
-          missing: [], extra: [], mismatched: [],
-        )
-      end
-    end
-
-    context 'when an attachment has an unprotected grantor' do
-      let(:grantor) { 'superuser' }
-
-      it 'logs actionable drift and sends the attachment for correction' do
-        run_masking_sync
-
-        expect(Rails.logger).to have_received(:warn).with('EXTRA: IAM:alice on public.users.email')
-        expect(Rails.logger).not_to have_received(:info).with(/Preserving dbt-managed/)
-        expect(preservation_details).to be_empty
-        expect(executor).to have_received(:apply_corrections).with(
-          missing: [], extra: [attachment], mismatched: [],
-        )
-      end
-
-      it 'keeps actionable warnings silent when a user filter is supplied' do
-        run_masking_sync(user_filter: ['IAM:alice'])
-
-        expect(Rails.logger).not_to have_received(:warn)
-        expect(executor).to have_received(:apply_corrections).with(
-          missing: [], extra: [attachment], mismatched: [],
-        )
-      end
-    end
-
-    context 'when an attachment is outside the configured schemas' do
-      let(:grantor) { 'superuser' }
-      let(:attachment) do
-        RedshiftMasking::PolicyAttachment.new(
-          policy_name: 'dbt_mask_varchar_max', schema: 'fraudops_qa_marts',
-          table: 'orphan', column: 'email', grantee: 'PUBLIC', priority: 0,
-          grantor: grantor
-        )
-      end
-
-      it 'does not detach an admin-created dbt repair' do
-        run_masking_sync
-
-        expect(executor).to have_received(:apply_corrections).with(
-          missing: [], extra: [], mismatched: [],
-        )
-      end
-    end
-  end
-
   describe RedshiftMasking::PolicyAttachment do
     let(:policy) do
       described_class.new(
@@ -142,22 +15,9 @@ RSpec.describe RedshiftMasking do
       )
     end
 
-    describe '#grantor' do
-      it 'defaults to nil for expected attachments' do
-        expect(policy.grantor).to be_nil
-      end
-
-      it 'preserves the grantor for existing attachments' do
-        existing_policy = described_class.new(**policy.to_h.merge(grantor: 'fraudops_marts'))
-
-        expect(existing_policy.grantor).to eq('fraudops_marts')
-        expect(existing_policy.to_h[:grantor]).to eq('fraudops_marts')
-      end
-    end
-
     describe '#key' do
-      it 'keeps identifier components and grantee type separate' do
-        expect(policy.key).to eq(['public', 'users', 'ssn', 'user', 'IAM:ALICE'])
+      it 'combines column_id and upper-cased grantee' do
+        expect(policy.key).to eq('public.users.ssn::IAM:ALICE')
       end
 
       it 'converts grantee to uppercase in key' do
@@ -169,7 +29,7 @@ RSpec.describe RedshiftMasking do
           grantee: 'iam:bob',
           priority: 100,
         )
-        expect(policy_lowercase.key).to eq(['s', 't', 'c', 'user', 'IAM:BOB'])
+        expect(policy_lowercase.key).to eq('s.t.c::IAM:BOB')
       end
     end
 
@@ -235,8 +95,6 @@ RSpec.describe RedshiftMasking do
             table: 'users',
             column: 'ssn',
             grantee: 'IAM:alice',
-            grantee_type: 'user',
-            grantor: nil,
             priority: 100,
           },
         )

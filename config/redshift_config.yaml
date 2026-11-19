@@ -137,6 +137,8 @@ cluster:
     - role_name: dbt_workers
       feature_flag: 
         - dbt_enabled
+        - fraud_ops_tracker_enabled
+        - dw_fraudops_email_enabled
       member_users:
         - marts
         - qa_marts
@@ -144,18 +146,18 @@ cluster:
         - fraudops_qa_marts
 
 
-    # The maskign_worker role allows the assigned users to create and attach masking policies
+    # The masking_worker role allows the assigned users to create and attach masking policies
     - role_name: masking_worker
       feature_flag:
         - fraud_ops_tracker_enabled
         - dw_fraudops_email_enabled
-      member_users:        
+      member_users:
         - fraudops_marts
         - fraudops_qa_marts
       assigned_roles:
         - "sys:secadmin"
 
-    # The pii_viewers role allow the assigned users to unmask pii in the 
+    # The pii_viewers role allows assigned users to unmask PII
     - role_name: pii_viewers
       feature_flag:
         - fraud_ops_tracker_enabled

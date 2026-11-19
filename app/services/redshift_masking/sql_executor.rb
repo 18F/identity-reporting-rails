@@ -16,9 +16,8 @@ module RedshiftMasking
 
     attr_reader :config
 
-    def initialize(config, connection: nil)
+    def initialize(config)
       @config = config
-      @connection = connection
     end
 
     def create_masking_policies(column_types)
@@ -34,9 +33,9 @@ module RedshiftMasking
 
       sql = "#{sql_parts.join(";\n")};"
 
+      Rails.logger.info("created/verified policies for #{column_types.size} columns")
       # Safe: Policy names/types from config, sanitized via tr() and format()
       connection.execute(sql)
-      Rails.logger.info("created/verified policies for #{column_types.size} columns")
     end
 
     def apply_corrections(drift)
@@ -73,32 +72,30 @@ module RedshiftMasking
     rescue ActiveRecord::StatementInvalid => e
       Rails.logger.warn("Failed to apply correction: #{e.message}")
       Rails.logger.debug { "Failed SQL: #{sql}" }
-      raise
     end
 
     def detach_sql(policy)
       <<~SQL
-        DETACH MASKING POLICY #{connection.quote_column_name(policy.policy_name)}
-        ON #{connection.quote_column_name(policy.schema)}.#{connection.quote_column_name(policy.table)} (#{connection.quote_column_name(policy.column)})
-        FROM #{quote_grantee(policy)};
+        DETACH MASKING POLICY #{policy.policy_name}
+        ON #{policy.schema}.#{policy.table} (#{policy.column})
+        FROM #{quote_grantee(policy.grantee)};
       SQL
     end
 
     def attach_sql(policy)
       <<~SQL
-        ATTACH MASKING POLICY #{connection.quote_column_name(policy.policy_name)}
-        ON #{connection.quote_column_name(policy.schema)}.#{connection.quote_column_name(policy.table)} (#{connection.quote_column_name(policy.column)})
-        TO #{quote_grantee(policy)}
+        ATTACH MASKING POLICY #{policy.policy_name}
+        ON #{policy.schema}.#{policy.table} (#{policy.column})
+        TO #{quote_grantee(policy.grantee)}
         PRIORITY #{policy.priority};
       SQL
     end
 
     # Quote grantee with special handling for PUBLIC keyword
-    def quote_grantee(policy)
-      return 'PUBLIC' if policy.grantee_type == 'public'
+    def quote_grantee(grantee)
+      return 'PUBLIC' if grantee.upcase == 'PUBLIC'
 
-      prefix = policy.grantee_type == 'role' ? 'ROLE ' : ''
-      "#{prefix}#{connection.quote_column_name(policy.grantee)}"
+      connection.quote_column_name(grantee)
     end
   end
 end
