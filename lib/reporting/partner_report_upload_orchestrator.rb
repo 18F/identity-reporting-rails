@@ -6,7 +6,8 @@ module Reporting
   # Manual coordinator for partner report, not an ActiveJob
   # A date range includes every period it intersects
 
-  # Steps: First, confirms the overwrite, then uploads periods sequentially with next/all/stop prompts.
+  # Steps: First, confirms the overwrite, then uploads
+  # periods sequentially with next/all/stop prompts.
   # All mode continues through issuer failures but pauses on period-level errors.
   # Canceling or stopping leaves completed uploads intact and returns a progress summary.
 

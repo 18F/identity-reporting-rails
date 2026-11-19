@@ -333,6 +333,5 @@ module Reports
         cadence: @report_cadence || DEFAULT_CADENCE,
       )
     end
-
   end
 end
