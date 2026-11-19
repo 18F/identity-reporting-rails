@@ -379,7 +379,7 @@ class RedshiftSync
 
   def apply_masking_for_new_users(new_users)
     Rails.logger.info("Applying masking policies for new user(s): #{new_users.join(', ')}")
-    RedshiftMaskingSync.new.sync(user_filter: new_users)
+    RedshiftMaskingSync.new.sync_configured_columns(user_filter: new_users)
   rescue StandardError => e
     Rails.logger.warn("Failed to apply masking policies for new users: #{e.message}")
   end

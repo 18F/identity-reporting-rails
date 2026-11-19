@@ -154,6 +154,10 @@ else
         class: 'RedshiftMaskingJob',
         cron: cron_5m,
       },
+      redshift_masking_schema_reconcile_job: {
+        class: 'RedshiftMaskingSchemaReconcileJob',
+        cron: cron_5m,
+      },
       # Sync Redshift users - runs every 15 minutes
       redshift_sync_job: {
         class: 'RedshiftSyncJob',

@@ -4,23 +4,50 @@ require 'yaml'
 
 # Service for syncing Redshift masking policies based on configuration files
 class RedshiftMaskingSync
+  include UserSyncConfig
   DATA_CONTROLS_PATH = IdentityConfig.local_devops_path(
     :identity_devops,
     'bin/data-warehouse/mask.yaml',
   )
 
-  def sync(user_filter: nil)
+  def sync_configured_columns(user_filter: nil)
     Rails.logger.info('starting data controls sync')
 
     data_controls = YAML.safe_load(File.read(DATA_CONTROLS_PATH))
+    roles_yaml = YAML.safe_load(
+      File.read(Rails.root.join('config/redshift_config.yaml')),
+    )['cluster']['user_roles']
     users_yaml = YAML.safe_load(File.read(IdentityConfig.identity_devops_users_yaml_path))['users']
 
-    sync_masking_policies(data_controls, users_yaml, user_filter: user_filter)
+    sync_masking_policies(data_controls, users_yaml, roles_yaml, user_filter: user_filter)
+  end
+
+  # Retain the existing console API; both paths remain explicitly separate.
+  def sync(user_filter: nil)
+    sync_configured_columns(user_filter: user_filter)
+  end
+
+  def sync_dbt_schema(schema:)
+    RedshiftMasking::DbtSchemaSync.new.sync(schema: schema)
   end
 
   private
 
-  def sync_masking_policies(data_controls, users_yaml, user_filter: nil)
+  def sync_masking_policies(data_controls, users_yaml, roles_yaml, user_filter: nil)
+    masking_worker_config = Array(roles_yaml).find do |role|
+      role && role['role_name'] == 'masking_worker'
+    end
+
+    configured_grantors =
+      if masking_worker_config &&
+         feature_enabled?(masking_worker_config['feature_flag'])
+        masking_worker_config.fetch('member_users', [])
+      else
+        []
+      end
+
+    protected_grantors = Set.new(configured_grantors.map(&:upcase))
+
     env_name = Identity::Hostdata.env
 
     config = RedshiftMasking::Configuration.new(
@@ -41,6 +68,7 @@ class RedshiftMaskingSync
     end
 
     columns = extract_columns(config)
+    configured_schemas = columns.map(&:schema).to_set
     column_types = db_queries.fetch_column_types(columns)
 
     user_resolver = RedshiftMasking::UserResolver.new(
@@ -55,21 +83,67 @@ class RedshiftMaskingSync
 
     expected = policy_builder.build_expected_state(column_types, db_users_set)
     actual = db_queries.fetch_existing_policies
+    actual = actual.select { |p| configured_schemas.include?(p.schema) }
     actual = actual.select { |p| filter_set.include?(p.grantee.upcase) } if user_filter
 
     Rails.logger.info(
       "expected: #{expected.size} attachments, actual: #{actual.size} attachments",
     )
 
-    drift = drift_detector.detect(expected, actual, silent: user_filter.present?)
+    drift = drift_detector.detect(expected, actual, silent: true)
+    exclude_protected_attachments(drift, protected_grantors)
+    drift_detector.log_drift(drift) unless user_filter.present?
     sql_executor.apply_corrections(drift)
 
     Rails.logger.info('sync completed')
   end
 
+  def exclude_protected_attachments(drift, protected_grantors)
+    excluded_count = 0
+
+    drift[:extra].reject! do |attachment|
+      excluded = protected_grantors.include?(attachment.grantor&.upcase)
+      log_preserved_attachment(attachment) if excluded
+      excluded_count += 1 if excluded
+      excluded
+    end
+
+    drift[:mismatched].reject! do |mismatch|
+      excluded = protected_grantors.include?(mismatch[:actual].grantor&.upcase)
+      log_preserved_attachment(mismatch[:actual]) if excluded
+      excluded_count += 1 if excluded
+      excluded
+    end
+
+    Rails.logger.info(
+      "Preserved #{excluded_count} dbt-managed masking attachments; " \
+      "excluded from detach/replace corrections.",
+    )
+  end
+
+  def log_preserved_attachment(attachment)
+    Rails.logger.debug do
+      "Preserving dbt-managed masking attachment: policy=#{attachment.policy_name} " \
+      "column=#{attachment.column_id} grantee=#{attachment.grantee} " \
+      "grantor=#{attachment.grantor} reason=protected_masking_worker_grantor"
+    end
+  end
+
   def extract_columns(config)
     config.columns_config.flat_map do |entry|
       entry.keys.filter_map { |id| RedshiftMasking::Column.parse(id) }
+    end
+  end
+
+  def feature_enabled?(feature_flag)
+    return true if feature_flag.nil?
+
+    flags_to_check = feature_flag.is_a?(Array) ? feature_flag : [feature_flag]
+
+    flags_to_check.any? do |flag|
+      # Check both Terraform config and IdentityConfig.store; flag is enabled if either is true
+      config_file.match?(/^\s*(?!#|\/\/)#{flag}\s+=\s+true/m) ||
+        (IdentityConfig.store.respond_to?(flag) && IdentityConfig.store.public_send(flag) == true)
     end
   end
 end

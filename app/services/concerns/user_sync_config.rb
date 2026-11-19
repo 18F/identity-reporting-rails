@@ -42,4 +42,14 @@ module UserSyncConfig
   def enabled_aws_groups
     redshift_config['enabled_aws_groups'][env_type]
   end
+
+  def config_file
+    @config_file ||= begin
+      terraform_config_path = IdentityConfig.local_devops_path(
+        :identity_devops,
+        "terraform/data-warehouse/#{env_name}/main.tf",
+      )
+      File.read(terraform_config_path)
+    end
+  end
 end

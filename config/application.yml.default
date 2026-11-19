@@ -16,6 +16,7 @@
 redis_url: redis://localhost:6379/0
 redis_pool_size: 1
 redshift_role_audit_revoke: false
+dbt_unmask_priority: 100
 dw_fraudops_email_enabled: false
 database_pool_reporting: 5
 database_socket: ''
