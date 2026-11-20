@@ -146,6 +146,28 @@ cluster:
         - fraudops_qa_marts
 
 
+    # The masking_worker role allows the assigned users to create and attach masking policies
+    - role_name: masking_worker
+      feature_flag:
+        - fraud_ops_tracker_enabled
+        - dw_fraudops_email_enabled
+      member_users:
+        - fraudops_marts
+        - fraudops_qa_marts
+      assigned_roles:
+        - "sys:secadmin"
+
+    # The pii_viewers role allows assigned users to unmask PII
+    - role_name: pii_viewers
+      feature_flag:
+        - fraud_ops_tracker_enabled
+        - dw_fraudops_email_enabled
+        - dbt_enabled
+      member_users:
+        - pii_reader
+        - fraudops_marts
+        - fraudops_qa_marts
+
 # Database-level GRANTs.
 #
 # Iterated once per database. The `user_groups`, `system_users`, and
