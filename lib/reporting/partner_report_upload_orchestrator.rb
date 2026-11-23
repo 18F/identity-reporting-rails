@@ -12,6 +12,7 @@ module Reporting
   # Canceling or stopping leaves completed uploads intact and returns a progress summary.
 
   # Example: October 2025 through the latest completed month (all issuers):
+  # require 'reporting/partner_report_upload_orchestrator'
   # Reporting::PartnerReportUploadOrchestrator.run_interactively(
   #   start_date: '2025-10-01', end_date: Date.current.beginning_of_month - 1,
   #   report_cadence: 'monthly', report_version: 'v2',
